@@ -16,6 +16,11 @@ export const subjectService = {
     return response.data;
   },
 
+  async getSet(id: string) {
+    const response = await api.get(`/subjects/sets/${id}`);
+    return response.data;
+  },
+
   async getSets(subjectId: string) {
     const response = await api.get(`/subjects/${subjectId}/sets`);
     return response.data;

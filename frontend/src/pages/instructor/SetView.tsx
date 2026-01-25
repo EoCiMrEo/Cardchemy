@@ -23,25 +23,15 @@ export default function SetView() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const setData = await subjectService.getSets(id!) // This actually gets all sets, inefficient but okay for MVP auth check
-      // Wait, getSets takes subjectId. I have set ID.
-      // I need a getSet(id) endpoint in service. I added getSets above but logical mismatch.
-      // Actually SubjectService.getFlashcardSet(setId) exists in backend.
-      // I missed adding it to the frontend service explicitly as getSet(id). 
-      // I'll assume I can fix the service or just fetch sets and find it, OR add the endpoint now.
-      // Let's rely on the service I assume exists or fixed. I'll verify service file.
-      // Looking at `services/subjects.ts`, I only added `getSets(subjectId)`. 
-      // I need to add `getSet(setId)`.
+      setLoading(true)
       
-      // I will implement a quick fix here or expect the service update.
-      // For now, let's assume I fix the service in next tool call or usage.
+      const [setData, cardsData] = await Promise.all([
+        subjectService.getSet(id!),
+        flashcardService.getCards(id!)
+      ])
       
-      // Let's use the cards endpoint first.
-      const cardsData = await flashcardService.getCards(id!)
+      setSet(setData)
       setCards(cardsData)
-      
-      // We need set details. I'll add `getSet` to subjectService.
-      // For now I'll just load cards and show simplistic header.
     } catch (e) {
       console.error(e)
     } finally {
