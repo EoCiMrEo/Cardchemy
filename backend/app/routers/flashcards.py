@@ -275,7 +275,8 @@ async def generate_flashcards(
         # Chunk text (simple chunking for now, can be improved)
         # We limit to first 15k chars for MVP to avoid token limits/timeouts
         # In prod, this would be a background job (Celery/RQ)
-        text_to_process = full_text[:15000] 
+        # UPDATED: Map-Reduce now handles large texts, removing 15k limit.
+        text_to_process = full_text 
         
         if not text_to_process.strip():
              raise HTTPException(
@@ -287,13 +288,11 @@ async def generate_flashcards(
         from app.agents.graph import create_flashcard_graph
         graph = create_flashcard_graph()
         
-        # Initialize state
+        # Initialize state - just pass the full text, the graph splitter will handle chunks
         initial_state = {
             "pdf_text": text_to_process,
-            "chunk_index": 0,
-            "total_chunks": 1,
-            "concepts": [],
-            "generated_cards": [],
+            "chunks": [],
+            "mapped_generated_cards": [],
             "final_cards": [],
             "errors": []
         }
@@ -301,6 +300,19 @@ async def generate_flashcards(
         # Invoke the graph
         result_state = await graph.ainvoke(initial_state)
         
+        print(f"🏁 Graph finished. Keys in result: {result_state.keys()}")
+        if 'final_cards' in result_state:
+             print(f"🃏 Final cards count: {len(result_state['final_cards'])}")
+        
+        # Check for errors from the graph
+        if result_state.get('errors'):
+            error_msg = "; ".join(result_state['errors'])
+            print(f"❌ Graph returned errors: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"AI generation failed: {error_msg}"
+            )
+
         # 4. Save Results
         final_cards = result_state.get("final_cards", [])
         
@@ -337,6 +349,8 @@ async def generate_flashcards(
     except Exception as e:
         # If AI fails, still return the empty set but logic error
         print(f"AI Generation Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI generation failed: {str(e)}"

@@ -15,14 +15,17 @@ class Flashcard(TypedDict):
 
 class AgentState(TypedDict):
     # Input
-    pdf_text: str
-    chunk_index: int
-    total_chunks: int
+    pdf_text: str  # Full text (optional if using chunks directly, but good to keep)
     
-    # Processing
-    concepts: List[str]
-    generated_cards: Annotated[List[Flashcard], operator.add]
+    # Map-Reduce
+    chunks: List[str] # List of text chunks to process
+    
+    # Intermediate (Mapped)
+    # in Send/Map architecture, each branch might have its own state, 
+    # but usually we aggregate results back.
+    # We'll use Annotated to merge lists from parallel branches.
+    mapped_generated_cards: Annotated[List[Flashcard], operator.add]
     
     # Output
     final_cards: List[Flashcard]
-    errors: List[str]
+    errors: Annotated[List[str], operator.add]

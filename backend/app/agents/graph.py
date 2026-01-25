@@ -5,8 +5,18 @@ Wires together the agents into an executable graph.
 """
 
 from langgraph.graph import StateGraph, END
+from langgraph.constants import Send
 from app.agents.state import AgentState
-from app.agents.nodes import extract_concepts, generate_cards, review_cards
+from app.agents.nodes import split_text, generate_cards_from_chunk, reduce_and_review
+
+def map_chunks(state: AgentState):
+    """
+    Map function to create Send objects for parallel processing.
+    """
+    chunks = state.get('chunks', [])
+    return [
+        Send("generator", {"chunk": chunk}) for chunk in chunks
+    ]
 
 def create_flashcard_graph():
     """
@@ -15,21 +25,27 @@ def create_flashcard_graph():
     workflow = StateGraph(AgentState)
 
     # Add Nodes
-    workflow.add_node("extractor", extract_concepts)
-    workflow.add_node("generator", generate_cards)
-    workflow.add_node("reviewer", review_cards)
+    workflow.add_node("splitter", split_text)
+    workflow.add_node("generator", generate_cards_from_chunk)
+    workflow.add_node("reducer", reduce_and_review)
 
     # Define Edges
-    workflow.set_entry_point("extractor")
+    workflow.set_entry_point("splitter")
     
-    # Extractor -> Generator
-    workflow.add_edge("extractor", "generator")
+    # Splitter -> Map (conditional edge to generator)
+    workflow.add_conditional_edges(
+        "splitter",
+        map_chunks,
+        ["generator"]
+    )
     
-    # Generator -> Reviewer
-    workflow.add_edge("generator", "reviewer")
+    # Generator -> Reducer
+    # Since Generator is parallel, all branches must complete before Reducer runs.
+    # LangGraph handles this collection automatically if wired correctly.
+    workflow.add_edge("generator", "reducer")
     
-    # Reviewer -> End
-    workflow.add_edge("reviewer", END)
+    # Reducer -> End
+    workflow.add_edge("reducer", END)
 
     # Compile
     return workflow.compile()
