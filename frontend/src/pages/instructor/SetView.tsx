@@ -5,7 +5,8 @@ import { flashcardService } from "@/services/flashcards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Check, X, Loader2, Save } from "lucide-react"
+import { ChevronLeft, Check, X, Loader2, Save, Trash2, Play } from "lucide-react"
+import { PreviewDialog } from "@/components/sets/PreviewDialog"
 
 export default function SetView() {
   const { id } = useParams<{ id: string }>()
@@ -15,6 +16,7 @@ export default function SetView() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState({ front: "", back: "" })
   const [saving, setSaving] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   useEffect(() => {
     if (id) loadData()
@@ -22,7 +24,6 @@ export default function SetView() {
 
   const loadData = async () => {
     try {
-      setLoading(true)
       setLoading(true)
       
       const [setData, cardsData] = await Promise.all([
@@ -79,6 +80,16 @@ export default function SetView() {
       }
   }
 
+  const handleDelete = async (cardId: string) => {
+    if (!confirm("Are you sure you want to delete this flashcard?")) return
+    try {
+        await flashcardService.deleteCard(cardId)
+        setCards(cards.filter(c => c.id !== cardId))
+    } catch (e) {
+        console.error(e)
+    }
+  }
+
   if (loading) return <div className="p-8"><Loader2 className="animate-spin" /></div>
 
   return (
@@ -90,11 +101,16 @@ export default function SetView() {
                 <ChevronLeft className="h-5 w-5" />
             </Button>
             </Link>
-            <h1 className="text-2xl font-bold">Review Flashcards</h1>
+            <h1 className="text-2xl font-bold">{set?.title || "Review Flashcards"}</h1>
         </div>
-        <Button onClick={handleApproveAll} variant="default">
-            Approve All
-        </Button>
+        <div className="flex gap-2">
+            <Button onClick={() => setPreviewOpen(true)} variant="outline">
+                <Play className="mr-2 h-4 w-4" /> Preview
+            </Button>
+            <Button onClick={handleApproveAll} variant="default">
+                Approve All
+            </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -105,7 +121,12 @@ export default function SetView() {
                 {card.is_approved ? <span className="text-green-600 flex items-center gap-1"><Check className="h-3 w-3"/> Approved</span> : "Needs Review"}
               </CardTitle>
               {!editingId && (
-                  <Button variant="ghost" size="sm" onClick={() => handleEdit(card)}>Edit</Button>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => handleEdit(card)}>Edit</Button>
+                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(card.id)}>
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
               )}
             </CardHeader>
             <CardContent className="space-y-4 mt-2">
@@ -156,6 +177,13 @@ export default function SetView() {
           </Card>
         ))}
       </div>
+
+      <PreviewDialog 
+        open={previewOpen} 
+        onOpenChange={setPreviewOpen} 
+        cards={cards} 
+        title={set?.title || "Flashcards"} 
+      />
     </div>
   )
 }

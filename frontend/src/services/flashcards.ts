@@ -22,6 +22,11 @@ export const flashcardService = {
     return response.data;
   },
 
+  async deleteCard(id: string) {
+    const response = await api.delete(`/flashcards/${id}`);
+    return response.data;
+  },
+
   async approveAll(setId: string, minConfidence: number = 0.0) {
     const response = await api.post(`/flashcards/sets/${setId}/approve-all`, null, {
       params: { min_confidence: minConfidence }
