@@ -1,0 +1,81 @@
+# ===========================================
+# Docker Compose for Flashcard Generator
+# ===========================================
+# This file defines all services needed to run the application locally.
+#
+# Usage:
+#   Start all services:     docker-compose up -d
+#   View logs:              docker-compose logs -f
+#   Stop all services:      docker-compose down
+#   Rebuild after changes:  docker-compose up -d --build
+
+services:
+  # ===========================================
+  # PostgreSQL Database with pgvector
+  # ===========================================
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: flashcard_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: flashcard_gen
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d flashcard_gen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # FastAPI Backend
+  # ===========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: flashcard_backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Override DATABASE_URL to use Docker network hostname
+      DATABASE_URL: postgresql+asyncpg://admin:password@db:5432/flashcard_gen
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEBUG: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount source code for hot reloading in development
+      - ./backend:/app
+    # Override CMD for development (with --reload)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================
+  # Frontend (React + Vite) - Will be added later
+  # ===========================================
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: flashcard_frontend
+  #   ports:
+  #     - "5173:5173"
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #   depends_on:
+  #     - backend
+
+volumes:
+  postgres_data:
