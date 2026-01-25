@@ -73,6 +73,37 @@ async def create_subject(
     return subject
 
 
+
+@router.get("/sets/{set_id}", response_model=FlashcardSetResponse)
+async def get_flashcard_set_by_id(
+    set_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a flashcard set by ID directly.
+    """
+    flashcard_set = await SubjectService.get_flashcard_set(db, set_id)
+    
+    if not flashcard_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found"
+        )
+            
+    # Check subject access
+    await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
+
+    # Students can only see published sets
+    if user.role == UserRole.STUDENT and not flashcard_set.is_published:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found"
+        )
+    
+    return flashcard_set
+
+
 @router.get("/{subject_id}", response_model=SubjectResponse)
 async def get_subject(
     subject_id: UUID,
