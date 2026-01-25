@@ -61,9 +61,16 @@ class SubjectService:
         result = await db.execute(
             select(Subject)
             .where(Subject.instructor_id == instructor_id)
+            .options(selectinload(Subject.flashcard_sets), selectinload(Subject.enrollments))
             .order_by(Subject.created_at.desc())
         )
-        return list(result.scalars().all())
+        subjects = list(result.scalars().all())
+        
+        for subject in subjects:
+            setattr(subject, 'flashcard_set_count', len(subject.flashcard_sets))
+            setattr(subject, 'student_count', len(subject.enrollments))
+            
+        return subjects
     
     @staticmethod
     async def get_student_subjects(
@@ -75,9 +82,16 @@ class SubjectService:
             select(Subject)
             .join(Enrollment, Enrollment.subject_id == Subject.id)
             .where(Enrollment.student_id == student_id)
+            .options(selectinload(Subject.flashcard_sets), selectinload(Subject.enrollments))
             .order_by(Subject.name)
         )
-        return list(result.scalars().all())
+        subjects = list(result.scalars().all())
+        
+        for subject in subjects:
+            setattr(subject, 'flashcard_set_count', len(subject.flashcard_sets))
+            setattr(subject, 'student_count', len(subject.enrollments))
+            
+        return subjects
     
     @staticmethod
     async def update_subject(
@@ -157,10 +171,16 @@ class SubjectService:
         if not include_unpublished:
             query = query.where(FlashcardSet.is_published == True)
         
-        query = query.order_by(FlashcardSet.created_at.desc())
+        query = query.options(selectinload(FlashcardSet.flashcards)).order_by(FlashcardSet.created_at.desc())
         
         result = await db.execute(query)
-        return list(result.scalars().all())
+        sets = list(result.scalars().all())
+        
+        for fset in sets:
+            setattr(fset, 'flashcard_count', len(fset.flashcards))
+            setattr(fset, 'approved_count', len([c for c in fset.flashcards if c.is_approved]))
+            
+        return sets
     
     @staticmethod
     async def update_flashcard_set(
