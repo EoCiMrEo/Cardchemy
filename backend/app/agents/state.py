@@ -16,7 +16,11 @@ class Flashcard(TypedDict):
 class AgentState(TypedDict):
     # Input
     pdf_text: str  # Full text (optional if using chunks directly, but good to keep)
+    target_count: int # User desired count
     
+    # Context
+    summary: str # Global summary of the text
+
     # Map-Reduce
     chunks: List[str] # List of text chunks to process
     

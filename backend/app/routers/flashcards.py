@@ -231,6 +231,7 @@ async def generate_flashcards(
     subject_id: UUID = Form(...),
     set_title: str = Form(...),
     set_description: str = Form(None),
+    card_count: int = Form(20),
     pdf_file: UploadFile = File(...),
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
@@ -294,7 +295,9 @@ async def generate_flashcards(
             "chunks": [],
             "mapped_generated_cards": [],
             "final_cards": [],
-            "errors": []
+            "errors": [],
+            "target_count": card_count,
+            "summary": ""
         }
         
         # Invoke the graph

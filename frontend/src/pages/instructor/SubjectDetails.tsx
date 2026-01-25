@@ -23,6 +23,7 @@ export default function SubjectDetails() {
   const [setTitle, setSetTitle] = useState("")
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState("")
+  const [cardCount, setCardCount] = useState("20")
 
   // Edit/Delete State
   const [isEditSubjectOpen, setIsEditSubjectOpen] = useState(false)
@@ -61,6 +62,7 @@ export default function SubjectDetails() {
           formData.append('subject_id', id!)
           formData.append('set_title', setTitle)
           formData.append('pdf_file', file)
+          formData.append('card_count', cardCount)
           
           // AI Generation can take time
           setUploadMessage("AI Agents extracting concepts...")
@@ -166,6 +168,24 @@ export default function SubjectDetails() {
                             placeholder="Chapter 1: Initial Generation"
                             required
                         />
+                    </div>
+                    <div>
+                        <div className="mb-2 text-sm font-medium">Number of Cards</div>
+                        <div className="flex gap-4">
+                            {["5", "10", "15", "20"].map(num => (
+                                <label key={num} className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="cardCount" 
+                                        value={num}
+                                        checked={cardCount === num}
+                                        onChange={(e) => setCardCount(e.target.value)}
+                                        className="accent-primary"
+                                    />
+                                    <span>{num}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
                     <div>
                         <label className="text-sm font-medium">PDF File</label>
