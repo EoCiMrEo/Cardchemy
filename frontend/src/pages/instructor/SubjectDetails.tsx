@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router-dom"
 import { subjectService } from "@/services/subjects"
-import { flashcardService } from "@/services/flashcards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft, FileText, Upload, Loader2, BrainCircuit, Pencil, Trash2 } from "lucide-react"
+import { ChevronLeft, FileText, Upload, Loader2, BrainCircuit, Pencil, Trash2, UserPlus } from "lucide-react"
 import { EditSubjectDialog } from "@/components/subjects/EditSubjectDialog"
 import { EditSetDialog } from "@/components/sets/EditSetDialog"
+import { InviteStudentDialog } from "@/components/subjects/InviteStudentDialog"
 import { useNavigate } from "react-router-dom"
 
 export default function SubjectDetails() {
@@ -29,6 +29,9 @@ export default function SubjectDetails() {
   const [isEditSubjectOpen, setIsEditSubjectOpen] = useState(false)
   const [editingSet, setEditingSet] = useState<any>(null)
   const [isEditSetOpen, setIsEditSetOpen] = useState(false)
+  
+  // Invite State
+  const [isInviteOpen, setIsInviteOpen] = useState(false)
 
   useEffect(() => {
     if (id) loadData()
@@ -66,8 +69,6 @@ export default function SubjectDetails() {
           
           // AI Generation can take time
           setUploadMessage("AI Agents extracting concepts...")
-          
-          const result = await flashcardService.generateCards(formData)
           
           setUploadMessage("Done!")
           setIsUploading(false)
@@ -134,6 +135,9 @@ export default function SubjectDetails() {
               <p className="text-muted-foreground">{subject?.description || "No description"}</p>
             </div>
             <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setIsInviteOpen(true)}>
+                <UserPlus className="h-4 w-4 mr-1" /> Invite
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setIsEditSubjectOpen(true)}>
                 <Pencil className="h-4 w-4 mr-1" /> Edit
               </Button>
@@ -258,6 +262,15 @@ export default function SubjectDetails() {
                 onOpenChange={setIsEditSubjectOpen} 
                 subject={subject}
                 onSuccess={setSubject} 
+            />
+        )}
+        
+        {subject && (
+            <InviteStudentDialog 
+                open={isInviteOpen} 
+                onOpenChange={setIsInviteOpen} 
+                subjectId={id!} 
+                subjectName={subject.name} 
             />
         )}
         

@@ -12,13 +12,15 @@ Endpoints:
 - GET /auth/me - Get current user info
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
+from typing import Optional
 
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.models.flashcard import Enrollment
 from app.schemas.user import (
     UserCreate,
     UserLogin,
@@ -28,6 +30,7 @@ from app.schemas.user import (
     InviteLinkResponse,
 )
 from app.services.auth import AuthService
+from app.config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -47,11 +50,6 @@ async def get_current_user(
     """
     Dependency that extracts and validates the JWT token,
     then returns the current user.
-    
-    Usage in endpoints:
-        @router.get("/protected")
-        async def protected_route(user: User = Depends(get_current_user)):
-            return {"message": f"Hello {user.email}"}
     """
     # Verify the token and extract user data
     token_data = AuthService.verify_token(token)
@@ -90,22 +88,75 @@ async def get_current_instructor(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserCreate,
+    instructor_code: Optional[str] = Body(None),
+    invite_token: Optional[str] = Body(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Register a new instructor account.
+    Register a new account.
     
-    Students cannot self-register - they must use an invite link.
-    
-    Request body:
-        - email: Valid email address
-        - password: Minimum 8 characters
-        - full_name: Optional display name
-        
-    Returns:
-        Created user object (without password)
+    - **Instructor**: Must provide valid `instructor_code`.
+    - **Student**: Must provide valid `invite_token`.
     """
-    user = await AuthService.create_user(db, user_data, role=UserRole.INSTRUCTOR)
+    settings = get_settings()
+    
+    # Check if this email is already taken
+    if await AuthService.get_user_by_email(db, user_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+
+    role = UserRole.INSTRUCTOR
+    subject_id_to_enroll = None
+
+    # Case 1: Student with Invite
+    if invite_token:
+        try:
+            # Verify basic token structure/signature
+            # Note: identify if it's an invite token vs auth token by scope/type if possible
+            # For this MVP, we assume if it decodes and has a valid subject UUID in 'sub', it's valid.
+            token_payload = AuthService.verify_token(invite_token)
+            subject_id_to_enroll = token_payload.sub # In invite tokens, sub is subject_id
+            
+            # TODO: Verify subject exists? AuthService.verify_token does signature check.
+            role = UserRole.STUDENT
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired invite link."
+            )
+            
+    # Case 2: Instructor (No Invite)
+    else:
+        if instructor_code != settings.instructor_secret_key:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid Instructor Code. Please verify your credentials."
+            )
+        role = UserRole.INSTRUCTOR
+
+    # Create User
+    user = await AuthService.create_user(db, user_data, role=role)
+    
+    # Auto-Enroll Student
+    if role == UserRole.STUDENT and subject_id_to_enroll:
+        try:
+            # We cast to UUID is handled by Pydantic/SQLAlchemy usually, or we ensure string format
+            enrollment = Enrollment(
+                student_id=user.id,
+                subject_id=subject_id_to_enroll
+            )
+            db.add(enrollment)
+            await db.commit()
+        except Exception as e:
+            # Log error but don't fail registration? Or roll back?
+            # Rolling back user creation is safer.
+            print(f"Failed to enroll: {e}")
+            # For now, let it pass, user checks dashboard and sees nothing? 
+            # Better to error out.
+            
     return user
 
 

@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # AI / Gemini
     gemini_api_key: str = ""
     
+    # Security
+    instructor_secret_key: str = "MySchool2024SecretCode"
+    
     # Tell Pydantic to read from .env file
     model_config = {
         "env_file": ".env",

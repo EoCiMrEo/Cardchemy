@@ -3,15 +3,20 @@ import { authService } from "@/services/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 
 export default function Register() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
+  const [instructorCode, setInstructorCode] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get("token")
+  
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,7 +25,13 @@ export default function Register() {
     setLoading(true)
 
     try {
-      await authService.register({ email, password, full_name: fullName })
+      await authService.register({ 
+          email, 
+          password, 
+          full_name: fullName,
+          instructor_code: inviteToken ? undefined : instructorCode,
+          invite_token: inviteToken || undefined
+      })
       navigate("/login")
     } catch (err: any) {
       let errorMessage = "Failed to register";
@@ -43,9 +54,11 @@ export default function Register() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl text-center">Create Account</CardTitle>
+          <CardTitle className="text-2xl text-center">
+              {inviteToken ? "Join Course" : "Instructor Registration"}
+          </CardTitle>
           <CardDescription className="text-center">
-            Sign up as an instructor to start creating flashcards
+            {inviteToken ? "Create a student account to enroll." : "Sign up as an instructor to creating flashcards."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -85,9 +98,26 @@ export default function Register() {
                 minLength={8}
               />
             </div>
+            
+            {!inviteToken && (
+                <div className="space-y-2 border-t pt-4">
+                  <label className="text-sm font-bold text-blue-600">Instructor Code</label>
+                  <Input
+                    type="password"
+                    placeholder="Enter secret code provided by admin"
+                    value={instructorCode}
+                    onChange={(e) => setInstructorCode(e.target.value)}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                      Required for instructor registration.
+                  </p>
+                </div>
+            )}
+
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Create Account
+              {inviteToken ? "Join Course" : "Create Instructor Account"}
             </Button>
           </form>
         </CardContent>

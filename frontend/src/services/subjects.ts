@@ -49,5 +49,10 @@ export const subjectService = {
   async deleteSet(subjectId: string, setId: string) {
     const response = await api.delete(`/subjects/${subjectId}/sets/${setId}`);
     return response.data;
+  },
+
+  async generateInvite(subjectId: string, expiresInHours: number) {
+    const response = await api.post(`/subjects/${subjectId}/invite`, { expires_in_hours: expiresInHours });
+    return response.data;
   }
 };

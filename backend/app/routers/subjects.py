@@ -16,7 +16,7 @@ Endpoints:
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -146,6 +146,39 @@ async def delete_subject(
     subject = await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     await SubjectService.delete_subject(db, subject)
     return None
+
+
+@router.post("/{subject_id}/invite")
+async def generate_invite_token(
+    subject_id: UUID,
+    expires_in_hours: int = Body(24, embed=True),
+    user: User = Depends(get_current_instructor),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate a multi-use invite token for students.
+    
+    Returns a JWT that can be used to register as a student
+    and auto-enroll in this subject.
+    """
+    await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
+    
+    from app.services.auth import AuthService
+    from datetime import timedelta
+    
+    # Create Invite Token (JWT)
+    # We use 'sub' for subject_id so verify_token works automatically
+    invite_data = {
+        "sub": str(subject_id),
+        "type": "invite"
+    }
+    
+    token = AuthService.create_access_token(
+        invite_data, 
+        expires_delta=timedelta(hours=expires_in_hours)
+    )
+    
+    return {"token": token}
 
 
 # ============================================
