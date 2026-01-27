@@ -41,6 +41,15 @@ class UserCreate(BaseModel):
     full_name: Optional[str] = None
 
 
+class UserRegister(UserCreate):
+    """
+    Schema for registration request body.
+    Includes optional fields for instructor code or invite token.
+    """
+    instructor_code: Optional[str] = None
+    invite_token: Optional[str] = None
+
+
 class UserLogin(BaseModel):
     """
     Schema for logging in.

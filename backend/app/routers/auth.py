@@ -23,6 +23,7 @@ from app.models.user import User, UserRole
 from app.models.flashcard import Enrollment
 from app.schemas.user import (
     UserCreate,
+    UserRegister,
     UserLogin,
     UserResponse,
     Token,
@@ -87,9 +88,7 @@ async def get_current_instructor(
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    user_data: UserCreate,
-    instructor_code: Optional[str] = Body(None),
-    invite_token: Optional[str] = Body(None),
+    user_data: UserRegister,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -111,12 +110,12 @@ async def register(
     subject_id_to_enroll = None
 
     # Case 1: Student with Invite
-    if invite_token:
+    if user_data.invite_token:
         try:
             # Verify basic token structure/signature
             # Note: identify if it's an invite token vs auth token by scope/type if possible
             # For this MVP, we assume if it decodes and has a valid subject UUID in 'sub', it's valid.
-            token_payload = AuthService.verify_token(invite_token)
+            token_payload = AuthService.verify_token(user_data.invite_token)
             subject_id_to_enroll = token_payload.sub # In invite tokens, sub is subject_id
             
             # TODO: Verify subject exists? AuthService.verify_token does signature check.
@@ -130,7 +129,7 @@ async def register(
             
     # Case 2: Instructor (No Invite)
     else:
-        if instructor_code != settings.instructor_secret_key:
+        if user_data.instructor_code != settings.instructor_secret_key:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid Instructor Code. Please verify your credentials."
