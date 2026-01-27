@@ -12,7 +12,7 @@ algorithm (similar to Anki's SM-2) to optimize learning.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Float, Boolean, Integer, DateTime, ForeignKey, UniqueConstraint, text
+from sqlalchemy import Column, String, Text, Float, Boolean, Integer, DateTime, ForeignKey, UniqueConstraint, text, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -74,6 +74,11 @@ class Flashcard(Base):
     
     # The answer (back of card)
     back_content = Column(Text, nullable=False)
+    
+    # Multiple choice options (JSON list of strings)
+    # Example: ["Option A", "Option B", "Option C", "Option D"]
+    # The back_content is the correct answer.
+    options = Column(JSON, nullable=True)
     
     # AI confidence score (0.0 to 1.0)
     confidence_score = Column(Float, default=0.0)

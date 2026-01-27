@@ -24,6 +24,7 @@ class FlashcardCreate(BaseModel):
     set_id: UUID
     front_content: str = Field(..., min_length=1, description="The question (front of card)")
     back_content: str = Field(..., min_length=1, description="The answer (back of card)")
+    options: Optional[List[str]] = Field(None, description="Multiple choice options")
 
 
 class FlashcardUpdate(BaseModel):
@@ -34,6 +35,7 @@ class FlashcardUpdate(BaseModel):
     """
     front_content: Optional[str] = None
     back_content: Optional[str] = None
+    options: Optional[List[str]] = None
     is_approved: Optional[bool] = None
 
 
@@ -43,6 +45,7 @@ class FlashcardResponse(BaseModel):
     set_id: UUID
     front_content: str
     back_content: str
+    options: Optional[List[str]] = None
     confidence_score: float
     is_approved: bool
     source_chunk: Optional[str]

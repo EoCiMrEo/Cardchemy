@@ -43,6 +43,7 @@ class FlashcardService:
             set_id=data.set_id,
             front_content=data.front_content,
             back_content=data.back_content,
+            options=data.options,
             confidence_score=confidence_score,
             source_chunk=source_chunk,
             is_approved=confidence_score >= 0.7,  # Auto-approve high confidence
@@ -82,6 +83,7 @@ class FlashcardService:
                 set_id=set_id,
                 front_content=data["front_content"],
                 back_content=data["back_content"],
+                options=data.get("options"),
                 confidence_score=confidence,
                 source_chunk=data.get("source_chunk"),
                 is_approved=confidence >= 0.7,
@@ -140,6 +142,8 @@ class FlashcardService:
             flashcard.front_content = data.front_content
         if data.back_content is not None:
             flashcard.back_content = data.back_content
+        if data.options is not None:
+            flashcard.options = data.options
         if data.is_approved is not None:
             flashcard.is_approved = data.is_approved
         

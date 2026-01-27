@@ -31,6 +31,7 @@ llm = ChatGoogleGenerativeAI(
 class GeneratedCard(BaseModel):
     front: str = Field(description="Question or term")
     back: str = Field(description="Answer or definition")
+    options: List[str] = Field(description="List of 4 options including the correct answer. The correct answer must be one of them.")
     source_snippet: str = Field(description="Short text snippet justifying the answer")
     confidence: float = Field(description="Self-assessed confidence 0.0-1.0", default=0.8)
 
@@ -128,9 +129,10 @@ async def generate_cards_from_chunk(state: Dict) -> Dict:
         Rules:
         1. Front should be a clear question or term.
         2. Back should be a concise but complete answer.
-        3. Include a very short source snippet from the text verbatim.
-        4. Assign a confidence score (0.0-1.0) based on how well the text supports the card.
-        5. Output valid JSON.
+        3. Options: Generate 3 plausible distractors (incorrect answers) + the correct answer. Total 4 options. Mix them up randomly.
+        4. Include a very short source snippet from the text verbatim.
+        5. Assign a confidence score (0.0-1.0) based on how well the text supports the card.
+        6. Output valid JSON.
 
         CHUNK TEXT:
         {text}
@@ -154,6 +156,7 @@ async def generate_cards_from_chunk(state: Dict) -> Dict:
             cards.append({
                 "front": card.front,
                 "back": card.back,
+                "options": card.options,
                 "source": card.source_snippet,
                 "confidence": card.confidence
             })

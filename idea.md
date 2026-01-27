@@ -1,6 +1,8 @@
 I want to use libraries like LangChain, CrewAI, etc to make an automatic AI Agent application that helps users (instructors) create and manage flash cards for their students. The application should allow instructors to create sets of flashcards from their lectures (PDFs), each containing a question (in front of the card) and an answer (in back of the card). Users should be able to choose different subjects (e.g., Math, History, Science) and organize flashcards accordingly. Finally, it would be beneficial to have a mobile-friendly interface so that students can access their flashcards on-the-go.
 
-# Flashcard Application Idea
+# Instructor Toolkits - Flashcard Generator Application Idea
+
+This is one of the applications of the toolkits for instructors. The main goal of this application is to help instructors create flashcards from their lectures (PDFs) and manage them easily. The application will be responsive and accessible on both desktop and mobile devices.
 
 ## Features
 
