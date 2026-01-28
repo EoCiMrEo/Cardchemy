@@ -333,6 +333,7 @@ async def generate_flashcards(
             cards_data.append({
                 "front_content": card['front'],
                 "back_content": card['back'],
+                "options": card.get('options'),
                 "confidence_score": confidence,
                 "source_chunk": card.get('source', '')[:500] # Truncate source if too long
             })

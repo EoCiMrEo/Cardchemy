@@ -76,6 +76,7 @@ async def get_study_session(
         total_due=len(cards),
         new_cards=progress["new"],
         review_cards=progress["learning"] + progress["review"],
+        time_limit=flashcard_set.time_limit,
     )
 
 

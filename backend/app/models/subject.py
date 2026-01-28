@@ -13,7 +13,7 @@ Hierarchy:
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, Boolean, ForeignKey, text
+from sqlalchemy import Column, String, Text, DateTime, Boolean, ForeignKey, text, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -110,6 +110,9 @@ class FlashcardSet(Base):
     
     # Only published sets are visible to students
     is_published = Column(Boolean, default=False)
+    
+    # Optional time limit in seconds per card
+    time_limit = Column(Integer, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     

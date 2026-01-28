@@ -195,6 +195,8 @@ class SubjectService:
             flashcard_set.description = data.description
         if data.is_published is not None:
             flashcard_set.is_published = data.is_published
+        if data.time_limit is not None:
+            flashcard_set.time_limit = data.time_limit
         
         await db.commit()
         await db.refresh(flashcard_set)

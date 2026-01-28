@@ -24,6 +24,7 @@ interface EditSetDialogProps {
     title: string
     description?: string
     is_published: boolean
+    time_limit?: number | null
   }
   onSuccess: () => void
 }
@@ -32,6 +33,7 @@ export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }:
   const [title, setTitle] = useState(set.title)
   const [description, setDescription] = useState(set.description || "")
   const [isPublished, setIsPublished] = useState(set.is_published)
+  const [timeLimit, setTimeLimit] = useState<number | string>(set.time_limit || "")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -39,6 +41,7 @@ export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }:
       setTitle(set.title)
       setDescription(set.description || "")
       setIsPublished(set.is_published)
+      setTimeLimit(set.time_limit || "")
     }
   }, [open, set])
 
@@ -49,7 +52,8 @@ export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }:
       await subjectService.updateSet(subjectId, set.id, {
         title,
         description,
-        is_published: isPublished
+        is_published: isPublished,
+        time_limit: timeLimit ? Number(timeLimit) : null
       })
       onSuccess()
       onOpenChange(false)
@@ -88,6 +92,18 @@ export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }:
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description"
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="timeLimit">Time Limit (seconds)</Label>
+              <Input
+                id="timeLimit"
+                type="number"
+                min="0"
+                value={timeLimit}
+                onChange={(e) => setTimeLimit(e.target.value)}
+                placeholder="Optional (e.g. 10)"
+              />
+              <p className="text-xs text-muted-foreground">Leave empty for no limit.</p>
             </div>
             <div className="flex items-center justify-between space-x-2 border p-3 rounded-md">
                 <Label htmlFor="published" className="flex flex-col space-y-1">

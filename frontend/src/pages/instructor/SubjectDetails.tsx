@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router-dom"
 import { subjectService } from "@/services/subjects"
+import { flashcardService } from "@/services/flashcards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -69,6 +70,8 @@ export default function SubjectDetails() {
           
           // AI Generation can take time
           setUploadMessage("AI Agents extracting concepts...")
+          
+          await flashcardService.generateCards(formData)
           
           setUploadMessage("Done!")
           setIsUploading(false)

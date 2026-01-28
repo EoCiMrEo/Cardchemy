@@ -128,6 +128,7 @@ class StudySessionResponse(BaseModel):
     total_due: int
     new_cards: int
     review_cards: int
+    time_limit: Optional[int] = None
 
 
 # Forward reference resolution

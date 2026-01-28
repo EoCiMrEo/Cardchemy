@@ -60,6 +60,7 @@ class FlashcardSetUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     is_published: Optional[bool] = None
+    time_limit: Optional[int] = None
 
 
 class FlashcardSetResponse(BaseModel):
@@ -70,6 +71,7 @@ class FlashcardSetResponse(BaseModel):
     description: Optional[str]
     source_pdf_name: Optional[str]
     is_published: bool
+    time_limit: Optional[int]
     created_at: datetime
     flashcard_count: Optional[int] = 0
     approved_count: Optional[int] = 0

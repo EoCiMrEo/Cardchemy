@@ -41,7 +41,7 @@ export const subjectService = {
     return response.data;
   },
 
-  async updateSet(subjectId: string, setId: string, data: { title?: string; description?: string; is_published?: boolean }) {
+  async updateSet(subjectId: string, setId: string, data: { title?: string; description?: string; is_published?: boolean; time_limit?: number | null }) {
     const response = await api.put(`/subjects/${subjectId}/sets/${setId}`, data);
     return response.data;
   },
