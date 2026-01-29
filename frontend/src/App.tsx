@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'rea
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import JoinCourse from './pages/JoinCourse';
 import Dashboard from './pages/Dashboard';
 import SubjectDetails from './pages/instructor/SubjectDetails';
 import SetView from './pages/instructor/SetView';
@@ -38,6 +39,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/join" element={<JoinCourse />} />
           
           <Route
             path="/dashboard"

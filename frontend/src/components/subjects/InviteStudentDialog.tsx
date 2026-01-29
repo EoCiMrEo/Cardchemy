@@ -27,7 +27,7 @@ export function InviteStudentDialog({ open, onOpenChange, subjectId, subjectName
             // Construct Link using current host
             const protocol = window.location.protocol
             const host = window.location.host
-            const link = `${protocol}//${host}/register?token=${result.token}`
+            const link = `${protocol}//${host}/join?token=${result.token}`
             
             setInviteLink(link)
             setCopied(false)

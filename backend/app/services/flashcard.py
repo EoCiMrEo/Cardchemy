@@ -388,10 +388,16 @@ class FlashcardService:
         studied_ids = set()
         for progress in progress_list:
             status_counts[progress.status] = status_counts.get(progress.status, 0) + 1
-            studied_ids.add(progress.flashcard_id)
+            # Only count as "studied" if the student got at least one correct answer
+            if progress.correct_count >= 1:
+                studied_ids.add(progress.flashcard_id)
         
         # Cards without progress are "new"
         new_count = total_cards - len(studied_ids)
+        
+        # Count correct answers across all studied cards
+        total_correct = sum(p.correct_count for p in progress_list)
+        total_studied = len(studied_ids)
         
         # Completion = (review + mastered) / total
         completion = (status_counts[CardStatus.REVIEW.value] + status_counts[CardStatus.MASTERED.value]) / total_cards
@@ -402,5 +408,7 @@ class FlashcardService:
             "learning": status_counts[CardStatus.LEARNING.value],
             "review": status_counts[CardStatus.REVIEW.value],
             "mastered": status_counts[CardStatus.MASTERED.value],
+            "studied": total_studied,  # Cards the student has seen at least once
+            "correct_count": total_correct,  # Total correct answers
             "completion_percentage": round(completion * 100, 1),
         }

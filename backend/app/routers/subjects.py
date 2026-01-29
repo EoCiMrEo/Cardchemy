@@ -181,6 +181,67 @@ async def generate_invite_token(
     return {"token": token}
 
 
+@router.post("/join")
+async def join_course_with_token(
+    token: str = Body(..., embed=True),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Join a course using an invite token.
+    
+    For existing users who already have an account.
+    Verifies the token and enrolls the user in the subject.
+    """
+    from app.services.auth import AuthService
+    from app.models.flashcard import Enrollment
+    from sqlalchemy import select
+    
+    # Verify token
+    try:
+        token_payload = AuthService.verify_token(token)
+        subject_id = token_payload.sub
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired invite token"
+        )
+    
+    # Check if subject exists
+    subject = await SubjectService.get_subject(db, UUID(subject_id))
+    if not subject:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+    
+    # Check if already enrolled
+    existing = await db.execute(
+        select(Enrollment).where(
+            Enrollment.student_id == user.id,
+            Enrollment.subject_id == UUID(subject_id)
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already enrolled in this course"
+        )
+    
+    # Create enrollment
+    enrollment = Enrollment(
+        student_id=user.id,
+        subject_id=UUID(subject_id)
+    )
+    db.add(enrollment)
+    await db.commit()
+    
+    return {
+        "message": "Successfully joined course",
+        "subject_name": subject.name
+    }
+
+
 # ============================================
 # FlashcardSet Endpoints
 # ============================================

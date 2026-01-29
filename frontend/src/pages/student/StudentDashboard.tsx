@@ -2,15 +2,27 @@ import { useState, useEffect } from "react"
 import { subjectService } from "@/services/subjects"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookOpen, ArrowRight, Loader2, Play } from "lucide-react"
+import { BookOpen, ArrowRight, Loader2, Play, UserPlus } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 export default function StudentDashboard() {
   const [subjects, setSubjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [inviteCode, setInviteCode] = useState("")
-  // const [joining, setJoining] = useState(false) // implement invite acceptance later
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false)
+  const [joinToken, setJoinToken] = useState("")
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState("")
   const { user } = useAuth()
 
   useEffect(() => {
@@ -29,6 +41,24 @@ export default function StudentDashboard() {
     }
   }
 
+  const handleJoinCourse = async () => {
+    if (!joinToken.trim()) return
+    
+    setJoining(true)
+    setJoinError("")
+    
+    try {
+      await subjectService.joinCourse(joinToken.trim())
+      setJoinDialogOpen(false)
+      setJoinToken("")
+      await loadSubjects() // Refresh the list
+    } catch (err: any) {
+      setJoinError(err.response?.data?.detail || "Failed to join course")
+    } finally {
+      setJoining(false)
+    }
+  }
+
   if (loading) return <div className="p-8"><Loader2 className="animate-spin" /></div>
 
   return (
@@ -38,7 +68,43 @@ export default function StudentDashboard() {
           <h1 className="text-3xl font-bold tracking-tight">My Courses</h1>
           <p className="text-muted-foreground mt-1">Select a subject to start studying.</p>
         </div>
-        {/* Placeholder for "Join with Code" button */}
+        
+        <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2">
+              <UserPlus className="h-4 w-4" />
+              Join Course
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Join a Course</DialogTitle>
+              <DialogDescription>
+                Enter the invite token provided by your instructor to join a course.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <Input
+                placeholder="Paste invite token here"
+                value={joinToken}
+                onChange={(e) => setJoinToken(e.target.value)}
+                disabled={joining}
+              />
+              {joinError && (
+                <p className="text-sm text-destructive">{joinError}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setJoinDialogOpen(false)} disabled={joining}>
+                Cancel
+              </Button>
+              <Button onClick={handleJoinCourse} disabled={joining || !joinToken.trim()}>
+                {joining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Join Course
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

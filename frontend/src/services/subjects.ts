@@ -54,5 +54,10 @@ export const subjectService = {
   async generateInvite(subjectId: string, expiresInHours: number) {
     const response = await api.post(`/subjects/${subjectId}/invite`, { expires_in_hours: expiresInHours });
     return response.data;
+  },
+
+  async joinCourse(token: string) {
+    const response = await api.post('/subjects/join', { token });
+    return response.data;
   }
 };
