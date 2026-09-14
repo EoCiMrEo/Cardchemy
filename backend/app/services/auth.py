@@ -1,383 +1,440 @@
-"""
-auth.py - Authentication Service
+"""Authentication, token, session, invitation, and password-reset services."""
 
-This service handles all authentication logic:
-- Password hashing with bcrypt
-- JWT token creation and verification
-- User registration and login
+from __future__ import annotations
 
-Security concepts:
-- Passwords are NEVER stored in plain text
-- bcrypt adds salt automatically (protects against rainbow tables)
-- JWT tokens are signed (tamper-proof) but not encrypted (don't put secrets in them)
-"""
-
-from datetime import datetime, timedelta
-from typing import Optional
-from uuid import UUID
+import hashlib
 import secrets
 import string
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+from uuid import UUID, uuid4
 
+from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from pydantic import ValidationError
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from fastapi import HTTPException, status
 
 from app.config import get_settings
-from app.models.user import User, UserRole, InviteLink
-from app.schemas.user import UserCreate, TokenData
+from app.models.flashcard import Enrollment
+from app.models.user import AuthSession, InviteLink, PasswordResetToken, User, UserRole
+from app.schemas.user import TokenData, UserCreate
+
 
 settings = get_settings()
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
+DUMMY_PASSWORD_HASH = pwd_context.hash("timing-only-password-value")
 
-# Password hashing context
-# bcrypt is the industry standard for password hashing
-# - Automatically adds random salt to each password
-# - Slow by design (makes brute-force attacks impractical)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def db_utcnow() -> datetime:
+    """Naive UTC for compatibility with the current pre-migration schema."""
+
+    return datetime.utcnow()
+
+
+def _jti_hash(jti: UUID | str) -> str:
+    return hashlib.sha256(str(jti).encode("ascii")).hexdigest()
+
+
+def _unauthorized(detail: str = "Could not validate credentials") -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 class AuthService:
-    """
-    Service class for authentication operations.
-    
-    All methods are async to work with our async database.
-    """
-    
-    # ============================================
-    # Password Hashing
-    # ============================================
-    
+    @staticmethod
+    def normalize_email(email: str) -> str:
+        return email.strip().lower()
+
     @staticmethod
     def hash_password(password: str) -> str:
-        """
-        Hash a password using bcrypt.
-        
-        Args:
-            password: Plain text password
-            
-        Returns:
-            Hashed password string (includes salt)
-        
-        Example:
-            hashed = AuthService.hash_password("mypassword")
-            # Returns something like: $2b$12$LQv3c1yqBWVHx...
-        """
         return pwd_context.hash(password)
-    
+
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """
-        Verify a password against its hash.
-        
-        Args:
-            plain_password: Password to verify
-            hashed_password: Hash to verify against
-            
-        Returns:
-            True if password matches, False otherwise
-        """
-        return pwd_context.verify(plain_password, hashed_password)
-    
-    # ============================================
-    # JWT Token Management
-    # ============================================
-    
-    @staticmethod
-    def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-        """
-        Create a JWT access token.
-        
-        Args:
-            data: Dictionary of claims to include in the token
-            expires_delta: How long until the token expires
-            
-        Returns:
-            Encoded JWT string
-        
-        The token contains:
-        - sub: Subject (user email)
-        - user_id: User's UUID
-        - role: User's role (instructor/student)
-        - exp: Expiration timestamp
-        """
-        to_encode = data.copy()
-        
-        # Set expiration time
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
-            expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-        
-        to_encode.update({"exp": expire})
-        
-        # Create the JWT
-        # The algorithm (HS256) uses our secret_key to sign the token
-        encoded_jwt = jwt.encode(
-            to_encode,
-            settings.secret_key,
-            algorithm=settings.algorithm
-        )
-        
-        return encoded_jwt
-    
-    @staticmethod
-    def create_refresh_token(data: dict) -> str:
-        """
-        Create a longer-lived refresh token.
-        
-        Refresh tokens are used to get new access tokens
-        without requiring the user to log in again.
-        """
-        to_encode = data.copy()
-        expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
-        to_encode.update({"exp": expire, "type": "refresh"})
-        
-        encoded_jwt = jwt.encode(
-            to_encode,
-            settings.secret_key,
-            algorithm=settings.algorithm
-        )
-        
-        return encoded_jwt
-    
-    @staticmethod
-    def verify_token(token: str) -> TokenData:
-        """
-        Verify and decode a JWT token.
-        
-        Args:
-            token: The JWT string to verify
-            
-        Returns:
-            TokenData with the decoded claims
-            
-        Raises:
-            HTTPException: If token is invalid or expired
-        """
-        credentials_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
         try:
-            # Decode and verify the token
+            return pwd_context.verify(plain_password, hashed_password)
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _encode_token(
+        *,
+        token_type: Literal["access", "refresh", "invitation", "password_reset"],
+        subject: UUID,
+        expires_at: datetime,
+        jti: UUID | None = None,
+        session_id: UUID | None = None,
+        email: str | None = None,
+        role: UserRole | str | None = None,
+        subject_id: UUID | None = None,
+    ) -> str:
+        now = utcnow()
+        role_value = role.value if isinstance(role, UserRole) else role
+        claims: dict[str, object] = {
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "sub": str(subject),
+            "jti": str(jti or uuid4()),
+            "type": token_type,
+            "iat": now,
+            "nbf": now,
+            "exp": expires_at,
+        }
+        if session_id:
+            claims["sid"] = str(session_id)
+        if email:
+            claims["email"] = email
+        if role_value:
+            claims["role"] = role_value
+        if subject_id:
+            claims["subject_id"] = str(subject_id)
+
+        return jwt.encode(claims, settings.secret_key_value, algorithm=settings.algorithm)
+
+    @staticmethod
+    def _decode_token(
+        token: str,
+        expected_type: Literal["access", "refresh", "invitation", "password_reset"],
+        *,
+        invalid_status: int = status.HTTP_401_UNAUTHORIZED,
+    ) -> TokenData:
+        try:
             payload = jwt.decode(
                 token,
-                settings.secret_key,
-                algorithms=[settings.algorithm]
+                settings.secret_key_value,
+                algorithms=[settings.algorithm],
+                audience=settings.jwt_audience,
+                issuer=settings.jwt_issuer,
+                options={
+                    "require_exp": True,
+                    "require_iat": True,
+                    "require_nbf": True,
+                    "require_sub": True,
+                    "require_jti": True,
+                    "leeway": settings.jwt_clock_skew_seconds,
+                },
             )
-            
-            # Extract claims
-            email: str = payload.get("sub")
-            user_id: str = payload.get("user_id")
-            role: str = payload.get("role")
-            
-            if email is None:
-                raise credentials_exception
-            
-            return TokenData(
-                sub=email,
-                user_id=UUID(user_id) if user_id else None,
-                role=role
+            if payload.get("type") != expected_type:
+                raise ValueError("wrong token type")
+
+            issued_at = datetime.fromtimestamp(float(payload["iat"]), UTC)
+            expires_at = datetime.fromtimestamp(float(payload["exp"]), UTC)
+            if issued_at > utcnow() + timedelta(seconds=settings.jwt_clock_skew_seconds):
+                raise ValueError("issued-at is in the future")
+
+            session_id = UUID(payload["sid"]) if payload.get("sid") else None
+            data = TokenData(
+                sub=UUID(payload["sub"]),
+                jti=UUID(payload["jti"]),
+                type=payload["type"],
+                issued_at=issued_at,
+                expires_at=expires_at,
+                session_id=session_id,
+                email=payload.get("email"),
+                role=payload.get("role"),
+                subject_id=UUID(payload["subject_id"]) if payload.get("subject_id") else None,
             )
-            
-        except JWTError:
-            raise credentials_exception
-    
-    # ============================================
-    # User Management
-    # ============================================
-    
+            if expected_type in {"access", "refresh"} and not data.session_id:
+                raise ValueError("missing session ID")
+            if expected_type == "invitation":
+                if data.role != UserRole.STUDENT.value or data.subject_id != data.sub:
+                    raise ValueError("invalid invitation claims")
+            return data
+        except (JWTError, KeyError, TypeError, ValueError, ValidationError):
+            detail = "Invalid or expired token"
+            if invalid_status == status.HTTP_401_UNAUTHORIZED:
+                raise _unauthorized(detail) from None
+            raise HTTPException(status_code=invalid_status, detail=detail) from None
+
     @staticmethod
-    async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-        """
-        Find a user by their email address.
-        
-        Args:
-            db: Database session
-            email: Email to search for
-            
-        Returns:
-            User object if found, None otherwise
-        """
+    def verify_access_token(token: str) -> TokenData:
+        return AuthService._decode_token(token, "access")
+
+    @staticmethod
+    def verify_refresh_token(token: str) -> TokenData:
+        return AuthService._decode_token(token, "refresh")
+
+    @staticmethod
+    def verify_invitation_token(token: str) -> TokenData:
+        return AuthService._decode_token(token, "invitation", invalid_status=status.HTTP_400_BAD_REQUEST)
+
+    @staticmethod
+    def verify_password_reset_token(token: str) -> TokenData:
+        return AuthService._decode_token(token, "password_reset", invalid_status=status.HTTP_400_BAD_REQUEST)
+
+    @staticmethod
+    async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+        normalized_email = AuthService.normalize_email(email)
         result = await db.execute(
-            select(User).where(User.email == email)
+            select(User).where(func.lower(User.email) == normalized_email)
         )
         return result.scalar_one_or_none()
-    
+
     @staticmethod
-    async def get_user_by_id(db: AsyncSession, user_id: UUID) -> Optional[User]:
-        """Find a user by their UUID."""
-        result = await db.execute(
-            select(User).where(User.id == user_id)
-        )
+    async def get_user_by_id(db: AsyncSession, user_id: UUID) -> User | None:
+        result = await db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
-    
+
     @staticmethod
-    async def create_user(
-        db: AsyncSession,
-        user_data: UserCreate,
-        role: UserRole = UserRole.INSTRUCTOR
-    ) -> User:
-        """
-        Create a new user account.
-        
-        Args:
-            db: Database session
-            user_data: Registration data (email, password, name)
-            role: User role (instructor by default)
-            
-        Returns:
-            The created User object
-            
-        Raises:
-            HTTPException: If email is already registered
-        """
-        # Check if email already exists
-        existing = await AuthService.get_user_by_email(db, user_data.email)
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        
-        # Create new user with hashed password
+    async def create_user(db: AsyncSession, user_data: UserCreate, role: UserRole) -> User:
+        email = AuthService.normalize_email(str(user_data.email))
+        if await AuthService.get_user_by_email(db, email):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
         user = User(
-            email=user_data.email,
+            email=email,
             hashed_password=AuthService.hash_password(user_data.password),
             full_name=user_data.full_name,
             role=role,
         )
-        
         db.add(user)
-        await db.commit()
+        await db.flush()
         await db.refresh(user)
-        
         return user
-    
+
     @staticmethod
-    async def authenticate_user(
-        db: AsyncSession,
-        email: str,
-        password: str
-    ) -> Optional[User]:
-        """
-        Authenticate a user by email and password.
-        
-        Args:
-            db: Database session
-            email: User's email
-            password: Plain text password to verify
-            
-        Returns:
-            User object if authenticated, None otherwise
-        """
+    async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
         user = await AuthService.get_user_by_email(db, email)
-        
         if not user:
+            AuthService.verify_password(password, DUMMY_PASSWORD_HASH)
             return None
-        
-        if not AuthService.verify_password(password, user.hashed_password):
-            return None
-        
-        return user
-    
-    # ============================================
-    # Invite Link Management
-    # ============================================
-    
+        return user if AuthService.verify_password(password, user.hashed_password) else None
+
     @staticmethod
-    def generate_invite_code(length: int = 8) -> str:
-        """
-        Generate a random invite code.
-        
-        Uses cryptographically secure random for security.
-        """
-        alphabet = string.ascii_uppercase + string.digits
-        return ''.join(secrets.choice(alphabet) for _ in range(length))
-    
+    def _access_token(user: User, session_id: UUID) -> str:
+        return AuthService._encode_token(
+            token_type="access",
+            subject=user.id,
+            session_id=session_id,
+            email=user.email,
+            role=user.role,
+            expires_at=utcnow() + timedelta(minutes=settings.access_token_expire_minutes),
+        )
+
     @staticmethod
-    async def create_invite_link(
+    def _refresh_token(user: User, session_id: UUID, jti: UUID, expires_at: datetime) -> str:
+        return AuthService._encode_token(
+            token_type="refresh",
+            subject=user.id,
+            session_id=session_id,
+            jti=jti,
+            email=user.email,
+            role=user.role,
+            expires_at=expires_at,
+        )
+
+    @staticmethod
+    async def create_session(db: AsyncSession, user: User) -> tuple[str, str]:
+        now = db_utcnow()
+        session_id = uuid4()
+        refresh_jti = uuid4()
+        session_expires = now + timedelta(days=settings.refresh_session_expire_days)
+        refresh_expires = min(
+            now + timedelta(days=settings.refresh_token_expire_days),
+            session_expires,
+        ).replace(tzinfo=UTC)
+        session = AuthSession(
+            id=session_id,
+            user_id=user.id,
+            refresh_jti_hash=_jti_hash(refresh_jti),
+            created_at=now,
+            last_used_at=now,
+            expires_at=session_expires,
+        )
+        db.add(session)
+        await db.flush()
+        return (
+            AuthService._access_token(user, session_id),
+            AuthService._refresh_token(user, session_id, refresh_jti, refresh_expires),
+        )
+
+    @staticmethod
+    async def session_is_active(db: AsyncSession, session_id: UUID, user_id: UUID) -> bool:
+        result = await db.execute(
+            select(AuthSession.id).where(
+                AuthSession.id == session_id,
+                AuthSession.user_id == user_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > db_utcnow(),
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    @staticmethod
+    async def rotate_refresh_token(db: AsyncSession, token: str) -> tuple[User, str, str]:
+        claims = AuthService.verify_refresh_token(token)
+        result = await db.execute(
+            select(AuthSession).where(AuthSession.id == claims.session_id).with_for_update()
+        )
+        session = result.scalar_one_or_none()
+        now = db_utcnow()
+        if not session or session.user_id != claims.sub or session.expires_at <= now:
+            raise _unauthorized("Refresh session is invalid or expired")
+        if session.revoked_at:
+            raise _unauthorized("Refresh session has been revoked")
+        if not secrets.compare_digest(session.refresh_jti_hash, _jti_hash(claims.jti)):
+            session.revoked_at = now
+            session.reuse_detected_at = now
+            await db.commit()
+            raise _unauthorized("Refresh token reuse detected")
+
+        user = await AuthService.get_user_by_id(db, claims.sub)
+        if not user:
+            session.revoked_at = now
+            await db.commit()
+            raise _unauthorized("User not found")
+
+        new_jti = uuid4()
+        session.refresh_jti_hash = _jti_hash(new_jti)
+        session.last_used_at = now
+        refresh_expires = min(
+            now + timedelta(days=settings.refresh_token_expire_days),
+            session.expires_at,
+        ).replace(tzinfo=UTC)
+        await db.commit()
+        return (
+            user,
+            AuthService._access_token(user, session.id),
+            AuthService._refresh_token(user, session.id, new_jti, refresh_expires),
+        )
+
+    @staticmethod
+    async def revoke_session(db: AsyncSession, session_id: UUID, user_id: UUID) -> None:
+        await db.execute(
+            update(AuthSession)
+            .where(AuthSession.id == session_id, AuthSession.user_id == user_id)
+            .values(revoked_at=db_utcnow())
+        )
+        await db.commit()
+
+    @staticmethod
+    def generate_invite_code(length: int = 20) -> str:
+        alphabet = string.ascii_letters + string.digits
+        return "".join(secrets.choice(alphabet) for _ in range(length))
+
+    @staticmethod
+    async def create_invitation(
         db: AsyncSession,
         instructor_id: UUID,
         subject_id: UUID,
-        expires_in_days: int = 7
-    ) -> InviteLink:
-        """
-        Create an invite link for a subject.
-        
-        Args:
-            db: Database session
-            instructor_id: Who is creating the invite
-            subject_id: Which subject the invite is for
-            expires_in_days: How long the invite is valid
-            
-        Returns:
-            The created InviteLink
-        """
-        code = AuthService.generate_invite_code()
-        expires_at = datetime.utcnow() + timedelta(days=expires_in_days) if expires_in_days else None
-        
+        expires_in_hours: int,
+    ) -> tuple[InviteLink, str]:
+        if not settings.invitation_min_hours <= expires_in_hours <= settings.invitation_max_hours:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Invitation lifetime must be between {settings.invitation_min_hours} "
+                    f"and {settings.invitation_max_hours} hours"
+                ),
+            )
+        expires_at = db_utcnow() + timedelta(hours=expires_in_hours)
         invite = InviteLink(
-            code=code,
+            code=AuthService.generate_invite_code(),
             instructor_id=instructor_id,
             subject_id=subject_id,
             expires_at=expires_at,
         )
-        
         db.add(invite)
-        await db.commit()
-        await db.refresh(invite)
-        
-        return invite
-    
+        await db.flush()
+        token = AuthService._encode_token(
+            token_type="invitation",
+            subject=subject_id,
+            subject_id=subject_id,
+            jti=invite.id,
+            role=UserRole.STUDENT,
+            expires_at=expires_at.replace(tzinfo=UTC),
+        )
+        return invite, token
+
     @staticmethod
-    async def get_invite_by_code(db: AsyncSession, code: str) -> Optional[InviteLink]:
-        """Find an invite link by its code."""
+    async def consume_invitation(db: AsyncSession, token: str, student: User) -> InviteLink:
+        if student.role != UserRole.STUDENT:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students can join subjects")
+        claims = AuthService.verify_invitation_token(token)
         result = await db.execute(
-            select(InviteLink).where(InviteLink.code == code)
+            select(InviteLink).where(InviteLink.id == claims.jti).with_for_update()
         )
-        return result.scalar_one_or_none()
-    
+        invite = result.scalar_one_or_none()
+        now = db_utcnow()
+        if not invite or invite.subject_id != claims.subject_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invitation")
+        if invite.used_by or invite.used_at:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation has already been used")
+        if not invite.expires_at or invite.expires_at <= now:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has expired")
+
+        existing = await db.execute(
+            select(Enrollment.id).where(
+                Enrollment.student_id == student.id,
+                Enrollment.subject_id == invite.subject_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already enrolled in this subject")
+
+        db.add(Enrollment(student_id=student.id, subject_id=invite.subject_id))
+        invite.used_by = student.id
+        invite.used_at = now
+        await db.flush()
+        return invite
+
     @staticmethod
-    async def use_invite(
-        db: AsyncSession,
-        invite: InviteLink,
-        student_id: UUID
-    ) -> bool:
-        """
-        Mark an invite as used and enroll the student.
-        
-        Args:
-            db: Database session
-            invite: The invite link being used
-            student_id: The student using the invite
-            
-        Returns:
-            True if successful, False if invite is invalid/expired
-        """
-        # Check if already used
-        if invite.used_by:
-            return False
-        
-        # Check if expired
-        if invite.expires_at and invite.expires_at < datetime.utcnow():
-            return False
-        
-        # Mark as used
-        invite.used_by = student_id
-        invite.used_at = datetime.utcnow()
-        
-        # Create enrollment
-        from app.models.flashcard import Enrollment
-        enrollment = Enrollment(
-            student_id=student_id,
-            subject_id=invite.subject_id,
+    async def create_password_reset_token(db: AsyncSession, user: User) -> str:
+        now = db_utcnow()
+        await db.execute(
+            update(PasswordResetToken)
+            .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+            .values(used_at=now)
         )
-        
-        db.add(enrollment)
+        reset = PasswordResetToken(
+            user_id=user.id,
+            created_at=now,
+            expires_at=now + timedelta(minutes=settings.password_reset_expire_minutes),
+        )
+        db.add(reset)
+        await db.flush()
+        return AuthService._encode_token(
+            token_type="password_reset",
+            subject=user.id,
+            jti=reset.id,
+            expires_at=reset.expires_at.replace(tzinfo=UTC),
+        )
+
+    @staticmethod
+    async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+        claims = AuthService.verify_password_reset_token(token)
+        result = await db.execute(
+            select(PasswordResetToken)
+            .where(PasswordResetToken.id == claims.jti)
+            .with_for_update()
+        )
+        reset = result.scalar_one_or_none()
+        now = db_utcnow()
+        if (
+            not reset
+            or reset.user_id != claims.sub
+            or reset.used_at is not None
+            or reset.expires_at <= now
+        ):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+        user = await AuthService.get_user_by_id(db, claims.sub)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+        user.hashed_password = AuthService.hash_password(new_password)
+        reset.used_at = now
+        await db.execute(
+            update(AuthSession)
+            .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
         await db.commit()
-        
-        return True

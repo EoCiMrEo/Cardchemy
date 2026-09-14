@@ -1,94 +1,78 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
-import { subjectService } from "@/services/subjects";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { isAxiosError } from 'axios'
+
+import { useAuth } from '@/context/AuthContext'
+import { subjectService } from '@/services/subjects'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
 
 export default function JoinCourse() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
-  
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
-  const [message, setMessage] = useState("");
-  const [courseName, setCourseName] = useState("");
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token')
+  const navigate = useNavigate()
+  const { user, isLoading: authLoading } = useAuth()
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
+  const [message, setMessage] = useState('')
+  const [courseName, setCourseName] = useState('')
 
   useEffect(() => {
-    if (authLoading) return;
-
-    // If not logged in, redirect to register with token
+    if (authLoading) return
+    if (!token) return
     if (!user) {
-      navigate(`/register?token=${token}`);
-      return;
+      navigate(`/register?token=${encodeURIComponent(token)}`, { replace: true })
+      return
     }
+    if (user.role !== 'student') return
 
-    // If logged in, join the course
-    if (token) {
-      joinCourse();
-    } else {
-      setStatus("error");
-      setMessage("No invite token provided");
-    }
-  }, [user, authLoading, token]);
+    let active = true
+    void subjectService.joinCourse(token).then(
+      (result) => {
+        if (!active) return
+        setStatus('success')
+        setCourseName(result.subject_name)
+        setMessage(result.message)
+      },
+      (caught: unknown) => {
+        if (!active) return
+        setStatus('error')
+        setMessage(
+          isAxiosError<{ detail?: string }>(caught) && caught.response?.data.detail
+            ? caught.response.data.detail
+            : 'Failed to join course',
+        )
+      },
+    )
+    return () => { active = false }
+  }, [authLoading, navigate, token, user])
 
-  const joinCourse = async () => {
-    try {
-      const result = await subjectService.joinCourse(token!);
-      setStatus("success");
-      setCourseName(result.subject_name);
-      setMessage(result.message);
-      
-      // Redirect to dashboard after 2 seconds
-      setTimeout(() => navigate("/dashboard"), 2000);
-    } catch (err: any) {
-      setStatus("error");
-      setMessage(err.response?.data?.detail || "Failed to join course");
-    }
-  };
+  const blockedMessage = !token
+    ? 'No invitation token was provided'
+    : user?.role === 'instructor'
+      ? 'Only student accounts can accept course invitations'
+      : ''
+  const displayStatus = blockedMessage ? 'error' : status
+  const displayMessage = blockedMessage || message
 
-  if (authLoading || status === "loading") {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" />
-          <p className="mt-4 text-muted-foreground">Joining course...</p>
-        </div>
-      </div>
-    );
+  if (authLoading || (!user && token) || displayStatus === 'loading') {
+    return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin" /></div>
   }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
-          {status === "success" ? (
-            <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
-          ) : (
-            <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          )}
-          <CardTitle className="text-2xl">
-            {status === "success" ? "Course Joined!" : "Join Failed"}
-          </CardTitle>
+          {displayStatus === 'success' ? <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" /> : <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />}
+          <CardTitle className="text-2xl">{displayStatus === 'success' ? 'Course Joined' : 'Join Failed'}</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
-          {status === "success" ? (
-            <>
-              <p className="text-lg font-medium text-green-600">{courseName}</p>
-              <p className="text-muted-foreground">Redirecting to dashboard...</p>
-            </>
-          ) : (
-            <>
-              <p className="text-destructive">{message}</p>
-              <Button onClick={() => navigate("/dashboard")} className="w-full">
-                Go to Dashboard
-              </Button>
-            </>
-          )}
+          {courseName && <p className="text-lg font-medium text-green-600">{courseName}</p>}
+          <p className={displayStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{displayMessage}</p>
+          <Button onClick={() => navigate('/dashboard', { replace: true })} className="w-full">Go to Dashboard</Button>
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

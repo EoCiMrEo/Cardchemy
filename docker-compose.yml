@@ -11,17 +11,17 @@
 
 services:
   # ===========================================
-  # PostgreSQL Database with pgvector
+  # PostgreSQL Database
   # ===========================================
   db:
-    image: pgvector/pgvector:pg16
+    image: postgres:16
     container_name: flashcard_db
     ports:
       - "5432:5432"
     environment:
       POSTGRES_DB: flashcard_gen
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -42,10 +42,19 @@ services:
       - "8000:8000"
     environment:
       # Override DATABASE_URL to use Docker network hostname
-      DATABASE_URL: postgresql+asyncpg://admin:password@db:5432/flashcard_gen
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      DEBUG: "true"
+      DEBUG: ${DEBUG:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -55,7 +64,7 @@ services:
     # Override CMD for development (with --reload)
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_student
 from app.schemas.flashcard import (
     FlashcardResponse,
     StudyProgressUpdate,
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/study", tags=["Study"])
 async def get_study_session(
     set_id: UUID,
     limit: int = 20,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -83,7 +83,7 @@ async def get_study_session(
 @router.post("/progress", response_model=StudyProgressResponse)
 async def update_study_progress(
     data: StudyProgressUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -113,6 +113,11 @@ async def update_study_progress(
         )
     
     flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id)
+    if not flashcard_set or not flashcard_set.is_published or not flashcard.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard not found",
+        )
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
     
     # Update progress
@@ -124,7 +129,7 @@ async def update_study_progress(
 @router.get("/sets/{set_id}/progress")
 async def get_set_progress(
     set_id: UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -147,6 +152,11 @@ async def get_set_progress(
         )
     
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
+    if not flashcard_set.is_published:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard set not found",
+        )
     
     progress = await FlashcardService.get_set_progress(db, user.id, set_id)
     
@@ -156,7 +166,7 @@ async def get_set_progress(
 @router.post("/sync")
 async def sync_offline_progress(
     progress_updates: List[StudyProgressUpdate],
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -176,11 +186,15 @@ async def sync_offline_progress(
     
     for update in progress_updates:
         try:
-            # Verify access (lightweight - just check flashcard exists)
             flashcard = await FlashcardService.get_flashcard(db, update.flashcard_id)
-            if flashcard:
-                await FlashcardService.update_progress(db, user.id, update)
-                synced += 1
+            if not flashcard or not flashcard.is_approved:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
+            flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id)
+            if not flashcard_set or not flashcard_set.is_published:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard set not found")
+            await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
+            await FlashcardService.update_progress(db, user.id, update)
+            synced += 1
         except Exception as e:
             errors.append({
                 "flashcard_id": str(update.flashcard_id),

@@ -69,7 +69,7 @@ app = FastAPI(
     Use the `/auth/login` endpoint to get a JWT token, then click
     "Authorize" above and enter: `Bearer <your_token>`
     """,
-    version="0.1.0",
+    version=settings.app_version,
     lifespan=lifespan,
     docs_url="/docs",      # Swagger UI at /docs
     redoc_url="/redoc",    # ReDoc at /redoc
@@ -86,12 +86,7 @@ app.add_middleware(
     CORSMiddleware,
     # In development, allow requests from the frontend dev server
     # In production, replace with your actual frontend domain
-    allow_origins=[
-        "http://localhost:5173",  # Vite default port
-        "http://localhost:3000",  # Alternative
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,  # Allow cookies/auth headers
     allow_methods=["*"],     # Allow all HTTP methods
     allow_headers=["*"],     # Allow all headers
@@ -122,7 +117,7 @@ async def root():
     """
     return {
         "name": settings.app_name,
-        "version": "0.1.0",
+        "version": settings.app_version,
         "status": "running",
         "docs": "/docs",
     }

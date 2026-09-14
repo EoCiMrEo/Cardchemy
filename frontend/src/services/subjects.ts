@@ -1,4 +1,12 @@
 import api from './api';
+import type { InvitationResponse } from './types';
+
+interface JoinCourseResponse {
+  message: string;
+  subject_name: string;
+}
+
+const activeJoinRequests = new Map<string, Promise<JoinCourseResponse>>();
 
 export const subjectService = {
   async getSubjects() {
@@ -51,13 +59,20 @@ export const subjectService = {
     return response.data;
   },
 
-  async generateInvite(subjectId: string, expiresInHours: number) {
-    const response = await api.post(`/subjects/${subjectId}/invite`, { expires_in_hours: expiresInHours });
+  async generateInvite(subjectId: string, expiresInHours: number): Promise<InvitationResponse> {
+    const response = await api.post<InvitationResponse>(`/subjects/${subjectId}/invite`, { expires_in_hours: expiresInHours });
     return response.data;
   },
 
-  async joinCourse(token: string) {
-    const response = await api.post('/subjects/join', { token });
-    return response.data;
+  joinCourse(token: string): Promise<JoinCourseResponse> {
+    const existing = activeJoinRequests.get(token);
+    if (existing) return existing;
+
+    const request = api
+      .post<JoinCourseResponse>('/subjects/invitations/accept', { token })
+      .then((response) => response.data)
+      .finally(() => activeJoinRequests.delete(token));
+    activeJoinRequests.set(token, request);
+    return request;
   }
 };

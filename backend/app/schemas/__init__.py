@@ -7,6 +7,11 @@ from app.schemas.user import (
     TokenData,
     InviteLinkCreate,
     InviteLinkResponse,
+    InvitationCreate,
+    InvitationAccept,
+    PasswordForgotRequest,
+    PasswordResetRequest,
+    MessageResponse,
 )
 from app.schemas.subject import (
     SubjectCreate,
@@ -33,6 +38,11 @@ __all__ = [
     "TokenData",
     "InviteLinkCreate",
     "InviteLinkResponse",
+    "InvitationCreate",
+    "InvitationAccept",
+    "PasswordForgotRequest",
+    "PasswordResetRequest",
+    "MessageResponse",
     # Subject schemas
     "SubjectCreate",
     "SubjectUpdate",

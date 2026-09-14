@@ -22,7 +22,7 @@ export default function Login() {
 
     try {
       const data = await authService.login({ email, password })
-      login(data.access_token, data.refresh_token)
+      await login(data.access_token)
       navigate("/dashboard")
     } catch (err: any) {
       let errorMessage = "Failed to login";
@@ -83,9 +83,8 @@ export default function Login() {
           </form>
         </CardContent>
         <CardFooter className="flex justify-center text-sm text-muted-foreground">
-          Don't have an account?{" "}
-          <Link to="/register" className="ml-1 text-primary hover:underline font-medium">
-            Sign up
+          <Link to="/forgot-password" className="text-primary hover:underline font-medium">
+            Forgot your password?
           </Link>
         </CardFooter>
       </Card>

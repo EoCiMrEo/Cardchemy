@@ -1,142 +1,110 @@
-"""
-user.py - User and Authentication Schemas
+"""Request and response schemas for authentication and invitations."""
 
-Pydantic schemas for request validation and response serialization.
-These ensure type safety and automatic API documentation.
-
-Key concepts:
-- Schemas ending in "Create" are for POST requests (creating new resources)
-- Schemas ending in "Response" are for API responses
-- `model_config = {"from_attributes": True}` allows converting from SQLAlchemy models
-"""
-
-from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
-from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
 
 
-# ============================================
-# User Schemas
-# ============================================
+Password = Annotated[str, StringConstraints(min_length=8, max_length=128)]
+
 
 class UserCreate(BaseModel):
-    """
-    Schema for registering a new user.
-    
-    Fields:
-        email: Valid email address (validated by EmailStr)
-        password: Password (minimum 8 characters for security)
-        full_name: Optional display name
-    
-    Example:
-        {
-            "email": "instructor@example.com",
-            "password": "securepassword123",
-            "full_name": "John Doe"
-        }
-    """
     email: EmailStr
-    password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
-    full_name: Optional[str] = None
+    password: Password
+    full_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("full_name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class UserRegister(UserCreate):
-    """
-    Schema for registration request body.
-    Includes optional fields for instructor code or invite token.
-    """
-    instructor_code: Optional[str] = None
-    invite_token: Optional[str] = None
+    invite_token: str = Field(min_length=20, max_length=4096)
 
 
 class UserLogin(BaseModel):
-    """
-    Schema for logging in.
-    
-    We use email as the username for simplicity.
-    """
     email: EmailStr
-    password: str
+    password: Password
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class UserResponse(BaseModel):
-    """
-    Schema for user data in API responses.
-    
-    Note: Never include password in responses!
-    
-    The `model_config` setting allows this schema to be created
-    directly from a SQLAlchemy User model instance.
-    """
     id: UUID
     email: str
-    full_name: Optional[str]
+    full_name: str | None
     role: str
     created_at: datetime
-    
+
     model_config = {"from_attributes": True}
 
 
-# ============================================
-# Authentication Schemas
-# ============================================
-
 class Token(BaseModel):
-    """
-    Schema for JWT token response after login.
-    
-    Fields:
-        access_token: Short-lived token for API requests (30 min default)
-        refresh_token: Long-lived token for getting new access tokens (7 days)
-        token_type: Always "bearer" for JWT
-    """
+    """Only the short-lived access token is readable by JavaScript."""
+
     access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
 
 
 class TokenData(BaseModel):
-    """
-    Schema for decoded JWT token data.
-    
-    This is what we extract from the JWT to identify the user.
-    The `sub` (subject) field contains the user's email.
-    """
-    sub: Optional[str] = None  # User email
-    user_id: Optional[UUID] = None
-    role: Optional[str] = None
+    sub: UUID
+    jti: UUID
+    type: Literal["access", "refresh", "invitation", "password_reset"]
+    issued_at: datetime
+    expires_at: datetime
+    session_id: UUID | None = None
+    email: EmailStr | None = None
+    role: Literal["instructor", "student"] | None = None
+    subject_id: UUID | None = None
 
-
-# ============================================
-# Invite Link Schemas
-# ============================================
 
 class InviteLinkCreate(BaseModel):
-    """
-    Schema for creating a new invite link.
-    
-    The instructor specifies which subject to create the invite for.
-    The code is auto-generated on the server.
-    """
     subject_id: UUID
-    expires_in_days: Optional[int] = Field(
-        default=7,
-        description="Number of days until the invite expires"
-    )
+    expires_in_hours: int = Field(default=24, ge=1, le=720)
+
+
+class InvitationCreate(BaseModel):
+    expires_in_hours: int = Field(default=24, ge=1, le=720)
 
 
 class InviteLinkResponse(BaseModel):
-    """
-    Schema for invite link data in API responses.
-    
-    The `code` is what students use to join.
-    """
-    id: UUID
-    code: str
+    token: str
     subject_id: UUID
-    expires_at: Optional[datetime]
-    created_at: datetime
-    is_used: bool = False
-    
-    model_config = {"from_attributes": True}
+    expires_at: datetime
+
+
+class InvitationAccept(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+
+
+class PasswordForgotRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class PasswordResetRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+    new_password: Password
+
+
+class MessageResponse(BaseModel):
+    message: str

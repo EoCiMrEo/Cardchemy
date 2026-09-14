@@ -16,12 +16,14 @@ Endpoints:
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.routers.auth import get_current_user, get_current_instructor
+from app.routers.auth import get_current_instructor, get_current_student, get_current_user
+from app.schemas.user import InvitationAccept, InvitationCreate, InviteLinkResponse
 from app.schemas.subject import (
     SubjectCreate,
     SubjectUpdate,
@@ -31,6 +33,8 @@ from app.schemas.subject import (
     FlashcardSetResponse,
 )
 from app.services.subject import SubjectService
+from app.services.auth import AuthService
+from app.services.rate_limit import limit_invitation, limit_join
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
@@ -148,98 +152,49 @@ async def delete_subject(
     return None
 
 
-@router.post("/{subject_id}/invite")
+@router.post(
+    "/{subject_id}/invite",
+    response_model=InviteLinkResponse,
+    dependencies=[Depends(limit_invitation)],
+)
 async def generate_invite_token(
     subject_id: UUID,
-    expires_in_hours: int = Body(24, embed=True),
+    data: InvitationCreate,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Generate a multi-use invite token for students.
-    
-    Returns a JWT that can be used to register as a student
-    and auto-enroll in this subject.
-    """
+    """Create a signed, database-backed, single-use student invitation."""
     await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
-    
-    from app.services.auth import AuthService
-    from datetime import timedelta
-    
-    # Create Invite Token (JWT)
-    # We use 'sub' for subject_id so verify_token works automatically
-    invite_data = {
-        "sub": str(subject_id),
-        "type": "invite"
-    }
-    
-    token = AuthService.create_access_token(
-        invite_data, 
-        expires_delta=timedelta(hours=expires_in_hours)
+    invite, token = await AuthService.create_invitation(
+        db,
+        instructor_id=user.id,
+        subject_id=subject_id,
+        expires_in_hours=data.expires_in_hours,
     )
-    
-    return {"token": token}
+    await db.commit()
+    return InviteLinkResponse(token=token, subject_id=subject_id, expires_at=invite.expires_at)
 
 
-@router.post("/join")
+@router.post("/invitations/accept", dependencies=[Depends(limit_join)])
 async def join_course_with_token(
-    token: str = Body(..., embed=True),
-    user: User = Depends(get_current_user),
+    data: InvitationAccept,
+    user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Join a course using an invite token.
-    
-    For existing users who already have an account.
-    Verifies the token and enrolls the user in the subject.
-    """
-    from app.services.auth import AuthService
-    from app.models.flashcard import Enrollment
-    from sqlalchemy import select
-    
-    # Verify token
+    """Consume the same single-use invitation used by student registration."""
     try:
-        token_payload = AuthService.verify_token(token)
-        subject_id = token_payload.sub
-    except Exception:
+        invite = await AuthService.consume_invitation(db, data.token, user)
+        subject = await SubjectService.get_subject(db, invite.subject_id)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired invite token"
-        )
-    
-    # Check if subject exists
-    subject = await SubjectService.get_subject(db, UUID(subject_id))
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invitation was already consumed or enrollment already exists",
+        ) from None
     if not subject:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found"
-        )
-    
-    # Check if already enrolled
-    existing = await db.execute(
-        select(Enrollment).where(
-            Enrollment.student_id == user.id,
-            Enrollment.subject_id == UUID(subject_id)
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You are already enrolled in this course"
-        )
-    
-    # Create enrollment
-    enrollment = Enrollment(
-        student_id=user.id,
-        subject_id=UUID(subject_id)
-    )
-    db.add(enrollment)
-    await db.commit()
-    
-    return {
-        "message": "Successfully joined course",
-        "subject_name": subject.name
-    }
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+    return {"message": "Successfully joined course", "subject_name": subject.name}
 
 
 # ============================================

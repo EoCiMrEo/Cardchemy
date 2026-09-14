@@ -21,7 +21,7 @@ settings = get_settings()
 # Initialize Gemini Model
 llm = ChatGoogleGenerativeAI(
     model="gemini-3-flash-preview", # Optimized for structured output if available, else gemini-pro
-    google_api_key=settings.gemini_api_key,
+    google_api_key=(settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else None),
     temperature=0.2,
     convert_system_message_to_human=True
 )

@@ -11,7 +11,7 @@ Key concepts:
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum, text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SQLEnum, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -70,7 +70,7 @@ class User(Base):
     # Role determines what the user can do
     role = Column(
         SQLEnum(UserRole),
-        default=UserRole.INSTRUCTOR,
+        default=UserRole.STUDENT,
         nullable=False
     )
     
@@ -82,6 +82,8 @@ class User(Base):
     subjects = relationship("Subject", back_populates="instructor")
     enrollments = relationship("Enrollment", back_populates="student")
     invites_created = relationship("InviteLink", back_populates="instructor", foreign_keys="InviteLink.instructor_id")
+    auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class InviteLink(Base):
@@ -140,3 +142,51 @@ class InviteLink(Base):
     # Relationships
     instructor = relationship("User", back_populates="invites_created", foreign_keys=[instructor_id])
     subject = relationship("Subject", back_populates="invite_links")
+
+
+class AuthSession(Base):
+    """Server-side state for one rotating refresh-token family."""
+
+    __tablename__ = "auth_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_jti_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    reuse_detected_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="auth_sessions")
+
+
+class PasswordResetToken(Base):
+    """Single-use state backing a signed password-reset token."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
+
+class RateLimitBucket(Base):
+    """Shared fixed-window counters used by security-sensitive endpoints."""
+
+    __tablename__ = "rate_limit_buckets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    scope = Column(String(64), nullable=False)
+    key_hash = Column(String(64), nullable=False)
+    window_started_at = Column(DateTime, nullable=False)
+    count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("scope", "key_hash", name="unique_rate_limit_bucket"),
+    )

@@ -1,108 +1,82 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import api, { getToken, removeToken, removeRefreshToken, setToken, setRefreshToken } from '../services/api';
-import { jwtDecode } from 'jwt-decode';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-interface User {
-  id: string;
-  email: string;
-  role: 'instructor' | 'student';
-  full_name?: string;
-}
+import { clearAccessToken, refreshAccessToken, setAccessToken } from '../services/api'
+import { authService } from '../services/auth'
+import type { User } from '../services/types'
+
 
 interface AuthContextType {
-  user: User | null;
-  isLoading: boolean;
-  login: (accessToken: string, refreshToken: string) => void;
-  logout: () => void;
-  checkAuth: () => Promise<void>;
+  user: User | null
+  isLoading: boolean
+  login: (accessToken: string) => Promise<void>
+  logout: () => Promise<void>
+  checkAuth: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const login = (accessToken: string, refreshToken: string) => {
-    setToken(accessToken);
-    setRefreshToken(refreshToken);
-    
-    // Decode token to get user info immediately
+  const clearSession = useCallback(() => {
+    clearAccessToken()
+    setUser(null)
+  }, [])
+
+  const login = useCallback(async (accessToken: string) => {
+    setAccessToken(accessToken)
     try {
-      const decoded: any = jwtDecode(accessToken);
-      setUser({
-        id: decoded.user_id,
-        email: decoded.sub,
-        role: decoded.role,
-      });
-      // Optionally fetch full profile in background
-    } catch (e) {
-      console.error("Failed to decode token", e);
-    }
-  };
-
-  const logout = () => {
-    removeToken();
-    removeRefreshToken();
-    setUser(null);
-  };
-
-  const checkAuth = async () => {
-    setIsLoading(true);
-    const token = getToken();
-    
-    if (!token) {
-      setUser(null);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      // Decode token first for instant feedback (optimistic)
-      try {
-        const decoded: any = jwtDecode(token);
-        // Check if expired
-        if (decoded.exp * 1000 < Date.now()) {
-          throw new Error("Token expired");
-        }
-        setUser({
-          id: decoded.user_id,
-          email: decoded.sub,
-          role: decoded.role,
-        });
-      } catch (e) {
-        // If decode fails, let the API call verify
-        console.log("Local decode failed, verifying with API");
-      }
-
-      // Verify with backend
-      const response = await api.get('/auth/me');
-      setUser(response.data);
+      const profile = await authService.getProfile()
+      setUser(profile)
     } catch (error) {
-      console.error("Auth check failed:", error);
-      // Only logout if it's strictly an auth error, not network error
-      // But for MVP simplicity, invalid token -> logout
-      logout();
-    } finally {
-      setIsLoading(false);
+      clearSession()
+      throw error
     }
-  };
+  }, [clearSession])
+
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout()
+    } finally {
+      clearSession()
+    }
+  }, [clearSession])
+
+  const checkAuth = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      await refreshAccessToken()
+      setUser(await authService.getProfile())
+    } catch {
+      clearSession()
+    } finally {
+      setIsLoading(false)
+    }
+  }, [clearSession])
 
   useEffect(() => {
-    checkAuth();
-  }, []);
+    void checkAuth()
+  }, [checkAuth])
 
-  return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, checkAuth }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  useEffect(() => {
+    window.addEventListener('auth:session-ended', clearSession)
+    return () => window.removeEventListener('auth:session-ended', clearSession)
+  }, [clearSession])
+
+  const value = useMemo(
+    () => ({ user, isLoading, login, logout, checkAuth }),
+    [user, isLoading, login, logout, checkAuth],
+  )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- colocated hook is the public context API
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider')
   }
-  return context;
+  return context
 }

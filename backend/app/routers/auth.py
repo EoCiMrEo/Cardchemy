@@ -1,357 +1,218 @@
-"""
-auth.py - Authentication Router
+"""Authentication endpoints and role dependencies."""
 
-API endpoints for user registration, login, and invite links.
+from urllib.parse import quote
 
-Endpoints:
-- POST /auth/register - Register new instructor
-- POST /auth/login - Login and get tokens
-- POST /auth/refresh - Refresh access token
-- POST /auth/invite/generate - Create student invite (instructor only)
-- POST /auth/invite/accept/{code} - Student accepts invite
-- GET /auth/me - Get current user info
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from typing import Optional
 
+from app.config import get_settings
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.models.flashcard import Enrollment
 from app.schemas.user import (
-    UserCreate,
-    UserRegister,
-    UserLogin,
-    UserResponse,
+    MessageResponse,
+    PasswordForgotRequest,
+    PasswordResetRequest,
     Token,
-    InviteLinkCreate,
-    InviteLinkResponse,
+    UserRegister,
+    UserResponse,
 )
 from app.services.auth import AuthService
-from app.config import get_settings
+from app.services.email import EmailDeliveryUnavailable, EmailService
+from app.services.rate_limit import (
+    limit_login,
+    limit_password_reset,
+    limit_refresh,
+    limit_registration,
+)
+
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-# OAuth2 scheme for extracting tokens from requests
-# tokenUrl is the endpoint where tokens are obtained (for Swagger docs)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+settings = get_settings()
 
 
-# ============================================
-# Dependency: Get Current User
-# ============================================
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.refresh_cookie_name,
+        value=token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        path="/auth",
+        domain=settings.refresh_cookie_domain,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.refresh_cookie_name,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        path="/auth",
+        domain=settings.refresh_cookie_domain,
+    )
+
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User:
-    """
-    Dependency that extracts and validates the JWT token,
-    then returns the current user.
-    """
-    # Verify the token and extract user data
-    token_data = AuthService.verify_token(token)
-    
-    # Get user from database
-    user = await AuthService.get_user_by_email(db, token_data.sub)
-    
-    if not user:
+    claims = AuthService.verify_access_token(token)
+    if not claims.session_id or not await AuthService.session_is_active(db, claims.session_id, claims.sub):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
+            detail="Session is invalid or expired",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    user = await AuthService.get_user_by_id(db, claims.sub)
+    role = user.role.value if user and isinstance(user.role, UserRole) else getattr(user, "role", None)
+    if not user or claims.email != user.email or claims.role != role:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
-async def get_current_instructor(
-    user: User = Depends(get_current_user)
-) -> User:
-    """
-    Dependency that ensures the current user is an instructor.
-    Use this for endpoints that only instructors should access.
-    """
+async def get_current_instructor(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.INSTRUCTOR:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only instructors can perform this action"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor access required")
     return user
 
 
-# ============================================
-# Registration & Login
-# ============================================
-
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    user_data: UserRegister,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Register a new account.
-    
-    - **Instructor**: Must provide valid `instructor_code`.
-    - **Student**: Must provide valid `invite_token`.
-    """
-    settings = get_settings()
-    
-    # Check if this email is already taken
-    if await AuthService.get_user_by_email(db, user_data.email):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-
-    role = UserRole.INSTRUCTOR
-    subject_id_to_enroll = None
-
-    # Case 1: Student with Invite
-    if user_data.invite_token:
-        try:
-            # Verify basic token structure/signature
-            # Note: identify if it's an invite token vs auth token by scope/type if possible
-            # For this MVP, we assume if it decodes and has a valid subject UUID in 'sub', it's valid.
-            token_payload = AuthService.verify_token(user_data.invite_token)
-            subject_id_to_enroll = token_payload.sub # In invite tokens, sub is subject_id
-            
-            # TODO: Verify subject exists? AuthService.verify_token does signature check.
-            role = UserRole.STUDENT
-            
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired invite link."
-            )
-            
-    # Case 2: Instructor (No Invite)
-    else:
-        if user_data.instructor_code != settings.instructor_secret_key:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid Instructor Code. Please verify your credentials."
-            )
-        role = UserRole.INSTRUCTOR
-
-    # Create User
-    user = await AuthService.create_user(db, user_data, role=role)
-    
-    # Auto-Enroll Student
-    if role == UserRole.STUDENT and subject_id_to_enroll:
-        try:
-            # We cast to UUID is handled by Pydantic/SQLAlchemy usually, or we ensure string format
-            enrollment = Enrollment(
-                student_id=user.id,
-                subject_id=subject_id_to_enroll
-            )
-            db.add(enrollment)
-            await db.commit()
-        except Exception as e:
-            # Log error but don't fail registration? Or roll back?
-            # Rolling back user creation is safer.
-            print(f"Failed to enroll: {e}")
-            # For now, let it pass, user checks dashboard and sees nothing? 
-            # Better to error out.
-            
+async def get_current_student(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Student access required")
     return user
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit_registration)],
+)
+async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)) -> User:
+    """Register a student and consume one invitation in the same transaction."""
+
+    try:
+        async with db.begin():
+            user = await AuthService.create_user(db, user_data, UserRole.STUDENT)
+            await AuthService.consume_invitation(db, user_data.invite_token, user)
+        return user
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Registration or enrollment conflicts with an existing record",
+        ) from None
+
+
+@router.post(
+    "/login",
+    response_model=Token,
+    dependencies=[Depends(limit_login)],
+)
 async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Login with email and password.
-    
-    Uses OAuth2 password flow for compatibility with Swagger UI.
-    The 'username' field should contain the email address.
-    
-    Returns:
-        - access_token: Short-lived token for API requests
-        - refresh_token: Long-lived token for getting new access tokens
-        - token_type: "bearer"
-    """
-    # Authenticate user
+    db: AsyncSession = Depends(get_db),
+) -> Token:
+    if not 8 <= len(form_data.password) <= 128:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     user = await AuthService.authenticate_user(db, form_data.username, form_data.password)
-    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Create tokens
-    token_data = {
-        "sub": user.email,
-        "user_id": str(user.id),
-        "role": user.role.value,
-    }
-    
-    access_token = AuthService.create_access_token(token_data)
-    refresh_token = AuthService.create_refresh_token(token_data)
-    
+
+    access_token, refresh_token = await AuthService.create_session(db, user)
+    await db.commit()
+    _set_refresh_cookie(response, refresh_token)
     return Token(
         access_token=access_token,
-        refresh_token=refresh_token,
-        token_type="bearer"
+        expires_in=settings.access_token_expire_minutes * 60,
     )
 
 
-@router.post("/refresh", response_model=Token)
-async def refresh_token(
-    refresh_token: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Get a new access token using a refresh token.
-    
-    Call this when the access token expires instead of
-    asking the user to log in again.
-    """
-    # Verify refresh token
-    token_data = AuthService.verify_token(refresh_token)
-    
-    # Get user
-    user = await AuthService.get_user_by_email(db, token_data.sub)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-    
-    # Create new tokens
-    new_token_data = {
-        "sub": user.email,
-        "user_id": str(user.id),
-        "role": user.role.value,
-    }
-    
-    new_access_token = AuthService.create_access_token(new_token_data)
-    new_refresh_token = AuthService.create_refresh_token(new_token_data)
-    
+@router.post(
+    "/refresh",
+    response_model=Token,
+    dependencies=[Depends(limit_refresh)],
+)
+async def refresh_token(request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> Token:
+    refresh = request.cookies.get(settings.refresh_cookie_name)
+    if not refresh:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh cookie is missing")
+    _, access_token, rotated_refresh = await AuthService.rotate_refresh_token(db, refresh)
+    _set_refresh_cookie(response, rotated_refresh)
     return Token(
-        access_token=new_access_token,
-        refresh_token=new_refresh_token,
-        token_type="bearer"
+        access_token=access_token,
+        expires_in=settings.access_token_expire_minutes * 60,
     )
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout(
+    response: Response,
+    token: str = Depends(oauth2_scheme),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    claims = AuthService.verify_access_token(token)
+    await AuthService.revoke_session(db, claims.session_id, user.id)
+    _clear_refresh_cookie(response)
+    return MessageResponse(message="Signed out")
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user: User = Depends(get_current_user)):
-    """Get the current authenticated user's information."""
+async def get_me(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-# ============================================
-# Invite Links
-# ============================================
+@router.post(
+    "/password/forgot",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(limit_password_reset)],
+)
+async def forgot_password(
+    data: PasswordForgotRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    generic = MessageResponse(message="If that account exists, a password-reset email has been sent")
+    user = await AuthService.get_user_by_email(db, str(data.email))
+    if not user:
+        return generic
 
-@router.post("/invite/generate", response_model=InviteLinkResponse)
-async def generate_invite(
-    data: InviteLinkCreate,
-    user: User = Depends(get_current_instructor),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Generate an invite link for students to join a subject.
-    
-    Only instructors can create invite links.
-    The invite includes a unique code that students use to enroll.
-    
-    Request body:
-        - subject_id: The subject to invite students to
-        - expires_in_days: How long the invite is valid (default 7 days)
-    """
-    # Verify instructor owns the subject
-    from app.services.subject import SubjectService
-    await SubjectService.check_subject_access(db, data.subject_id, user, require_owner=True)
-    
-    # Create invite
-    invite = await AuthService.create_invite_link(
-        db,
-        instructor_id=user.id,
-        subject_id=data.subject_id,
-        expires_in_days=data.expires_in_days or 7
-    )
-    
-    return InviteLinkResponse(
-        id=invite.id,
-        code=invite.code,
-        subject_id=invite.subject_id,
-        expires_at=invite.expires_at,
-        created_at=invite.created_at,
-        is_used=invite.used_by is not None
-    )
+    token = await AuthService.create_password_reset_token(db, user)
+    await db.commit()
+    reset_url = f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={quote(token)}"
+    try:
+        await EmailService.send_password_reset(user.email, reset_url)
+    except EmailDeliveryUnavailable:
+        pass
+    return generic
 
 
-@router.post("/invite/accept/{code}", response_model=UserResponse)
-async def accept_invite(
-    code: str,
-    user_data: UserCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Accept an invite and register as a student.
-    
-    This is how students join the platform:
-    1. Instructor gives them an invite code
-    2. Student calls this endpoint with the code + registration info
-    3. A new student account is created and enrolled in the subject
-    
-    Path parameters:
-        - code: The invite code (e.g., "ABC123XY")
-        
-    Request body:
-        - email: Student's email
-        - password: Password (min 8 chars)
-        - full_name: Optional name
-    """
-    # Find invite
-    invite = await AuthService.get_invite_by_code(db, code)
-    
-    if not invite:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid invite code"
-        )
-    
-    # Check if expired
-    if invite.expires_at and invite.expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invite has expired"
-        )
-    
-    # Check if already used
-    if invite.used_by:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invite has already been used"
-        )
-    
-    # Check if email already exists
-    existing = await AuthService.get_user_by_email(db, user_data.email)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered. Please login instead."
-        )
-    
-    # Create student account
-    student = await AuthService.create_user(db, user_data, role=UserRole.STUDENT)
-    
-    # Use the invite (enrolls student in subject)
-    success = await AuthService.use_invite(db, invite, student.id)
-    
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to process invite"
-        )
-    
-    return student
+@router.post(
+    "/password/reset",
+    response_model=MessageResponse,
+    dependencies=[Depends(limit_password_reset)],
+)
+async def reset_password(
+    data: PasswordResetRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    await AuthService.reset_password(db, data.token, data.new_password)
+    _clear_refresh_cookie(response)
+    return MessageResponse(message="Password reset successfully. Sign in again on every device")

@@ -29,6 +29,7 @@ from app.schemas.flashcard import (
 )
 from app.services.flashcard import FlashcardService
 from app.services.subject import SubjectService
+from app.services.rate_limit import limit_ai_generation, limit_pdf_upload
 
 router = APIRouter(prefix="/flashcards", tags=["Flashcards"])
 
@@ -124,10 +125,15 @@ async def get_flashcard(
     
     # Get parent set to check access
     flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id)
+    if not flashcard_set:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flashcard not found"
+        )
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
     
-    # Students can only see approved cards
-    if user.role == UserRole.STUDENT and not flashcard.is_approved:
+    # Students can only see approved cards from published sets.
+    if user.role == UserRole.STUDENT and (not flashcard_set.is_published or not flashcard.is_approved):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Flashcard not found"
@@ -226,7 +232,10 @@ async def approve_all_flashcards(
 # AI Generation (placeholder - will be implemented in agents module)
 # ============================================
 
-@router.post("/generate")
+@router.post(
+    "/generate",
+    dependencies=[Depends(limit_pdf_upload), Depends(limit_ai_generation)],
+)
 async def generate_flashcards(
     subject_id: UUID = Form(...),
     set_title: str = Form(...),
