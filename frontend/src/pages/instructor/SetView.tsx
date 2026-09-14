@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { subjectService } from "@/services/subjects"
 import { flashcardService } from "@/services/flashcards"
@@ -15,9 +15,14 @@ interface EditValues {
   correctOptionIndex: number
 }
 
+interface SetDetails {
+  id: string
+  title: string
+}
+
 export default function SetView() {
   const { id } = useParams<{ id: string }>()
-  const [set, setSet] = useState<any>(null)
+  const [set, setSet] = useState<SetDetails | null>(null)
   const [cards, setCards] = useState<Flashcard[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -29,17 +34,14 @@ export default function SetView() {
   const [saving, setSaving] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
-  useEffect(() => {
-    if (id) loadData()
-  }, [id])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (!id) return
     try {
       setLoading(true)
       
       const [setData, cardsData] = await Promise.all([
-        subjectService.getSet(id!),
-        flashcardService.getCards(id!)
+        subjectService.getSet(id),
+        flashcardService.getCards(id)
       ])
       
       setSet(setData)
@@ -49,7 +51,11 @@ export default function SetView() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [id])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
   
   const handleEdit = (card: Flashcard) => {
       setEditingId(card.id)
@@ -75,7 +81,7 @@ export default function SetView() {
           setEditingId(null)
           
           // Update local state
-          setCards(cards.map(c => 
+          setCards((currentCards) => currentCards.map(c =>
               c.id === cardId ? {
                 ...c,
                 front_content: editValues.front.trim(),
@@ -109,7 +115,7 @@ export default function SetView() {
     if (!confirm("Are you sure you want to delete this flashcard?")) return
     try {
         await flashcardService.deleteCard(cardId)
-        setCards(cards.filter(c => c.id !== cardId))
+        setCards((currentCards) => currentCards.filter(c => c.id !== cardId))
     } catch (e) {
         console.error(e)
     }
@@ -200,10 +206,20 @@ export default function SetView() {
                    </>
                )}
                
-               {card.source_chunk && (
-                   <div className="text-xs text-muted-foreground border-t pt-2 mt-2 italic">
-                       Source: "...{card.source_chunk.substring(0, 100)}..."
-                   </div>
+               {card.source_snippet ? (
+                   <figure className="border-t pt-2 mt-2 text-xs text-muted-foreground">
+                       <figcaption className="font-medium not-italic">
+                         Verified source{card.source_page ? ` · Page ${card.source_page}` : ''}
+                         {card.source_section ? ` · ${card.source_section}` : ''}
+                       </figcaption>
+                       <blockquote className="mt-1 border-l-2 pl-2 italic">
+                         “{card.source_snippet}”
+                       </blockquote>
+                   </figure>
+               ) : (
+                 <p className="border-t pt-2 mt-2 text-xs text-muted-foreground">
+                   Manual card; no generated source reference.
+                 </p>
                )}
             </CardContent>
             {editingId === card.id && (

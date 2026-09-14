@@ -10,13 +10,13 @@ asyncpg==0.31.0
 alembic==1.20.0
 
 python-jose[cryptography]==3.5.0
+cryptography==50.0.1
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
 python-multipart==0.0.21
 
-langchain-core==1.2.7
-langchain-google-genai==4.2.0
-langgraph==1.0.7
+google-genai==1.75.0
+httpx==0.28.1
 pypdf==6.6.0
 
 python-dotenv==1.2.1

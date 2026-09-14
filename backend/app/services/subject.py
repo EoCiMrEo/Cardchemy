@@ -121,7 +121,8 @@ class SubjectService:
     async def create_flashcard_set(
         db: AsyncSession,
         data: FlashcardSetCreate,
-        source_pdf_name: Optional[str] = None
+        source_pdf_name: Optional[str] = None,
+        generation_job_id: UUID | None = None,
     ) -> FlashcardSet:
         """Create a new flashcard set."""
         flashcard_set = FlashcardSet(
@@ -129,6 +130,7 @@ class SubjectService:
             title=data.title,
             description=data.description,
             source_pdf_name=source_pdf_name,
+            generation_job_id=generation_job_id,
             is_published=False,  # Always start unpublished
         )
         

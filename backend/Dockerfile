@@ -9,6 +9,8 @@
 # Use Python 3.11 slim image (smaller than full image)
 FROM python:3.11-slim
 
+ARG INSTALL_OCR=false
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -25,6 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# OCR remains opt-in because Poppler and Tesseract increase image size and CPU
+# requirements. Build with --build-arg INSTALL_OCR=true when PDF_OCR_ENABLED is
+# enabled for the worker.
+RUN if [ "$INSTALL_OCR" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Copy requirements first (for Docker layer caching)
 COPY requirements.txt .

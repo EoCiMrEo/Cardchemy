@@ -3,11 +3,17 @@
 The database schema is owned by Alembic. The API never creates or alters tables
 at startup; it refuses to start when the database revision is not at the current
 head. The initial revision, `20260914_0001`, is a clean baseline and is not an
-adoption migration for older development databases.
+adoption migration for older development databases. The current head,
+`20260914_0003`, adds AI provider/model snapshots, bounded usage/cost telemetry,
+and verified flashcard page/section provenance. Its predecessor,
+`20260914_0002`, adds durable generation jobs, encrypted temporary sources,
+quota events, and the exactly-once link from a job to its result set.
 
-Before using Compose, define strong `POSTGRES_PASSWORD` and `SECRET_KEY` values
-in the root `.env`. Compose intentionally refuses to start when either required
-value is missing; do not place real values in source-controlled examples.
+Before using Compose, define strong `POSTGRES_PASSWORD`, `SECRET_KEY`, and
+`GENERATION_SOURCE_ENCRYPTION_KEY` values in the root `.env`. Generate the two
+application keys independently. Compose intentionally refuses to start when a
+required value is missing; do not place real values in source-controlled
+examples.
 
 ## Fresh local database
 
@@ -18,11 +24,11 @@ and apply the baseline:
 docker compose down --volumes
 docker compose up -d db
 docker compose run --rm migrate
-docker compose up -d backend
+docker compose up -d backend worker
 ```
 
 Starting the complete stack with `docker compose up` also runs the one-shot
-`migrate` service before the backend starts.
+`migrate` service before the backend and generation worker start.
 
 ## Upgrade and verify
 
@@ -50,7 +56,9 @@ docker compose cp db:/tmp/flashcard_gen.dump backups/flashcard_gen.dump
 
 Record the application version, Alembic revision, UTC timestamp, and archive
 checksum next to the backup. Store production archives encrypted with access
-restricted to database operators. Never commit them.
+restricted to database operators. Preserve the source encryption key separately
+in protected disaster-recovery material if queued/retryable jobs must survive a
+restore. Never commit either artifact.
 
 ## Restore rehearsal
 
@@ -87,14 +95,17 @@ docker compose run --rm backend alembic downgrade -1
 docker compose run --rm backend alembic current
 ```
 
-The current repository has one baseline revision. Downgrading it to `base`
-drops the entire schema and all application data, so it is only appropriate for
-an empty test database or after a verified backup. Production recovery should
-normally restore the pre-upgrade archive into a fresh database instead.
+Downgrading `20260914_0003` removes AI telemetry/provenance fields and restores
+the legacy confidence/source column names. Downgrading `20260914_0002` removes generation jobs, temporary sources, quota
+history, and job/result links. Stop the API and worker and drain or cancel jobs
+before doing so. Downgrading the `20260914_0001` baseline to `base` drops the
+entire schema and all application data, so it is only appropriate for an empty
+test database or after a verified backup. Production recovery should normally
+restore the pre-upgrade archive into a fresh database instead.
 
 ## Failed migration recovery
 
-PostgreSQL runs the baseline in a transaction. If an upgrade fails, preserve the
+PostgreSQL runs these migrations in a transaction. If an upgrade fails, preserve the
 error output, confirm `alembic current`, correct the migration or environment,
 and retry. Do not use `alembic stamp` to bypass a failed migration. If a change
 was non-transactional in a future revision, follow that revision's explicit

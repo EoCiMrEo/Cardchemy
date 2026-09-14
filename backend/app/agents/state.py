@@ -1,35 +1,27 @@
-"""
-state.py - LangGraph State Definition
+"""Typed compatibility state for the provider-neutral generation pipeline."""
 
-Defines the structure of data passed between agents in the graph.
-"""
-
-from typing import List, Dict, TypedDict, Optional, Annotated
-import operator
+from typing import TypedDict
 
 class Flashcard(TypedDict):
-    front: str
-    back: str
-    confidence: float
-    source: str
+    front_content: str
+    back_content: str
+    options: list[str]
+    card_type: str
+    quality_score: float
+    source_snippet: str
+    source_page: int
+    source_section: str | None
 
 class AgentState(TypedDict):
-    # Input
-    pdf_text: str  # Full text (optional if using chunks directly, but good to keep)
-    target_count: int # User desired count
-    
-    # Context
-    summary: str # Global summary of the text
-
-    # Map-Reduce
-    chunks: List[str] # List of text chunks to process
-    
-    # Intermediate (Mapped)
-    # in Send/Map architecture, each branch might have its own state, 
-    # but usually we aggregate results back.
-    # We'll use Annotated to merge lists from parallel branches.
-    mapped_generated_cards: Annotated[List[Flashcard], operator.add]
-    
-    # Output
-    final_cards: List[Flashcard]
-    errors: Annotated[List[str], operator.add]
+    pdf_document: object
+    pdf_text: str
+    target_count: int
+    final_cards: list[Flashcard]
+    rejected_card_count: int
+    estimated_input_tokens: int
+    estimated_output_tokens: int
+    actual_input_tokens: int
+    actual_output_tokens: int
+    estimated_cost_microusd: int | None
+    actual_cost_microusd: int | None
+    usage_estimated: bool

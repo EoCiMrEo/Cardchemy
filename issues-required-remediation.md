@@ -156,28 +156,28 @@ leave no partial records.
 **Goal:** Ensure large, malformed, or concurrent uploads cannot block or exhaust
 the API service.
 
-- [ ] **P0** Validate file signature and media type instead of trusting the
+- [x] **P0** Validate file signature and media type instead of trusting the
   filename extension.
-- [ ] **P0** Enforce configurable upload-byte, page-count, extracted-text,
+- [x] **P0** Enforce configurable upload-byte, page-count, extracted-text,
   `card_count`, per-user, and per-deployment limits.
-- [ ] **P0** Handle encrypted, malformed, empty, and image-only PDFs with clear
+- [x] **P0** Handle encrypted, malformed, empty, and image-only PDFs with clear
   user-facing errors.
-- [ ] **P0** Move CPU-heavy PDF extraction off the async request event loop.
-- [ ] **P0** Replace in-request generation with a persistent background-job
+- [x] **P0** Move CPU-heavy PDF extraction off the async request event loop.
+- [x] **P0** Replace in-request generation with a persistent background-job
   workflow and job states such as queued, running, completed, failed, and
   cancelled.
-- [ ] **P0** Add bounded worker concurrency, backpressure, timeouts, retries with
+- [x] **P0** Add bounded worker concurrency, backpressure, timeouts, retries with
   jitter, and failure cleanup.
-- [ ] **P0** Do not create an empty flashcard set before extraction succeeds, or
+- [x] **P0** Do not create an empty flashcard set before extraction succeeds, or
   make creation and cleanup transactional.
-- [ ] **P0** Preserve intentional HTTP errors and never expose raw exceptions or
+- [x] **P0** Preserve intentional HTTP errors and never expose raw exceptions or
   stack traces to clients.
-- [ ] **P1** Add job polling or server-push progress, cancellation, and retry UI.
-- [ ] **P1** Add idempotency keys so retries cannot create duplicate jobs/sets.
-- [ ] **P1** Add configurable per-user generation quotas and cost controls.
-- [ ] **P1** Decide whether source files are retained; if retained, add secure
+- [x] **P1** Add job polling or server-push progress, cancellation, and retry UI.
+- [x] **P1** Add idempotency keys so retries cannot create duplicate jobs/sets.
+- [x] **P1** Add configurable per-user generation quotas and cost controls.
+- [x] **P1** Decide whether source files are retained; if retained, add secure
   storage, retention, deletion, and access-control policies.
-- [ ] **P2** Add optional OCR for scanned PDFs, with explicit dependency and cost
+- [x] **P2** Add optional OCR for scanned PDFs, with explicit dependency and cost
   documentation.
 
 **Phase complete when:** concurrent large/invalid uploads stay within configured
@@ -191,35 +191,35 @@ terminal state without orphaned data.
 **Goal:** Produce traceable flashcards whose quality does not rely on the model's
 self-reported confidence.
 
-- [ ] **P0** Move provider, model, temperature, token, timeout, retry, and
+- [x] **P0** Move provider, model, temperature, token, timeout, retry, and
   concurrency settings into validated configuration.
-- [ ] **P0** Avoid a preview-model-only production dependency; document supported
+- [x] **P0** Avoid a preview-model-only production dependency; document supported
   stable models and their minimum capabilities.
-- [ ] **P0** Use structured output with strict server-side validation and reject
+- [x] **P0** Use structured output with strict server-side validation and reject
   invalid cards rather than silently persisting them.
-- [ ] **P0** Stop auto-approving solely from model-generated confidence.
-- [ ] **P1** Chunk by tokens and document structure, retaining page/section
+- [x] **P0** Stop auto-approving solely from model-generated confidence.
+- [x] **P1** Chunk by tokens and document structure, retaining page/section
   metadata instead of using raw character windows.
-- [ ] **P1** Respect the requested target card count globally; do not generate
+- [x] **P1** Respect the requested target card count globally; do not generate
   3-5 cards for every chunk regardless of the target.
-- [ ] **P1** Replace first-30,000-character summarization with a hierarchical or
+- [x] **P1** Replace first-30,000-character summarization with a hierarchical or
   map-reduce strategy for long documents.
-- [ ] **P1** Make summary-generation failure visible and recoverable instead of
+- [x] **P1** Make summary-generation failure visible and recoverable instead of
   silently substituting `No summary available`.
-- [ ] **P1** Treat document text as untrusted data and add prompt-injection
+- [x] **P1** Treat document text as untrusted data and add prompt-injection
   boundaries and instructions.
-- [ ] **P1** Verify every answer/source snippet against extracted content and
+- [x] **P1** Verify every answer/source snippet against extracted content and
   attach a page or section reference.
-- [ ] **P1** Add a second validation pass or deterministic checks before marking
+- [x] **P1** Add a second validation pass or deterministic checks before marking
   a card ready for instructor review.
-- [ ] **P1** Improve near-duplicate detection beyond exact normalized fronts.
-- [ ] **P1** Add missing `options` typing to the agent state and align all agent,
+- [x] **P1** Improve near-duplicate detection beyond exact normalized fronts.
+- [x] **P1** Add missing `options` typing to the agent state and align all agent,
   schema, and database card representations.
-- [ ] **P1** Track estimated tokens/cost and show operators why a job was limited
+- [x] **P1** Track estimated tokens/cost and show operators why a job was limited
   or rejected.
-- [ ] **P2** Add a provider interface so self-hosters can choose Gemini, another
+- [x] **P2** Add a provider interface so self-hosters can choose Gemini, another
   hosted model, or a local OpenAI-compatible endpoint.
-- [ ] **P2** Remove pgvector/RAG claims and dependencies until implemented, or
+- [x] **P2** Remove pgvector/RAG claims and dependencies until implemented, or
   implement them behind an optional profile with migrations and tests.
 
 **Phase complete when:** a fixed evaluation corpus produces schema-valid,

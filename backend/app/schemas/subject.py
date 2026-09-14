@@ -88,6 +88,7 @@ class FlashcardSetResponse(BaseModel):
     title: str
     description: str | None
     source_pdf_name: str | None
+    generation_job_id: UUID | None
     is_published: bool
     time_limit: int | None
     created_at: datetime

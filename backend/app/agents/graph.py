@@ -1,56 +1,29 @@
-"""
-graph.py - LangGraph Workflow Definition
+"""Compatibility facade for the provider-neutral generation pipeline."""
 
-Wires together the agents into an executable graph.
-"""
+from typing import Any
 
-from langgraph.graph import StateGraph, END
-from langgraph.constants import Send
-from app.agents.state import AgentState
-from app.agents.nodes import split_text, generate_cards_from_chunk, reduce_and_review, summarize_text
+from app.ai.contracts import ExtractedDocument, ExtractedPage
+from app.ai.pipeline import FlashcardGenerationPipeline
+from app.ai.providers import AIProvider
+from app.config import Settings
 
-def map_chunks(state: AgentState):
-    """
-    Map function to create Send objects for parallel processing.
-    """
-    chunks = state.get('chunks', [])
-    summary = state.get('summary', '')
-    return [
-        Send("generator", {"chunk": chunk, "summary": summary}) for chunk in chunks
-    ]
 
-def create_flashcard_graph():
-    """
-    Constructs the flashcard generation workflow graph.
-    """
-    workflow = StateGraph(AgentState)
+class FlashcardGraph:
+    """Retains the old ``ainvoke`` boundary without a framework dependency."""
 
-    # Add Nodes
-    workflow.add_node("summarizer", summarize_text)
-    workflow.add_node("splitter", split_text)
-    workflow.add_node("generator", generate_cards_from_chunk)
-    workflow.add_node("reducer", reduce_and_review)
+    def __init__(self, settings: Settings | None = None, provider: AIProvider | None = None):
+        self.pipeline = FlashcardGenerationPipeline(settings=settings, provider=provider)
 
-    # Define Edges
-    workflow.set_entry_point("summarizer")
-    
-    # Summarizer -> Splitter
-    workflow.add_edge("summarizer", "splitter")
-    
-    # Splitter -> Map (conditional edge to generator)
-    workflow.add_conditional_edges(
-        "splitter",
-        map_chunks,
-        ["generator"]
-    )
-    
-    # Generator -> Reducer
-    # Since Generator is parallel, all branches must complete before Reducer runs.
-    # LangGraph handles this collection automatically if wired correctly.
-    workflow.add_edge("generator", "reducer")
-    
-    # Reducer -> End
-    workflow.add_edge("reducer", END)
+    async def ainvoke(self, state: dict[str, Any], config: dict[str, Any] | None = None):
+        del config
+        document = state.get("pdf_document")
+        if not isinstance(document, ExtractedDocument):
+            legacy_text = state.get("pdf_text", "")
+            document = ExtractedDocument(pages=[ExtractedPage(page_number=1, text=legacy_text)])
+        return await self.pipeline.run(document, int(state.get("target_count", 20)))
 
-    # Compile
-    return workflow.compile()
+
+def create_flashcard_graph(
+    settings: Settings | None = None, provider: AIProvider | None = None
+) -> FlashcardGraph:
+    return FlashcardGraph(settings=settings, provider=provider)

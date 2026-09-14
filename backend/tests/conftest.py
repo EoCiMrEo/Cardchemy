@@ -3,6 +3,11 @@ import os
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-with-adequate-entropy-1234567890")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
+os.environ.setdefault(
+    "GENERATION_SOURCE_ENCRYPTION_KEY",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+)
+os.environ.setdefault("AI_API_KEY", "test-only-provider-key")
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine

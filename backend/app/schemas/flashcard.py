@@ -6,9 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-from app.schemas.subject import FlashcardSetResponse
-
-
 CardText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)]
 CardType = Literal["multiple_choice"]
 
@@ -99,9 +96,11 @@ class FlashcardResponse(BaseModel):
     back_content: str
     options: list[str]
     card_type: CardType
-    confidence_score: float
+    quality_score: float
     is_approved: bool
-    source_chunk: str | None
+    source_snippet: str | None
+    source_page: int | None
+    source_section: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -117,20 +116,6 @@ class StudyCardResponse(BaseModel):
     card_type: CardType
 
     model_config = {"from_attributes": True}
-
-
-class FlashcardGenerateRequest(BaseModel):
-    subject_id: UUID
-    set_title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
-    set_description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)] | None = None
-
-
-class FlashcardGenerateResponse(BaseModel):
-    flashcard_set: FlashcardSetResponse
-    flashcards: list[FlashcardResponse]
-    total_generated: int
-    auto_approved: int
-    needs_review: int
 
 
 class StudyProgressUpdate(BaseModel):

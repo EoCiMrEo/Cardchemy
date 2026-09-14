@@ -32,22 +32,31 @@ class FlashcardService:
     async def create_flashcard(
         db: AsyncSession,
         data: FlashcardCreate,
-        confidence_score: float = 0.0,
-        source_chunk: str | None = None,
+        quality_score: float = 0.0,
+        source_snippet: str | None = None,
+        source_page: int | None = None,
+        source_section: str | None = None,
+        is_approved: bool = False,
     ) -> Flashcard:
-        if not 0 <= confidence_score <= 1:
-            raise ValueError("confidence_score must be between 0 and 1")
-        if source_chunk is not None and len(source_chunk) > 10_000:
-            raise ValueError("source_chunk cannot exceed 10000 characters")
+        if not 0 <= quality_score <= 1:
+            raise ValueError("quality_score must be between 0 and 1")
+        if source_snippet is not None and len(source_snippet) > 10_000:
+            raise ValueError("source_snippet cannot exceed 10000 characters")
+        if source_page is not None and source_page < 1:
+            raise ValueError("source_page must be positive")
+        if source_section is not None and len(source_section) > 255:
+            raise ValueError("source_section cannot exceed 255 characters")
         flashcard = Flashcard(
             set_id=data.set_id,
             front_content=data.front_content,
             back_content=data.back_content,
             options=list(data.options),
             card_type=data.card_type,
-            confidence_score=confidence_score,
-            source_chunk=source_chunk,
-            is_approved=confidence_score >= 0.7,
+            quality_score=quality_score,
+            source_snippet=source_snippet,
+            source_page=source_page,
+            source_section=source_section,
+            is_approved=is_approved,
         )
         db.add(flashcard)
         await db.flush()
@@ -61,16 +70,24 @@ class FlashcardService:
     ) -> list[Flashcard]:
         """Validate every generated card before staging the batch."""
 
-        validated: list[tuple[FlashcardCreate, float, str | None]] = []
+        validated: list[tuple[FlashcardCreate, float, str | None, int | None, str | None]] = []
         for raw in flashcards_data:
-            confidence = float(raw.get("confidence_score", 0.0))
-            if not 0 <= confidence <= 1:
-                raise ValueError("confidence_score must be between 0 and 1")
-            source = raw.get("source_chunk")
+            quality = float(raw.get("quality_score", 0.0))
+            if not 0 <= quality <= 1:
+                raise ValueError("quality_score must be between 0 and 1")
+            source = raw.get("source_snippet")
             if source is not None:
                 source = str(source).strip() or None
                 if source and len(source) > 10_000:
-                    raise ValueError("source_chunk cannot exceed 10000 characters")
+                    raise ValueError("source_snippet cannot exceed 10000 characters")
+            source_page = raw.get("source_page")
+            if source_page is not None and (not isinstance(source_page, int) or source_page < 1):
+                raise ValueError("source_page must be a positive integer")
+            source_section = raw.get("source_section")
+            if source_section is not None:
+                source_section = str(source_section).strip() or None
+                if source_section and len(source_section) > 255:
+                    raise ValueError("source_section cannot exceed 255 characters")
             card = FlashcardCreate(
                 set_id=set_id,
                 front_content=raw["front_content"],
@@ -78,7 +95,7 @@ class FlashcardService:
                 options=raw.get("options"),
                 card_type=raw.get("card_type", CardType.MULTIPLE_CHOICE.value),
             )
-            validated.append((card, confidence, source))
+            validated.append((card, quality, source, source_page, source_section))
 
         flashcards = [
             Flashcard(
@@ -87,11 +104,13 @@ class FlashcardService:
                 back_content=card.back_content,
                 options=list(card.options),
                 card_type=card.card_type,
-                confidence_score=confidence,
-                source_chunk=source,
-                is_approved=confidence >= 0.7,
+                quality_score=quality,
+                source_snippet=source,
+                source_page=source_page,
+                source_section=source_section,
+                is_approved=False,
             )
-            for card, confidence, source in validated
+            for card, quality, source, source_page, source_section in validated
         ]
         db.add_all(flashcards)
         await db.flush()
@@ -168,18 +187,11 @@ class FlashcardService:
     async def approve_all_flashcards(
         db: AsyncSession,
         set_id: UUID,
-        min_confidence: float = 0.0,
     ) -> int:
-        if not 0 <= min_confidence <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="min_confidence must be between 0 and 1",
-            )
         result = await db.execute(
             select(Flashcard).where(
                 Flashcard.set_id == set_id,
                 Flashcard.is_approved.is_(False),
-                Flashcard.confidence_score >= min_confidence,
             )
         )
         flashcards = list(result.scalars().all())

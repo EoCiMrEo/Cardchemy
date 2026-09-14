@@ -48,9 +48,11 @@ export interface StudyCard {
 
 export interface Flashcard extends StudyCard {
   back_content: string
-  confidence_score: number
+  quality_score: number
   is_approved: boolean
-  source_chunk?: string | null
+  source_snippet: string | null
+  source_page: number | null
+  source_section: string | null
   created_at: string
 }
 
@@ -108,4 +110,87 @@ export interface FlashcardUpdate {
   options?: [string, string, string, string]
   card_type?: 'multiple_choice'
   is_approved?: boolean
+}
+
+export type GenerationJobStatus =
+  | 'awaiting_upload'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface GenerationJob {
+  id: string
+  subject_id: string
+  flashcard_set_id: string | null
+  status: GenerationJobStatus
+  progress: number
+  stage: string
+  requested_card_count: number
+  generated_card_count: number | null
+  ai_provider: string
+  ai_model: string
+  estimated_input_tokens: number
+  estimated_output_tokens: number
+  actual_input_tokens: number | null
+  actual_output_tokens: number | null
+  estimated_cost_microusd: number | null
+  actual_cost_microusd: number | null
+  usage_estimated: boolean
+  accepted_card_count: number
+  rejected_card_count: number
+  limit_reason_code: string | null
+  limit_reason_message: string | null
+  source_pdf_name: string
+  attempt_count: number
+  max_attempts: number
+  error_code: string | null
+  error_message: string | null
+  cancellation_requested_at: string | null
+  source_retry_expires_at: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  updated_at: string
+  can_cancel: boolean
+  can_retry: boolean
+}
+
+export interface GenerationJobCreate {
+  subject_id: string
+  set_title: string
+  set_description?: string
+  source_pdf_name: string
+  card_count: number
+}
+
+export interface GenerationJobList {
+  jobs: GenerationJob[]
+}
+
+export interface GenerationLimits {
+  generation_available: boolean
+  ai_provider: string
+  ai_model: string
+  ai_pricing_configured: boolean
+  unavailable_reasons: Array<{ code: string; message: string }>
+  max_upload_bytes: number
+  max_pages: number
+  max_extracted_chars: number
+  min_card_count: number
+  max_card_count: number
+  daily_jobs_per_user: number
+  daily_cards_per_user: number
+  daily_upload_bytes_per_user: number
+  max_active_jobs_per_user: number
+  daily_jobs_remaining: number
+  daily_cards_remaining: number
+  daily_upload_bytes_remaining: number
+  active_job_slots_remaining: number
+  deployment_queue_slots_remaining: number
+  quota_resets_at: string
+  failed_source_retention_hours: number
+  upload_reservation_minutes: number
+  ocr_enabled: boolean
 }

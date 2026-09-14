@@ -23,6 +23,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -129,6 +130,14 @@ class FlashcardSet(Base):
     
     # Track which PDF this came from
     source_pdf_name = Column(String(255), nullable=True)
+
+    # One durable generation job may create at most one set. Manual sets leave
+    # this null, and deleting old job history does not delete learning content.
+    generation_job_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("generation_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     
     # Only published sets are visible to students
     is_published = Column(Boolean, default=False, server_default=text("false"), nullable=False)
@@ -141,6 +150,7 @@ class FlashcardSet(Base):
     # Relationships
     subject = relationship("Subject", back_populates="flashcard_sets")
     flashcards = relationship("Flashcard", back_populates="flashcard_set", passive_deletes=True)
+    generation_job = relationship("GenerationJob", back_populates="result_set")
 
     __table_args__ = (
         CheckConstraint("length(trim(title)) BETWEEN 1 AND 255", name="ck_flashcard_sets_title_length"),
@@ -156,5 +166,6 @@ class FlashcardSet(Base):
             "time_limit IS NULL OR time_limit BETWEEN 5 AND 3600",
             name="ck_flashcard_sets_time_limit",
         ),
+        UniqueConstraint("generation_job_id", name="uq_flashcard_sets_generation_job_id"),
         Index("ix_flashcard_sets_subject_id", "subject_id"),
     )

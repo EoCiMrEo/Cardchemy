@@ -21,7 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import verify_database_revision
-from app.routers import auth_router, subjects_router, flashcards_router, study_router
+from app.routers import (
+    auth_router,
+    flashcards_router,
+    generation_router,
+    study_router,
+    subjects_router,
+)
 
 settings = get_settings()
 
@@ -100,6 +106,9 @@ app.add_middleware(
 
 app.include_router(auth_router)       # /auth/*
 app.include_router(subjects_router)   # /subjects/*
+# Static generation routes must precede ``/flashcards/{flashcard_id}`` or
+# FastAPI will try to parse "generation-limits" and "generation-jobs" as UUIDs.
+app.include_router(generation_router) # /flashcards/generation-*
 app.include_router(flashcards_router) # /flashcards/*
 app.include_router(study_router)      # /study/*
 

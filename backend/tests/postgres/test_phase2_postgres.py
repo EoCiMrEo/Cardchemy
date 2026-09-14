@@ -35,7 +35,7 @@ async def pg_session_factory():
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260914_0001":
+        if revision != "20260914_0003":
             pytest.fail(f"PostgreSQL test database is at Alembic revision {revision!r}")
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
@@ -79,7 +79,7 @@ async def seed_course(
             back_content="Canonical Answer",
             options=["Canonical Answer", "Distractor B", "Distractor C", f"Distractor {index} D"],
             card_type="multiple_choice",
-            confidence_score=0.75,
+            quality_score=0.75,
             is_approved=True,
         )
         for index in range(card_count)
@@ -189,7 +189,7 @@ async def test_database_rejects_invalid_bounds_and_flashcards(pg_session_factory
             back_content="A",
             options=["A", "B", "C", "D"],
             card_type="multiple_choice",
-            confidence_score=0.5,
+            quality_score=0.5,
         ),
     )
     await assert_rejected(
@@ -200,7 +200,7 @@ async def test_database_rejects_invalid_bounds_and_flashcards(pg_session_factory
             back_content="Alpha",
             options=["Alpha", " alpha ", "Beta", "Gamma"],
             card_type="multiple_choice",
-            confidence_score=0.5,
+            quality_score=0.5,
         ),
     )
     await assert_rejected(
@@ -211,7 +211,7 @@ async def test_database_rejects_invalid_bounds_and_flashcards(pg_session_factory
             back_content="Not present",
             options=["A", "B", "C", "D"],
             card_type="multiple_choice",
-            confidence_score=0.5,
+            quality_score=0.5,
         ),
     )
     await assert_rejected(
@@ -222,7 +222,7 @@ async def test_database_rejects_invalid_bounds_and_flashcards(pg_session_factory
             back_content="A",
             options=["A", "B", "C", "D"],
             card_type="multiple_choice",
-            confidence_score=1.01,
+            quality_score=1.01,
         ),
     )
 
@@ -246,7 +246,7 @@ async def test_publish_trigger_preserves_at_least_one_approved_card(pg_session_f
                 back_content="A",
                 options=["A", "B", "C", "D"],
                 card_type="multiple_choice",
-                confidence_score=1,
+                quality_score=1,
                 is_approved=True,
             )
             session.add(card)

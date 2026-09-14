@@ -66,15 +66,15 @@ class Flashcard(Base):
         set_id: Which FlashcardSet this belongs to
         front_content: The question/prompt (shown first)
         back_content: The answer (revealed when flipped)
-        confidence_score: AI's confidence in the card quality (0.0-1.0)
+        quality_score: Deterministic server-side quality score (0.0-1.0)
         is_approved: Has an instructor approved this card?
-        source_chunk: The text chunk this was generated from (for traceability)
+        source_snippet: Verified source quotation used for traceability
+        source_page: One-based page containing the verified quotation
+        source_section: Optional document section containing the quotation
         created_at: When the card was created
     
-    The confidence_score is set by the AI during generation:
-    - >= 0.7: High quality, can be auto-approved
-    - 0.4-0.7: Medium quality, needs review
-    - < 0.4: Low quality, likely needs editing or deletion
+    AI-generated cards always require explicit instructor approval. The
+    quality score is diagnostic and never changes approval state.
     """
     __tablename__ = "flashcards"
     
@@ -109,14 +109,17 @@ class Flashcard(Base):
         nullable=False,
     )
     
-    # AI confidence score (0.0 to 1.0)
-    confidence_score = Column(Float, default=0.0, server_default=text("0"), nullable=False)
+    # Server-computed quality score (0.0 to 1.0); never an approval signal.
+    quality_score = Column(Float, default=0.0, server_default=text("0"), nullable=False)
     
     # Instructor approval status
     is_approved = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     
-    # Original text this was generated from (for debugging/editing)
-    source_chunk = Column(Text, nullable=True)
+    # Server-verified provenance for generated cards. Manual cards leave these
+    # fields empty.
+    source_snippet = Column(Text, nullable=True)
+    source_page = Column(Integer, nullable=True)
+    source_section = Column(String(255), nullable=True)
     
     created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
@@ -128,10 +131,18 @@ class Flashcard(Base):
         CheckConstraint("length(trim(front_content)) BETWEEN 1 AND 10000", name="ck_flashcards_front_length"),
         CheckConstraint("length(trim(back_content)) BETWEEN 1 AND 10000", name="ck_flashcards_back_length"),
         CheckConstraint(
-            "source_chunk IS NULL OR length(source_chunk) <= 10000",
-            name="ck_flashcards_source_length",
+            "source_snippet IS NULL OR length(source_snippet) <= 10000",
+            name="ck_flashcards_source_snippet_length",
         ),
-        CheckConstraint("confidence_score BETWEEN 0 AND 1", name="ck_flashcards_confidence"),
+        CheckConstraint("quality_score BETWEEN 0 AND 1", name="ck_flashcards_quality_score"),
+        CheckConstraint(
+            "source_page IS NULL OR source_page >= 1",
+            name="ck_flashcards_source_page",
+        ),
+        CheckConstraint(
+            "source_section IS NULL OR length(source_section) <= 255",
+            name="ck_flashcards_source_section_length",
+        ),
         CheckConstraint("card_type = 'multiple_choice'", name="ck_flashcards_card_type"),
         CheckConstraint(
             "flashcard_options_valid(options, back_content)",

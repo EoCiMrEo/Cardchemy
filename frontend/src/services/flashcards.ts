@@ -1,37 +1,96 @@
-import api from './api';
-import type { Flashcard, FlashcardUpdate } from './types';
+import api from './api'
+import type {
+  Flashcard,
+  FlashcardUpdate,
+  GenerationJob,
+  GenerationJobCreate,
+  GenerationJobList,
+  GenerationLimits,
+} from './types'
 
 export const flashcardService = {
   async getCards(setId: string): Promise<Flashcard[]> {
-    const response = await api.get<Flashcard[]>(`/flashcards/sets/${setId}/cards`);
-    return response.data;
+    const response = await api.get<Flashcard[]>(`/flashcards/sets/${setId}/cards`)
+    return response.data
   },
 
-  async generateCards(formData: FormData) {
-    // formData contains: subject_id, set_title, set_description, pdf_file
-    const response = await api.post('/flashcards/generate', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
+  async createGenerationJob(
+    data: GenerationJobCreate,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<GenerationJob> {
+    const response = await api.post<GenerationJob>('/flashcards/generation-jobs', data, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      signal,
+    })
+    return response.data
+  },
+
+  async uploadGenerationSource(
+    jobId: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<GenerationJob> {
+    const response = await api.put<GenerationJob>(
+      `/flashcards/generation-jobs/${jobId}/source`,
+      file,
+      {
+        headers: { 'Content-Type': 'application/pdf' },
+        signal,
+        timeout: 120_000,
       },
-      timeout: 60000, // 60s timeout for AI generation
-    });
-    return response.data;
+    )
+    return response.data
+  },
+
+  async listGenerationJobs(subjectId: string, signal?: AbortSignal): Promise<GenerationJob[]> {
+    const response = await api.get<GenerationJobList>('/flashcards/generation-jobs', {
+      params: { subject_id: subjectId },
+      signal,
+    })
+    return response.data.jobs
+  },
+
+  async getGenerationJob(jobId: string, signal?: AbortSignal): Promise<GenerationJob> {
+    const response = await api.get<GenerationJob>(`/flashcards/generation-jobs/${jobId}`, {
+      signal,
+    })
+    return response.data
+  },
+
+  async cancelGenerationJob(jobId: string): Promise<GenerationJob> {
+    const response = await api.post<GenerationJob>(
+      `/flashcards/generation-jobs/${jobId}/cancel`,
+    )
+    return response.data
+  },
+
+  async retryGenerationJob(jobId: string, idempotencyKey: string): Promise<GenerationJob> {
+    const response = await api.post<GenerationJob>(
+      `/flashcards/generation-jobs/${jobId}/retry`,
+      undefined,
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    )
+    return response.data
+  },
+
+  async getGenerationLimits(signal?: AbortSignal): Promise<GenerationLimits> {
+    const response = await api.get<GenerationLimits>('/flashcards/generation-limits', { signal })
+    return response.data
   },
 
   async updateCard(id: string, data: FlashcardUpdate): Promise<Flashcard> {
-    const response = await api.put<Flashcard>(`/flashcards/${id}`, data);
-    return response.data;
+    const response = await api.put<Flashcard>(`/flashcards/${id}`, data)
+    return response.data
   },
 
   async deleteCard(id: string) {
-    const response = await api.delete(`/flashcards/${id}`);
-    return response.data;
+    const response = await api.delete(`/flashcards/${id}`)
+    return response.data
   },
 
-  async approveAll(setId: string, minConfidence: number = 0.0) {
-    const response = await api.post(`/flashcards/sets/${setId}/approve-all`, null, {
-      params: { min_confidence: minConfidence }
-    });
-    return response.data;
-  }
-};
+  async approveAll(setId: string) {
+    const response = await api.post(`/flashcards/sets/${setId}/approve-all`)
+    return response.data
+  },
+}

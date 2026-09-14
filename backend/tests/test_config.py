@@ -19,6 +19,29 @@ def test_known_insecure_secret_is_rejected():
             _env_file=None,
             database_url="postgresql+asyncpg://user:password@database/app",
             secret_key="replace-with-at-least-32-random-characters",
+            generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        )
+
+
+def test_generation_source_key_must_decode_to_32_bytes():
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            database_url="postgresql+asyncpg://user:password@database/app",
+            secret_key="a-test-secret-with-real-entropy-1234567890",
+            generation_source_encryption_key="not-a-32-byte-key",
+        )
+
+
+def test_generation_worker_must_heartbeat_before_lease_expires():
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            database_url="postgresql+asyncpg://user:password@database/app",
+            secret_key="a-test-secret-with-real-entropy-1234567890",
+            generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            generation_lease_seconds=30,
+            generation_heartbeat_seconds=30,
         )
 
 
@@ -29,6 +52,7 @@ def test_production_security_settings_are_required():
             environment="production",
             database_url="postgresql+asyncpg://user:password@database/app",
             secret_key="a-production-secret-with-real-entropy-123456789",
+            generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             refresh_cookie_secure=False,
         )
 
