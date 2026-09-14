@@ -45,6 +45,5 @@ yarn-error.log*
 next-env.d.ts
 .shared
 
-.agent/
 .vscode/
 sites_data/
