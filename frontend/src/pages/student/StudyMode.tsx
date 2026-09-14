@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState } from "@/store";
 import { startSession, answerCard, nextCard } from "@/store/slices/studySlice";
+import type { StudyAnswerResponse } from "@/services/types";
 
 export default function StudyMode() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +25,7 @@ export default function StudyMode() {
   const [isFlipped, setIsFlipped] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [answerResult, setAnswerResult] = useState<StudyAnswerResponse | null>(null);
   
   // Stats for current session (could be moved to Redux fully, but this is fine for display)
   const currentStats = {
@@ -44,6 +46,7 @@ export default function StudyMode() {
      setSelectedOption(null);
      setIsFlipped(false);
      setTimedOut(false);
+     setAnswerResult(null);
      if (timeLimit) {
          setTimeLeft(timeLimit);
          startTimer();
@@ -58,7 +61,7 @@ export default function StudyMode() {
       dispatch(startSession({ 
           sessionId: id!, 
           cards: data.cards,
-          timeLimit: data.time_limit || null // Assuming API returns this now, strictly typed
+          timeLimit: data.time_limit ?? null
       }));
     } catch (e) {
       console.error(e);
@@ -93,24 +96,15 @@ export default function StudyMode() {
     stopTimer();
     setSelectedOption(option);
     
-    // Determine correctness
     const currentCard = cards[currentIndex];
-    const isCorrect = option === currentCard.back_content;
-    const quality = isCorrect ? 5 : 1; // 5 = perfect, 1 = wrong
-
-    // Update Redux
-    dispatch(answerCard({ cardId: currentCard.id, isCorrect }));
-
-    // Flip card to show explanation/answer
-    setIsFlipped(true);
-
-    // Sync to Backend
     try {
-        await studyService.updateProgress({
+        const result = await studyService.updateProgress({
             flashcard_id: currentCard.id,
-            is_correct: isCorrect,
-            quality: quality
+            selected_option: option,
         });
+        setAnswerResult(result);
+        dispatch(answerCard({ cardId: currentCard.id, isCorrect: result.is_correct }));
+        setIsFlipped(true);
     } catch (e) {
         console.error("Failed to sync progress", e);
     }
@@ -198,7 +192,7 @@ export default function StudyMode() {
                         style={{ transform: "rotateY(180deg)" }}
                    >
                         <span className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-4">Answer</span>
-                        <h2 className="text-xl font-medium text-slate-800">{currentCard.back_content}</h2>
+                         <h2 className="text-xl font-medium text-slate-800">{answerResult?.correct_option}</h2>
                    </Card>
                </motion.div>
           </div>
@@ -211,7 +205,7 @@ export default function StudyMode() {
                       {/* Show all options with correct/incorrect highlighting */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {currentCard.options?.map((option: string, idx: number) => {
-                              const isCorrect = option === currentCard.back_content;
+                              const isCorrect = option === answerResult?.correct_option;
                               const wasSelected = option === selectedOption;
                               
                               let bgColor = "bg-slate-100 border-slate-200";
@@ -243,11 +237,11 @@ export default function StudyMode() {
                       <div className={`text-center p-3 rounded-xl font-semibold text-lg ${
                           timedOut 
                               ? 'bg-orange-500 text-white'
-                              : selectedOption === currentCard.back_content 
+                              : answerResult?.is_correct
                                   ? 'bg-green-500 text-white' 
                                   : 'bg-red-500 text-white'
                       }`}>
-                          {timedOut ? "⏱️ Time Out!" : selectedOption === currentCard.back_content ? "🎉 Correct!" : "❌ Incorrect"}
+                          {timedOut ? "⏱️ Time Out!" : answerResult?.is_correct ? "🎉 Correct!" : "❌ Incorrect"}
                       </div>
                       
                       {/* Next Button */}

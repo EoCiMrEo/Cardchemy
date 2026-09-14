@@ -5,16 +5,27 @@ import { flashcardService } from "@/services/flashcards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Check, X, Loader2, Save, Trash2, Play } from "lucide-react"
+import { ChevronLeft, Check, Loader2, Save, Trash2, Play } from "lucide-react"
 import { PreviewDialog } from "@/components/sets/PreviewDialog"
+import type { Flashcard } from "@/services/types"
+
+interface EditValues {
+  front: string
+  options: [string, string, string, string]
+  correctOptionIndex: number
+}
 
 export default function SetView() {
   const { id } = useParams<{ id: string }>()
   const [set, setSet] = useState<any>(null)
-  const [cards, setCards] = useState<any[]>([])
+  const [cards, setCards] = useState<Flashcard[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValues, setEditValues] = useState({ front: "", back: "" })
+  const [editValues, setEditValues] = useState<EditValues>({
+    front: "",
+    options: ["", "", "", ""],
+    correctOptionIndex: 0,
+  })
   const [saving, setSaving] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
@@ -40,9 +51,16 @@ export default function SetView() {
     }
   }
   
-  const handleEdit = (card: any) => {
+  const handleEdit = (card: Flashcard) => {
       setEditingId(card.id)
-      setEditValues({ front: card.front_content, back: card.back_content })
+      const correctOptionIndex = card.options.findIndex(
+        option => option.trim().toLocaleLowerCase() === card.back_content.trim().toLocaleLowerCase()
+      )
+      setEditValues({
+        front: card.front_content,
+        options: [...card.options],
+        correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : 0,
+      })
   }
   
   const handleSave = async (cardId: string) => {
@@ -50,14 +68,21 @@ export default function SetView() {
           setSaving(true)
           await flashcardService.updateCard(cardId, {
               front_content: editValues.front,
-              back_content: editValues.back,
+              back_content: editValues.options[editValues.correctOptionIndex],
+              options: editValues.options,
               is_approved: true // saving implies approval
           })
           setEditingId(null)
           
           // Update local state
           setCards(cards.map(c => 
-              c.id === cardId ? { ...c, front_content: editValues.front, back_content: editValues.back, is_approved: true } : c
+              c.id === cardId ? {
+                ...c,
+                front_content: editValues.front.trim(),
+                back_content: editValues.options[editValues.correctOptionIndex].trim(),
+                options: editValues.options.map(option => option.trim()) as [string, string, string, string],
+                is_approved: true,
+              } : c
           ))
       } catch (e) {
           console.error(e)
@@ -140,11 +165,26 @@ export default function SetView() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Back</label>
-                        <Textarea 
-                            value={editValues.back}
-                            onChange={(e) => setEditValues({...editValues, back: e.target.value})}
-                        />
+                        <div className="text-xs font-bold text-muted-foreground uppercase">Options and correct answer</div>
+                        {editValues.options.map((option, optionIndex) => (
+                          <label key={optionIndex} className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name={`correct-${card.id}`}
+                              checked={editValues.correctOptionIndex === optionIndex}
+                              onChange={() => setEditValues({ ...editValues, correctOptionIndex: optionIndex })}
+                              className="mt-3"
+                            />
+                            <Textarea
+                              value={option}
+                              onChange={(event) => {
+                                const options = [...editValues.options] as [string, string, string, string]
+                                options[optionIndex] = event.target.value
+                                setEditValues({ ...editValues, options })
+                              }}
+                            />
+                          </label>
+                        ))}
                     </div>
                    </>
                ) : (

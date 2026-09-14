@@ -1,9 +1,10 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
+import type { StudyCard } from '@/services/types';
 
 interface StudyState {
   currentSessionId: string | null;
-  cards: any[];
+  cards: StudyCard[];
   currentIndex: number;
   results: Record<string, boolean>; // cardId -> isCorrect
   sessionComplete: boolean;
@@ -23,10 +24,10 @@ export const studySlice = createSlice({
   name: 'study',
   initialState,
   reducers: {
-    startSession: (state, action: PayloadAction<{ sessionId: string; cards: any[]; timeLimit?: number | null }>) => {
+    startSession: (state, action: PayloadAction<{ sessionId: string; cards: StudyCard[]; timeLimit?: number | null }>) => {
       state.currentSessionId = action.payload.sessionId;
       state.cards = action.payload.cards;
-      state.timeLimit = action.payload.timeLimit || null;
+      state.timeLimit = action.payload.timeLimit ?? null;
       state.currentIndex = 0;
       state.results = {};
       state.sessionComplete = false;

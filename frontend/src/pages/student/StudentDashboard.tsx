@@ -2,9 +2,8 @@ import { useState, useEffect } from "react"
 import { subjectService } from "@/services/subjects"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookOpen, ArrowRight, Loader2, Play, UserPlus } from "lucide-react"
+import { BookOpen, Loader2, Play, UserPlus } from "lucide-react"
 import { Link } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -23,8 +22,6 @@ export default function StudentDashboard() {
   const [joinToken, setJoinToken] = useState("")
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState("")
-  const { user } = useAuth()
-
   useEffect(() => {
     loadSubjects()
   }, [])

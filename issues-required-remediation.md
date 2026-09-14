@@ -116,34 +116,34 @@ or subject's resources.
 
 **Goal:** Make schema upgrades and multi-step operations safe and predictable.
 
-- [ ] **P0** Create an Alembic baseline for the existing schema.
-- [ ] **P0** Stop using `Base.metadata.create_all()` as the production migration
+- [x] **P0** Create an Alembic baseline for the existing schema.
+- [x] **P0** Stop using `Base.metadata.create_all()` as the production migration
   mechanism.
-- [ ] **P0** Replace the one-off `add_options.py` and `add_time_limit.py` scripts
+- [x] **P0** Replace the one-off `add_options.py` and `add_time_limit.py` scripts
   with versioned migrations; do not swallow migration failures.
-- [ ] **P0** Wrap registration/enrollment, invite consumption, generation
+- [x] **P0** Wrap registration/enrollment, invite consumption, generation
   creation, publication, and progress batches in proper transactions.
-- [ ] **P0** Add database-level foreign-key delete behavior and verify subject,
+- [x] **P0** Add database-level foreign-key delete behavior and verify subject,
   invitation, set, card, enrollment, and progress deletion semantics.
-- [ ] **P0** Add or verify unique constraints for enrollments, progress records,
+- [x] **P0** Add or verify unique constraints for enrollments, progress records,
   invitations, and other get-or-create paths; handle conflict races cleanly.
-- [ ] **P0** Use timezone-aware UTC columns and datetimes consistently.
-- [ ] **P1** Add length/range constraints for names, titles, descriptions,
+- [x] **P0** Use timezone-aware UTC columns and datetimes consistently.
+- [x] **P1** Add length/range constraints for names, titles, descriptions,
   `time_limit`, `card_count`, invitation lifetime, confidence, quality, and
   pagination limits.
-- [ ] **P1** Enforce flashcard invariants: non-empty front/back, valid card type,
+- [x] **P1** Enforce flashcard invariants: non-empty front/back, valid card type,
   sensible option count, unique options, and exactly one correct answer when
   required.
-- [ ] **P1** Reject contradictory progress inputs such as `is_correct=true` with
+- [x] **P1** Reject contradictory progress inputs such as `is_correct=true` with
   a failing quality grade, or derive correctness server-side.
-- [ ] **P1** Define one progress model so backend and frontend agree on `new`,
+- [x] **P1** Define one progress model so backend and frontend agree on `new`,
   `learning`, `review`, `mastered`, and completion percentage.
-- [ ] **P1** Query due cards with indexed filtering, deterministic ordering, and
+- [x] **P1** Query due cards with indexed filtering, deterministic ordering, and
   database limits instead of loading all cards and slicing in Python.
-- [ ] **P1** Allow nullable fields such as `time_limit` to be explicitly cleared
+- [x] **P1** Allow nullable fields such as `time_limit` to be explicitly cleared
   during updates.
-- [ ] **P1** Prevent publishing an empty set or a subject with no approved cards.
-- [ ] **P2** Add migration rollback and backup/restore documentation.
+- [x] **P1** Prevent publishing an empty set or a subject with no approved cards.
+- [x] **P2** Add migration rollback and backup/restore documentation.
 
 **Phase complete when:** a production-like database upgrades from the baseline
 to the latest schema, integrity tests pass, and failed multi-step operations

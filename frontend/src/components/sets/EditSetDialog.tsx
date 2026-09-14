@@ -98,7 +98,8 @@ export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }:
               <Input
                 id="timeLimit"
                 type="number"
-                min="0"
+                    min="5"
+                    max="3600"
                 value={timeLimit}
                 onChange={(e) => setTimeLimit(e.target.value)}
                 placeholder="Optional (e.g. 10)"

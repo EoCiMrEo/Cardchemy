@@ -1,362 +1,405 @@
-"""
-flashcard.py - Flashcard Service
+"""Flashcard CRUD, validated answer handling, and spaced-repetition queries."""
 
-Business logic for flashcard CRUD and study progress tracking.
-"""
+from __future__ import annotations
 
-from typing import List, Optional
-from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import timedelta
+from typing import Iterable
+from uuid import UUID, uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 from fastapi import HTTPException, status
+from pydantic import ValidationError
+from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.flashcard import Flashcard, StudyProgress, CardStatus
-from app.schemas.flashcard import FlashcardCreate, FlashcardUpdate, StudyProgressUpdate
+from app.models.flashcard import CardStatus, CardType, Enrollment, Flashcard, StudyProgress
+from app.models.subject import FlashcardSet
+from app.schemas.flashcard import (
+    FlashcardCreate,
+    FlashcardUpdate,
+    StudyAnswerResponse,
+    StudyProgressResponse,
+    StudyProgressUpdate,
+)
+from app.time_utils import utcnow
 
 
 class FlashcardService:
-    """Service for flashcard and study progress operations."""
-    
-    # ============================================
-    # Flashcard CRUD
-    # ============================================
-    
+    """Service methods never commit; route-level units of work own commits."""
+
     @staticmethod
     async def create_flashcard(
         db: AsyncSession,
         data: FlashcardCreate,
         confidence_score: float = 0.0,
-        source_chunk: Optional[str] = None
+        source_chunk: str | None = None,
     ) -> Flashcard:
-        """
-        Create a new flashcard.
-        
-        Args:
-            db: Database session
-            data: Flashcard content (front/back)
-            confidence_score: AI confidence (0-1), used for auto-approval
-            source_chunk: Original text the card was generated from
-        """
+        if not 0 <= confidence_score <= 1:
+            raise ValueError("confidence_score must be between 0 and 1")
+        if source_chunk is not None and len(source_chunk) > 10_000:
+            raise ValueError("source_chunk cannot exceed 10000 characters")
         flashcard = Flashcard(
             set_id=data.set_id,
             front_content=data.front_content,
             back_content=data.back_content,
-            options=data.options,
+            options=list(data.options),
+            card_type=data.card_type,
             confidence_score=confidence_score,
             source_chunk=source_chunk,
-            is_approved=confidence_score >= 0.7,  # Auto-approve high confidence
+            is_approved=confidence_score >= 0.7,
         )
-        
         db.add(flashcard)
-        await db.commit()
-        await db.refresh(flashcard)
-        
+        await db.flush()
         return flashcard
-    
+
     @staticmethod
     async def create_flashcards_bulk(
         db: AsyncSession,
-        flashcards_data: List[dict],
-        set_id: UUID
-    ) -> List[Flashcard]:
-        """
-        Create multiple flashcards at once.
-        
-        This is more efficient than creating one at a time
-        when generating from a PDF.
-        
-        Args:
-            db: Database session
-            flashcards_data: List of dicts with front/back/confidence/source
-            set_id: The flashcard set to add to
-            
-        Returns:
-            List of created Flashcard objects
-        """
-        flashcards = []
-        
-        for data in flashcards_data:
-            confidence = data.get("confidence_score", 0.0)
-            flashcard = Flashcard(
+        flashcards_data: list[dict],
+        set_id: UUID,
+    ) -> list[Flashcard]:
+        """Validate every generated card before staging the batch."""
+
+        validated: list[tuple[FlashcardCreate, float, str | None]] = []
+        for raw in flashcards_data:
+            confidence = float(raw.get("confidence_score", 0.0))
+            if not 0 <= confidence <= 1:
+                raise ValueError("confidence_score must be between 0 and 1")
+            source = raw.get("source_chunk")
+            if source is not None:
+                source = str(source).strip() or None
+                if source and len(source) > 10_000:
+                    raise ValueError("source_chunk cannot exceed 10000 characters")
+            card = FlashcardCreate(
                 set_id=set_id,
-                front_content=data["front_content"],
-                back_content=data["back_content"],
-                options=data.get("options"),
+                front_content=raw["front_content"],
+                back_content=raw["back_content"],
+                options=raw.get("options"),
+                card_type=raw.get("card_type", CardType.MULTIPLE_CHOICE.value),
+            )
+            validated.append((card, confidence, source))
+
+        flashcards = [
+            Flashcard(
+                set_id=set_id,
+                front_content=card.front_content,
+                back_content=card.back_content,
+                options=list(card.options),
+                card_type=card.card_type,
                 confidence_score=confidence,
-                source_chunk=data.get("source_chunk"),
+                source_chunk=source,
                 is_approved=confidence >= 0.7,
             )
-            flashcards.append(flashcard)
-        
+            for card, confidence, source in validated
+        ]
         db.add_all(flashcards)
-        await db.commit()
-        
-        # Refresh all to get IDs
-        for flashcard in flashcards:
-            await db.refresh(flashcard)
-        
+        await db.flush()
         return flashcards
-    
+
     @staticmethod
-    async def get_flashcard(db: AsyncSession, flashcard_id: UUID) -> Optional[Flashcard]:
-        """Get a flashcard by ID."""
-        result = await db.execute(
-            select(Flashcard).where(Flashcard.id == flashcard_id)
-        )
-        return result.scalar_one_or_none()
-    
+    async def get_flashcard(db: AsyncSession, flashcard_id: UUID) -> Flashcard | None:
+        return await db.scalar(select(Flashcard).where(Flashcard.id == flashcard_id))
+
     @staticmethod
     async def get_set_flashcards(
         db: AsyncSession,
         set_id: UUID,
-        only_approved: bool = False
-    ) -> List[Flashcard]:
-        """
-        Get all flashcards in a set.
-        
-        Args:
-            db: Database session
-            set_id: Flashcard set ID
-            only_approved: If True, only return approved cards (for students)
-        """
+        only_approved: bool = False,
+    ) -> list[Flashcard]:
         query = select(Flashcard).where(Flashcard.set_id == set_id)
-        
         if only_approved:
-            query = query.where(Flashcard.is_approved == True)
-        
-        query = query.order_by(Flashcard.created_at)
-        
-        result = await db.execute(query)
+            query = query.where(Flashcard.is_approved.is_(True))
+        result = await db.execute(query.order_by(Flashcard.created_at, Flashcard.id))
         return list(result.scalars().all())
-    
+
     @staticmethod
     async def update_flashcard(
         db: AsyncSession,
         flashcard: Flashcard,
-        data: FlashcardUpdate
+        data: FlashcardUpdate,
     ) -> Flashcard:
-        """Update a flashcard."""
-        if data.front_content is not None:
-            flashcard.front_content = data.front_content
-        if data.back_content is not None:
-            flashcard.back_content = data.back_content
-        if data.options is not None:
-            flashcard.options = data.options
-        if data.is_approved is not None:
+        """Validate the merged card so partial edits cannot break invariants."""
+
+        try:
+            merged = FlashcardCreate(
+                set_id=flashcard.set_id,
+                front_content=(
+                    data.front_content
+                    if "front_content" in data.model_fields_set
+                    else flashcard.front_content
+                ),
+                back_content=(
+                    data.back_content
+                    if "back_content" in data.model_fields_set
+                    else flashcard.back_content
+                ),
+                options=(
+                    data.options
+                    if "options" in data.model_fields_set
+                    else flashcard.options
+                ),
+                card_type=(
+                    data.card_type
+                    if "card_type" in data.model_fields_set
+                    else flashcard.card_type
+                ),
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=exc.errors(include_url=False),
+            ) from exc
+        flashcard.front_content = merged.front_content
+        flashcard.back_content = merged.back_content
+        flashcard.options = list(merged.options)
+        flashcard.card_type = merged.card_type
+        if "is_approved" in data.model_fields_set:
             flashcard.is_approved = data.is_approved
-        
-        await db.commit()
-        await db.refresh(flashcard)
-        
+        await db.flush()
         return flashcard
-    
+
     @staticmethod
     async def delete_flashcard(db: AsyncSession, flashcard: Flashcard) -> None:
-        """Delete a flashcard."""
         await db.delete(flashcard)
-        await db.commit()
-    
+        await db.flush()
+
     @staticmethod
     async def approve_all_flashcards(
         db: AsyncSession,
         set_id: UUID,
-        min_confidence: float = 0.0
+        min_confidence: float = 0.0,
     ) -> int:
-        """
-        Approve all flashcards in a set above a confidence threshold.
-        
-        Returns:
-            Number of flashcards approved
-        """
+        if not 0 <= min_confidence <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="min_confidence must be between 0 and 1",
+            )
         result = await db.execute(
-            select(Flashcard)
-            .where(Flashcard.set_id == set_id)
-            .where(Flashcard.is_approved == False)
-            .where(Flashcard.confidence_score >= min_confidence)
+            select(Flashcard).where(
+                Flashcard.set_id == set_id,
+                Flashcard.is_approved.is_(False),
+                Flashcard.confidence_score >= min_confidence,
+            )
         )
         flashcards = list(result.scalars().all())
-        
         for flashcard in flashcards:
             flashcard.is_approved = True
-        
-        await db.commit()
-        
+        await db.flush()
         return len(flashcards)
-    
-    # ============================================
-    # Study Progress Management
-    # ============================================
-    
+
+    @staticmethod
+    async def _insert_progress_if_missing(
+        db: AsyncSession,
+        student_id: UUID,
+        flashcard_id: UUID,
+    ) -> None:
+        values = {
+            "id": uuid4(),
+            "student_id": student_id,
+            "flashcard_id": flashcard_id,
+            "status": CardStatus.NEW.value,
+            "ease_factor": 2.5,
+            "interval_days": 0,
+            "correct_count": 0,
+            "incorrect_count": 0,
+        }
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            statement = postgresql_insert(StudyProgress).values(**values).on_conflict_do_nothing(
+                index_elements=["student_id", "flashcard_id"]
+            )
+        elif dialect == "sqlite":
+            statement = sqlite_insert(StudyProgress).values(**values).on_conflict_do_nothing(
+                index_elements=["student_id", "flashcard_id"]
+            )
+        else:
+            raise RuntimeError(f"Unsupported database dialect for progress upsert: {dialect}")
+        await db.execute(statement)
+
     @staticmethod
     async def get_or_create_progress(
         db: AsyncSession,
         student_id: UUID,
-        flashcard_id: UUID
+        flashcard_id: UUID,
     ) -> StudyProgress:
-        """
-        Get existing progress or create new record for a flashcard.
-        
-        This is called when a student starts studying a card.
-        """
-        result = await db.execute(
-            select(StudyProgress)
-            .where(StudyProgress.student_id == student_id)
-            .where(StudyProgress.flashcard_id == flashcard_id)
+        """Race-safe UPSERT followed by a row lock for lossless updates."""
+
+        await FlashcardService._insert_progress_if_missing(db, student_id, flashcard_id)
+        query = select(StudyProgress).where(
+            StudyProgress.student_id == student_id,
+            StudyProgress.flashcard_id == flashcard_id,
         )
-        progress = result.scalar_one_or_none()
-        
-        if not progress:
-            progress = StudyProgress(
-                student_id=student_id,
-                flashcard_id=flashcard_id,
-                status=CardStatus.NEW.value,
-            )
-            db.add(progress)
-            await db.commit()
-            await db.refresh(progress)
-        
+        if db.get_bind().dialect.name == "postgresql":
+            query = query.with_for_update()
+        progress = await db.scalar(query)
+        if progress is None:
+            raise RuntimeError("progress UPSERT did not produce a row")
         return progress
-    
+
+    @staticmethod
+    def _resolve_answer(flashcard: Flashcard, data: StudyProgressUpdate) -> tuple[bool, int, str, int]:
+        options = list(flashcard.options)
+        correct_key = flashcard.back_content.strip().casefold()
+        correct_index = next(
+            index for index, option in enumerate(options) if option.strip().casefold() == correct_key
+        )
+
+        if data.selected_option_index is not None:
+            if data.selected_option_index >= len(options):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="selected_option_index does not identify an option",
+                )
+            selected_index = data.selected_option_index
+        elif data.selected_option is None:
+            selected_index = -1
+        else:
+            selected_key = data.selected_option.strip().casefold()
+            matches = [
+                index for index, option in enumerate(options) if option.strip().casefold() == selected_key
+            ]
+            if len(matches) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="selected_option does not identify an option",
+                )
+            selected_index = matches[0]
+
+        is_correct = selected_index == correct_index
+        return is_correct, 5 if is_correct else 1, options[correct_index], correct_index
+
     @staticmethod
     async def update_progress(
         db: AsyncSession,
         student_id: UUID,
-        data: StudyProgressUpdate
-    ) -> StudyProgress:
-        """
-        Update study progress after answering a card.
-        
-        This implements a simplified SM-2 spaced repetition algorithm:
-        
-        - quality 0-2: Card was hard, reset interval
-        - quality 3-4: Card was okay, increase interval moderately  
-        - quality 5: Card was easy, increase interval significantly
-        
-        The ease_factor adjusts how quickly intervals grow.
-        """
-        progress = await FlashcardService.get_or_create_progress(
-            db, student_id, data.flashcard_id
-        )
-        
-        # Update statistics
-        if data.is_correct:
+        flashcard: Flashcard,
+        data: StudyProgressUpdate,
+    ) -> StudyAnswerResponse:
+        is_correct, quality, correct_option, correct_index = FlashcardService._resolve_answer(flashcard, data)
+        progress = await FlashcardService.get_or_create_progress(db, student_id, data.flashcard_id)
+
+        if is_correct:
             progress.correct_count += 1
         else:
             progress.incorrect_count += 1
-        
-        # SM-2 Algorithm (simplified)
-        quality = data.quality
-        
+
         if quality < 3:
-            # Failed - reset to learning
             progress.interval_days = 0
             progress.status = CardStatus.LEARNING.value
         else:
-            # Passed - increase interval
             if progress.interval_days == 0:
                 progress.interval_days = 1
             elif progress.interval_days == 1:
                 progress.interval_days = 6
             else:
                 progress.interval_days = round(progress.interval_days * progress.ease_factor)
-            
-            # Update ease factor based on quality
-            # EF' = EF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
             progress.ease_factor = max(
                 1.3,
-                progress.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
+                progress.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)),
             )
-            
-            # Update status based on interval
             if progress.interval_days >= 21:
                 progress.status = CardStatus.MASTERED.value
             elif progress.interval_days >= 7:
                 progress.status = CardStatus.REVIEW.value
             else:
                 progress.status = CardStatus.LEARNING.value
-        
-        # Schedule next review
-        progress.next_review = datetime.utcnow() + timedelta(days=progress.interval_days)
-        progress.last_reviewed = datetime.utcnow()
-        
-        await db.commit()
-        await db.refresh(progress)
-        
-        return progress
-    
+
+        now = utcnow()
+        progress.next_review = now + timedelta(days=progress.interval_days)
+        progress.last_reviewed = now
+        await db.flush()
+        return StudyAnswerResponse(
+            progress=StudyProgressResponse.model_validate(progress),
+            is_correct=is_correct,
+            quality=quality,
+            correct_option=correct_option,
+            correct_option_index=correct_index,
+        )
+
+    @staticmethod
+    async def get_studyable_cards(
+        db: AsyncSession,
+        student_id: UUID,
+        flashcard_ids: Iterable[UUID],
+    ) -> dict[UUID, Flashcard]:
+        """Fetch and lock an authorized batch in a deterministic order."""
+
+        unique_ids = sorted(set(flashcard_ids), key=str)
+        if not unique_ids:
+            return {}
+        query = (
+            select(Flashcard)
+            .join(FlashcardSet, FlashcardSet.id == Flashcard.set_id)
+            .join(
+                Enrollment,
+                and_(
+                    Enrollment.subject_id == FlashcardSet.subject_id,
+                    Enrollment.student_id == student_id,
+                ),
+            )
+            .where(
+                Flashcard.id.in_(unique_ids),
+                Flashcard.is_approved.is_(True),
+                FlashcardSet.is_published.is_(True),
+            )
+            .order_by(Flashcard.id)
+        )
+        if db.get_bind().dialect.name == "postgresql":
+            query = query.with_for_update(of=Flashcard)
+        result = await db.execute(query)
+        return {card.id: card for card in result.scalars().all()}
+
     @staticmethod
     async def get_due_cards(
         db: AsyncSession,
         student_id: UUID,
         set_id: UUID,
-        limit: int = 20
-    ) -> List[Flashcard]:
-        """
-        Get flashcards that are due for review.
-        
-        Includes:
-        - New cards (never studied)
-        - Cards with next_review <= now
-        
-        This powers the study session - students see a mix of
-        new and review cards.
-        """
-        now = datetime.utcnow()
-        
-        # Get all approved flashcards in the set
-        all_cards_result = await db.execute(
+        limit: int = 20,
+    ) -> list[Flashcard]:
+        """Use indexed database filtering, deterministic ordering, and LIMIT."""
+
+        now = utcnow()
+        query = (
             select(Flashcard)
-            .where(Flashcard.set_id == set_id)
-            .where(Flashcard.is_approved == True)
+            .outerjoin(
+                StudyProgress,
+                and_(
+                    StudyProgress.flashcard_id == Flashcard.id,
+                    StudyProgress.student_id == student_id,
+                ),
+            )
+            .where(
+                Flashcard.set_id == set_id,
+                Flashcard.is_approved.is_(True),
+                or_(
+                    StudyProgress.id.is_(None),
+                    StudyProgress.next_review.is_(None),
+                    StudyProgress.next_review <= now,
+                ),
+            )
+            .order_by(
+                case((StudyProgress.id.is_not(None), 0), else_=1),
+                StudyProgress.next_review.asc().nulls_last(),
+                Flashcard.created_at,
+                Flashcard.id,
+            )
+            .limit(limit)
         )
-        all_cards = {card.id: card for card in all_cards_result.scalars().all()}
-        
-        # Get student's progress for these cards
-        progress_result = await db.execute(
-            select(StudyProgress)
-            .where(StudyProgress.student_id == student_id)
-            .where(StudyProgress.flashcard_id.in_(all_cards.keys()))
-        )
-        progress_map = {p.flashcard_id: p for p in progress_result.scalars().all()}
-        
-        due_cards = []
-        
-        for card_id, card in all_cards.items():
-            progress = progress_map.get(card_id)
-            
-            if not progress:
-                # New card - always due
-                due_cards.append(card)
-            elif progress.next_review is None or progress.next_review <= now:
-                # Review card - due
-                due_cards.append(card)
-        
-        # Limit results
-        return due_cards[:limit]
-    
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
     @staticmethod
-    async def get_set_progress(
-        db: AsyncSession,
-        student_id: UUID,
-        set_id: UUID
-    ) -> dict:
-        """
-        Get overall progress statistics for a flashcard set.
-        
-        Returns:
-            Dict with progress stats (total, new, learning, review, mastered, completion %)
-        """
-        # Get all approved cards
-        cards_result = await db.execute(
-            select(Flashcard)
-            .where(Flashcard.set_id == set_id)
-            .where(Flashcard.is_approved == True)
+    async def get_set_progress(db: AsyncSession, student_id: UUID, set_id: UUID) -> dict:
+        total_cards = int(
+            await db.scalar(
+                select(func.count(Flashcard.id)).where(
+                    Flashcard.set_id == set_id,
+                    Flashcard.is_approved.is_(True),
+                )
+            )
+            or 0
         )
-        cards = list(cards_result.scalars().all())
-        total_cards = len(cards)
-        
         if total_cards == 0:
             return {
                 "total": 0,
@@ -364,51 +407,41 @@ class FlashcardService:
                 "learning": 0,
                 "review": 0,
                 "mastered": 0,
+                "studied": 0,
+                "correct_count": 0,
                 "completion_percentage": 0.0,
+                "mastery_percentage": 0.0,
             }
-        
-        card_ids = [card.id for card in cards]
-        
-        # Get progress for all cards
-        progress_result = await db.execute(
-            select(StudyProgress)
-            .where(StudyProgress.student_id == student_id)
-            .where(StudyProgress.flashcard_id.in_(card_ids))
+
+        rows = await db.execute(
+            select(StudyProgress.status, func.count(StudyProgress.id), func.sum(StudyProgress.correct_count))
+            .join(Flashcard, Flashcard.id == StudyProgress.flashcard_id)
+            .where(
+                StudyProgress.student_id == student_id,
+                StudyProgress.last_reviewed.is_not(None),
+                Flashcard.set_id == set_id,
+                Flashcard.is_approved.is_(True),
+            )
+            .group_by(StudyProgress.status)
         )
-        progress_list = list(progress_result.scalars().all())
-        
-        # Count by status
-        status_counts = {
-            CardStatus.NEW.value: 0,
-            CardStatus.LEARNING.value: 0,
-            CardStatus.REVIEW.value: 0,
-            CardStatus.MASTERED.value: 0,
-        }
-        
-        studied_ids = set()
-        for progress in progress_list:
-            status_counts[progress.status] = status_counts.get(progress.status, 0) + 1
-            # Only count as "studied" if the student got at least one correct answer
-            if progress.correct_count >= 1:
-                studied_ids.add(progress.flashcard_id)
-        
-        # Cards without progress are "new"
-        new_count = total_cards - len(studied_ids)
-        
-        # Count correct answers across all studied cards
-        total_correct = sum(p.correct_count for p in progress_list)
-        total_studied = len(studied_ids)
-        
-        # Completion = (review + mastered) / total
-        completion = (status_counts[CardStatus.REVIEW.value] + status_counts[CardStatus.MASTERED.value]) / total_cards
-        
+        counts = {status_value: 0 for status_value in CardStatus}
+        studied = 0
+        correct_count = 0
+        for status_value, count_value, correct_value in rows:
+            counts[CardStatus(status_value)] = int(count_value)
+            studied += int(count_value)
+            correct_count += int(correct_value or 0)
+
+        new_count = total_cards - studied
+        mastery_count = counts[CardStatus.REVIEW] + counts[CardStatus.MASTERED]
         return {
             "total": total_cards,
             "new": new_count,
-            "learning": status_counts[CardStatus.LEARNING.value],
-            "review": status_counts[CardStatus.REVIEW.value],
-            "mastered": status_counts[CardStatus.MASTERED.value],
-            "studied": total_studied,  # Cards the student has seen at least once
-            "correct_count": total_correct,  # Total correct answers
-            "completion_percentage": round(completion * 100, 1),
+            "learning": counts[CardStatus.LEARNING],
+            "review": counts[CardStatus.REVIEW],
+            "mastered": counts[CardStatus.MASTERED],
+            "studied": studied,
+            "correct_count": correct_count,
+            "completion_percentage": round(studied / total_cards * 100, 1),
+            "mastery_percentage": round(mastery_count / total_cards * 100, 1),
         }

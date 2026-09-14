@@ -7,7 +7,7 @@ It:
 - Sets up CORS (Cross-Origin Resource Sharing) for frontend
 - Registers all routers
 - Provides startup/shutdown event handlers
-- Creates database tables on startup
+- Verifies that Alembic migrations were applied before startup
 
 To run the application:
     uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.database import init_db
+from app.database import verify_database_revision
 from app.routers import auth_router, subjects_router, flashcards_router, study_router
 
 settings = get_settings()
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     Lifespan context manager for startup/shutdown events.
     
     Startup:
-    - Initialize database tables
+    - Verify the database is at the current Alembic revision
     - Any other setup (e.g., connecting to external services)
     
     Shutdown:
@@ -40,8 +40,8 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     print("🚀 Starting Flashcard Generator API...")
-    await init_db()
-    print("✅ Database initialized")
+    await verify_database_revision()
+    print("✅ Database migration revision verified")
     
     yield  # Application runs here
     

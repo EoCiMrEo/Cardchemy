@@ -13,14 +13,14 @@ Password = Annotated[str, StringConstraints(min_length=8, max_length=128)]
 class UserCreate(BaseModel):
     email: EmailStr
     password: Password
-    full_name: str | None = Field(default=None, max_length=255)
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
 
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
 
-    @field_validator("full_name")
+    @field_validator("full_name", mode="before")
     @classmethod
     def normalize_name(cls, value: str | None) -> str | None:
         if value is None:

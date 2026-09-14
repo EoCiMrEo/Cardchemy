@@ -74,6 +74,7 @@ async def create_subject(
     Only instructors can create subjects.
     """
     subject = await SubjectService.create_subject(db, data, user.id)
+    await db.commit()
     return subject
 
 
@@ -133,6 +134,7 @@ async def update_subject(
     """
     subject = await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     updated = await SubjectService.update_subject(db, subject, data)
+    await db.commit()
     return updated
 
 
@@ -149,6 +151,7 @@ async def delete_subject(
     """
     subject = await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     await SubjectService.delete_subject(db, subject)
+    await db.commit()
     return None
 
 
@@ -240,6 +243,7 @@ async def create_flashcard_set(
     data.subject_id = subject_id
     
     flashcard_set = await SubjectService.create_flashcard_set(db, data)
+    await db.commit()
     return flashcard_set
 
 
@@ -282,7 +286,7 @@ async def update_flashcard_set(
     """Update a flashcard set (title, description, publish status)."""
     await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     
-    flashcard_set = await SubjectService.get_flashcard_set(db, set_id)
+    flashcard_set = await SubjectService.get_flashcard_set(db, set_id, for_update=True)
     
     if not flashcard_set or flashcard_set.subject_id != subject_id:
         raise HTTPException(
@@ -291,6 +295,7 @@ async def update_flashcard_set(
         )
     
     updated = await SubjectService.update_flashcard_set(db, flashcard_set, data)
+    await db.commit()
     return updated
 
 
@@ -313,4 +318,5 @@ async def delete_flashcard_set(
         )
     
     await SubjectService.delete_flashcard_set(db, flashcard_set)
+    await db.commit()
     return None

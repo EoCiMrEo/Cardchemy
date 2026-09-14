@@ -13,10 +13,11 @@ Endpoints:
 - POST /flashcards/generate - Generate cards from PDF (AI)
 """
 
-from typing import List
+from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -24,6 +25,7 @@ from app.models.user import User, UserRole
 from app.routers.auth import get_current_user, get_current_instructor
 from app.schemas.flashcard import (
     FlashcardCreate,
+    FlashcardGenerateResponse,
     FlashcardUpdate,
     FlashcardResponse,
 )
@@ -98,13 +100,13 @@ async def create_flashcard(
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
     # Override set_id from path
-    data.set_id = set_id
+    data = data.model_copy(update={"set_id": set_id})
     
     # Manually created = auto-approved with high confidence
     flashcard = await FlashcardService.create_flashcard(
         db, data, confidence_score=1.0
     )
-    
+    await db.commit()
     return flashcard
 
 
@@ -167,6 +169,7 @@ async def update_flashcard(
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
     updated = await FlashcardService.update_flashcard(db, flashcard, data)
+    await db.commit()
     return updated
 
 
@@ -190,6 +193,7 @@ async def delete_flashcard(
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
     await FlashcardService.delete_flashcard(db, flashcard)
+    await db.commit()
     return None
 
 
@@ -200,7 +204,7 @@ async def delete_flashcard(
 @router.post("/sets/{set_id}/approve-all")
 async def approve_all_flashcards(
     set_id: UUID,
-    min_confidence: float = 0.0,
+    min_confidence: Annotated[float, Query(ge=0, le=1)] = 0.0,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
 ):
@@ -224,7 +228,7 @@ async def approve_all_flashcards(
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
     count = await FlashcardService.approve_all_flashcards(db, set_id, min_confidence)
-    
+    await db.commit()
     return {"approved_count": count}
 
 
@@ -234,50 +238,48 @@ async def approve_all_flashcards(
 
 @router.post(
     "/generate",
+    response_model=FlashcardGenerateResponse,
     dependencies=[Depends(limit_pdf_upload), Depends(limit_ai_generation)],
 )
 async def generate_flashcards(
-    subject_id: UUID = Form(...),
-    set_title: str = Form(...),
-    set_description: str = Form(None),
-    card_count: int = Form(20),
-    pdf_file: UploadFile = File(...),
+    subject_id: Annotated[UUID, Form()],
+    set_title: Annotated[str, Form(min_length=1, max_length=255)],
+    pdf_file: Annotated[UploadFile, File()],
+    set_description: Annotated[str | None, Form(max_length=10_000)] = None,
+    card_count: Annotated[int, Form(ge=1, le=100)] = 20,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Generate flashcards from a PDF using AI.
     
-    This endpoint:
-    1. Creates a new FlashcardSet
-    2. Extracts text from the PDF
-    3. Uses LangGraph agents to generate Q&A pairs
-    4. Saves generated flashcards (some auto-approved, some for review)
+    Extraction and AI calls happen before the short database transaction that
+    persists the set and every validated card together.
     """
     # Verify access
     await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     
     # Validate file
-    if not pdf_file.filename.lower().endswith('.pdf'):
+    filename = (pdf_file.filename or "").strip()
+    if not filename.lower().endswith('.pdf'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only PDF files are supported"
         )
     
-    # 1. Create the FlashcardSet first (so we have an ID)
     from app.schemas.subject import FlashcardSetCreate
     set_data = FlashcardSetCreate(
         subject_id=subject_id,
         title=set_title,
         description=set_description
     )
-    
-    flashcard_set = await SubjectService.create_flashcard_set(
-        db, set_data, source_pdf_name=pdf_file.filename
-    )
-    
+    if len(filename) > 255:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="PDF filename is too long")
+
+    # End the authorization read transaction before slow external work.
+    await db.rollback()
+
     try:
-        # 2. Extract Text from PDF
         from app.services.pdf_processor import PDFProcessor
         content = await pdf_file.read()
         full_text = PDFProcessor.extract_text_from_bytes(content)
@@ -325,8 +327,12 @@ async def generate_flashcards(
                 detail=f"AI generation failed: {error_msg}"
             )
 
-        # 4. Save Results
         final_cards = result_state.get("final_cards", [])
+        if not final_cards:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AI generation returned no flashcards",
+            )
         
         # Batch create in DB
         # Map agent output to DB schema
@@ -344,12 +350,16 @@ async def generate_flashcards(
                 "back_content": card['back'],
                 "options": card.get('options'),
                 "confidence_score": confidence,
-                "source_chunk": card.get('source', '')[:500] # Truncate source if too long
+                "source_chunk": card.get('source', '')[:10_000]
             })
-            
-        created_cards = await FlashcardService.create_flashcards_bulk(
-            db, cards_data, flashcard_set.id
-        )
+
+        async with db.begin():
+            flashcard_set = await SubjectService.create_flashcard_set(
+                db, set_data, source_pdf_name=filename
+            )
+            created_cards = await FlashcardService.create_flashcards_bulk(
+                db, cards_data, flashcard_set.id
+            )
         
         return {
             "flashcard_set": flashcard_set,
@@ -359,12 +369,20 @@ async def generate_flashcards(
             "needs_review": len(created_cards) - auto_approved_count
         }
         
+    except HTTPException:
+        raise
+    except (KeyError, TypeError, ValueError, ValidationError) as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Generated flashcards failed validation: {e}",
+        ) from None
     except Exception as e:
-        # If AI fails, still return the empty set but logic error
+        await db.rollback()
         print(f"AI Generation Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI generation failed: {str(e)}"
-        )
+            detail="AI generation failed"
+        ) from None

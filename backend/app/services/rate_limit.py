@@ -2,7 +2,7 @@
 
 import hashlib
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
@@ -11,10 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database import async_session_maker
 from app.models.user import RateLimitBucket
-
-
-def _utcnow() -> datetime:
-    return datetime.utcnow()
+from app.time_utils import as_utc, utcnow
 
 
 class RateLimitService:
@@ -40,7 +37,7 @@ class RateLimitService:
                             .with_for_update()
                         )
                         bucket = result.scalar_one_or_none()
-                        now = _utcnow()
+                        now = utcnow()
                         if not bucket:
                             bucket = RateLimitBucket(
                                 scope=scope,
@@ -53,7 +50,7 @@ class RateLimitService:
                             await db.flush()
                             return 1
 
-                        if bucket.window_started_at <= now - timedelta(seconds=window_seconds):
+                        if as_utc(bucket.window_started_at) <= now - timedelta(seconds=window_seconds):
                             bucket.window_started_at = now
                             bucket.count = 1
                         else:

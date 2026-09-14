@@ -72,11 +72,12 @@ async def test_progress_requires_enrollment_publication_and_approval(db):
         set_id=flashcard_set.id,
         front_content="Question",
         back_content="Answer",
+        options=["Answer", "Distractor 1", "Distractor 2", "Distractor 3"],
         is_approved=True,
     )
     db.add_all([owner, student, subject, flashcard_set, card])
     await db.commit()
-    data = StudyProgressUpdate(flashcard_id=card.id, is_correct=True, quality=4)
+    data = StudyProgressUpdate(flashcard_id=card.id, selected_option="Answer")
 
     with pytest.raises(HTTPException) as unenrolled:
         await update_study_progress(data, student, db)
@@ -116,6 +117,7 @@ async def test_student_cannot_read_an_approved_card_from_an_unpublished_set(db):
         set_id=flashcard_set.id,
         front_content="Question",
         back_content="Answer",
+        options=["Answer", "Distractor 1", "Distractor 2", "Distractor 3"],
         is_approved=True,
     )
     db.add_all([owner, student, subject, flashcard_set, card])

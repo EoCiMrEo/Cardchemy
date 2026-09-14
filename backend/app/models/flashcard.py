@@ -10,14 +10,30 @@ The StudyProgress model implements a simplified spaced repetition
 algorithm (similar to Anki's SM-2) to optimize learning.
 """
 
-import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Text, Float, Boolean, Integer, DateTime, ForeignKey, UniqueConstraint, text, JSON
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import enum
+import uuid
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.time_utils import utcnow
 
 
 class CardStatus(str, enum.Enum):
@@ -33,6 +49,12 @@ class CardStatus(str, enum.Enum):
     LEARNING = "learning"
     REVIEW = "review"
     MASTERED = "mastered"
+
+
+class CardType(str, enum.Enum):
+    """The only card representation supported in the current product."""
+
+    MULTIPLE_CHOICE = "multiple_choice"
 
 
 class Flashcard(Base):
@@ -78,22 +100,52 @@ class Flashcard(Base):
     # Multiple choice options (JSON list of strings)
     # Example: ["Option A", "Option B", "Option C", "Option D"]
     # The back_content is the correct answer.
-    options = Column(JSON, nullable=True)
+    options = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+
+    card_type = Column(
+        String(32),
+        default=CardType.MULTIPLE_CHOICE.value,
+        server_default=text("'multiple_choice'"),
+        nullable=False,
+    )
     
     # AI confidence score (0.0 to 1.0)
-    confidence_score = Column(Float, default=0.0)
+    confidence_score = Column(Float, default=0.0, server_default=text("0"), nullable=False)
     
     # Instructor approval status
-    is_approved = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     
     # Original text this was generated from (for debugging/editing)
     source_chunk = Column(Text, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
     # Relationships
     flashcard_set = relationship("FlashcardSet", back_populates="flashcards")
-    study_progress = relationship("StudyProgress", back_populates="flashcard", cascade="all, delete-orphan")
+    study_progress = relationship("StudyProgress", back_populates="flashcard", passive_deletes=True)
+
+    __table_args__ = (
+        CheckConstraint("length(trim(front_content)) BETWEEN 1 AND 10000", name="ck_flashcards_front_length"),
+        CheckConstraint("length(trim(back_content)) BETWEEN 1 AND 10000", name="ck_flashcards_back_length"),
+        CheckConstraint(
+            "source_chunk IS NULL OR length(source_chunk) <= 10000",
+            name="ck_flashcards_source_length",
+        ),
+        CheckConstraint("confidence_score BETWEEN 0 AND 1", name="ck_flashcards_confidence"),
+        CheckConstraint("card_type = 'multiple_choice'", name="ck_flashcards_card_type"),
+        CheckConstraint(
+            "flashcard_options_valid(options, back_content)",
+            name="ck_flashcards_options_valid",
+        ).ddl_if(dialect="postgresql"),
+        Index("ix_flashcards_set_id", "set_id"),
+        Index(
+            "ix_flashcards_approved_due_source",
+            "set_id",
+            "created_at",
+            "id",
+            postgresql_where=text("is_approved = true"),
+        ),
+    )
 
 
 class Enrollment(Base):
@@ -120,21 +172,22 @@ class Enrollment(Base):
     
     student_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
     
     subject_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("subjects.id"),
+        ForeignKey("subjects.id", ondelete="CASCADE"),
         nullable=False
     )
     
-    enrolled_at = Column(DateTime, default=datetime.utcnow)
+    enrolled_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
     # Ensure a student can only enroll once per subject
     __table_args__ = (
         UniqueConstraint("student_id", "subject_id", name="unique_enrollment"),
+        Index("ix_enrollments_subject_id", "subject_id"),
     )
     
     # Relationships
@@ -178,7 +231,7 @@ class StudyProgress(Base):
     
     student_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
     
@@ -189,22 +242,40 @@ class StudyProgress(Base):
     )
     
     # Current status
-    status = Column(String(20), default=CardStatus.NEW.value)
+    status = Column(String(20), default=CardStatus.NEW.value, server_default=text("'new'"), nullable=False)
     
     # Spaced repetition parameters
-    ease_factor = Column(Float, default=2.5)  # SM-2 default
-    interval_days = Column(Integer, default=0)
-    next_review = Column(DateTime, nullable=True)
-    last_reviewed = Column(DateTime, nullable=True)
+    ease_factor = Column(Float, default=2.5, server_default=text("2.5"), nullable=False)
+    interval_days = Column(Integer, default=0, server_default=text("0"), nullable=False)
+    next_review = Column(DateTime(timezone=True), nullable=True)
+    last_reviewed = Column(DateTime(timezone=True), nullable=True)
     
     # Statistics
-    correct_count = Column(Integer, default=0)
-    incorrect_count = Column(Integer, default=0)
+    correct_count = Column(Integer, default=0, server_default=text("0"), nullable=False)
+    incorrect_count = Column(Integer, default=0, server_default=text("0"), nullable=False)
     
     # Ensure one progress record per student per card
     __table_args__ = (
         UniqueConstraint("student_id", "flashcard_id", name="unique_progress"),
+        CheckConstraint(
+            "status IN ('new', 'learning', 'review', 'mastered')",
+            name="ck_study_progress_status",
+        ),
+        CheckConstraint("ease_factor >= 1.3", name="ck_study_progress_ease_factor"),
+        CheckConstraint("interval_days >= 0", name="ck_study_progress_interval"),
+        CheckConstraint("correct_count >= 0", name="ck_study_progress_correct_count"),
+        CheckConstraint("incorrect_count >= 0", name="ck_study_progress_incorrect_count"),
+        CheckConstraint(
+            "(status = 'new' AND interval_days = 0) OR "
+            "(status = 'learning' AND interval_days BETWEEN 0 AND 6) OR "
+            "(status = 'review' AND interval_days BETWEEN 7 AND 20) OR "
+            "(status = 'mastered' AND interval_days >= 21)",
+            name="ck_study_progress_status_interval",
+        ),
+        Index("ix_study_progress_flashcard_id", "flashcard_id"),
+        Index("ix_study_progress_student_due", "student_id", "next_review", "flashcard_id"),
     )
     
     # Relationships
     flashcard = relationship("Flashcard", back_populates="study_progress")
+    student = relationship("User", back_populates="study_progress")

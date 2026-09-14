@@ -39,8 +39,7 @@ class SubjectService:
         )
         
         db.add(subject)
-        await db.commit()
-        await db.refresh(subject)
+        await db.flush()
         
         return subject
     
@@ -100,13 +99,11 @@ class SubjectService:
         data: SubjectUpdate
     ) -> Subject:
         """Update a subject."""
-        if data.name is not None:
+        if "name" in data.model_fields_set:
             subject.name = data.name
-        if data.description is not None:
+        if "description" in data.model_fields_set:
             subject.description = data.description
-        
-        await db.commit()
-        await db.refresh(subject)
+        await db.flush()
         
         return subject
     
@@ -114,7 +111,7 @@ class SubjectService:
     async def delete_subject(db: AsyncSession, subject: Subject) -> None:
         """Delete a subject and all its contents."""
         await db.delete(subject)
-        await db.commit()
+        await db.flush()
     
     # ============================================
     # FlashcardSet CRUD
@@ -136,20 +133,22 @@ class SubjectService:
         )
         
         db.add(flashcard_set)
-        await db.commit()
-        await db.refresh(flashcard_set)
+        await db.flush()
         
         return flashcard_set
     
     @staticmethod
     async def get_flashcard_set(
         db: AsyncSession,
-        set_id: UUID
+        set_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> Optional[FlashcardSet]:
         """Get a flashcard set by ID."""
-        result = await db.execute(
-            select(FlashcardSet).where(FlashcardSet.id == set_id)
-        )
+        query = select(FlashcardSet).where(FlashcardSet.id == set_id)
+        if for_update:
+            query = query.with_for_update()
+        result = await db.execute(query)
         return result.scalar_one_or_none()
     
     @staticmethod
@@ -189,17 +188,27 @@ class SubjectService:
         data: FlashcardSetUpdate
     ) -> FlashcardSet:
         """Update a flashcard set."""
-        if data.title is not None:
+        if "title" in data.model_fields_set:
             flashcard_set.title = data.title
-        if data.description is not None:
+        if "description" in data.model_fields_set:
             flashcard_set.description = data.description
-        if data.is_published is not None:
+        if "is_published" in data.model_fields_set and data.is_published:
+            approved_count = await db.scalar(
+                select(func.count(Flashcard.id)).where(
+                    Flashcard.set_id == flashcard_set.id,
+                    Flashcard.is_approved.is_(True),
+                )
+            )
+            if not approved_count:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A flashcard set must contain at least one approved card before publication",
+                )
+        if "is_published" in data.model_fields_set:
             flashcard_set.is_published = data.is_published
-        if data.time_limit is not None:
+        if "time_limit" in data.model_fields_set:
             flashcard_set.time_limit = data.time_limit
-        
-        await db.commit()
-        await db.refresh(flashcard_set)
+        await db.flush()
         
         return flashcard_set
     
@@ -207,7 +216,7 @@ class SubjectService:
     async def delete_flashcard_set(db: AsyncSession, flashcard_set: FlashcardSet) -> None:
         """Delete a flashcard set and all its cards."""
         await db.delete(flashcard_set)
-        await db.commit()
+        await db.flush()
     
     # ============================================
     # Authorization Helpers

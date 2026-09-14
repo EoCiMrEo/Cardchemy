@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Plus, BookOpen, Loader2, ArrowRight } from "lucide-react"
 import { Link } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
 
 export default function InstructorDashboard() {
   const [subjects, setSubjects] = useState<any[]>([])
@@ -13,8 +12,6 @@ export default function InstructorDashboard() {
   const [isCreating, setIsCreating] = useState(false)
   const [newSubjectName, setNewSubjectName] = useState("")
   const [creatingLoading, setCreatingLoading] = useState(false)
-  const { user } = useAuth()
-
   useEffect(() => {
     loadSubjects()
   }, [])

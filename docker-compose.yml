@@ -31,6 +31,25 @@ services:
       retries: 5
 
   # ===========================================
+  # One-shot schema migration
+  # ===========================================
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: alembic upgrade head
+    restart: "no"
+
+  # ===========================================
   # FastAPI Backend
   # ===========================================
   backend:
@@ -56,8 +75,8 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEBUG: ${DEBUG:-false}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       # Mount source code for hot reloading in development
       - ./backend:/app

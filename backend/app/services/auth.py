@@ -20,6 +20,7 @@ from app.config import get_settings
 from app.models.flashcard import Enrollment
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, User, UserRole
 from app.schemas.user import TokenData, UserCreate
+from app.time_utils import as_utc, utcnow
 
 
 settings = get_settings()
@@ -27,14 +28,10 @@ pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto
 DUMMY_PASSWORD_HASH = pwd_context.hash("timing-only-password-value")
 
 
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
 def db_utcnow() -> datetime:
-    """Naive UTC for compatibility with the current pre-migration schema."""
+    """Return the timezone-aware timestamp used by database columns."""
 
-    return datetime.utcnow()
+    return utcnow()
 
 
 def _jti_hash(jti: UUID | str) -> str:
@@ -277,7 +274,7 @@ class AuthService:
         )
         session = result.scalar_one_or_none()
         now = db_utcnow()
-        if not session or session.user_id != claims.sub or session.expires_at <= now:
+        if not session or session.user_id != claims.sub or as_utc(session.expires_at) <= now:
             raise _unauthorized("Refresh session is invalid or expired")
         if session.revoked_at:
             raise _unauthorized("Refresh session has been revoked")
@@ -298,7 +295,7 @@ class AuthService:
         session.last_used_at = now
         refresh_expires = min(
             now + timedelta(days=settings.refresh_token_expire_days),
-            session.expires_at,
+            as_utc(session.expires_at),
         ).replace(tzinfo=UTC)
         await db.commit()
         return (
@@ -330,17 +327,19 @@ class AuthService:
     ) -> tuple[InviteLink, str]:
         if not settings.invitation_min_hours <= expires_in_hours <= settings.invitation_max_hours:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
                     f"Invitation lifetime must be between {settings.invitation_min_hours} "
                     f"and {settings.invitation_max_hours} hours"
                 ),
             )
-        expires_at = db_utcnow() + timedelta(hours=expires_in_hours)
+        created_at = db_utcnow()
+        expires_at = created_at + timedelta(hours=expires_in_hours)
         invite = InviteLink(
             code=AuthService.generate_invite_code(),
             instructor_id=instructor_id,
             subject_id=subject_id,
+            created_at=created_at,
             expires_at=expires_at,
         )
         db.add(invite)
@@ -369,7 +368,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invitation")
         if invite.used_by or invite.used_at:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation has already been used")
-        if not invite.expires_at or invite.expires_at <= now:
+        if not invite.expires_at or as_utc(invite.expires_at) <= now:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has expired")
 
         existing = await db.execute(
@@ -423,7 +422,7 @@ class AuthService:
             not reset
             or reset.user_id != claims.sub
             or reset.used_at is not None
-            or reset.expires_at <= now
+            or as_utc(reset.expires_at) <= now
         ):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
 

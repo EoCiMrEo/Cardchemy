@@ -10,20 +10,21 @@ Endpoints:
 - POST /study/sync - Sync offline progress (for PWA)
 """
 
-from typing import List
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
 from app.routers.auth import get_current_student
 from app.schemas.flashcard import (
-    FlashcardResponse,
+    SetProgressResponse,
+    StudyAnswerResponse,
     StudyProgressUpdate,
-    StudyProgressResponse,
     StudySessionResponse,
+    StudySyncResponse,
 )
 from app.services.flashcard import FlashcardService
 from app.services.subject import SubjectService
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/study", tags=["Study"])
 @router.get("/sets/{set_id}/session", response_model=StudySessionResponse)
 async def get_study_session(
     set_id: UUID,
-    limit: int = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
     user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -80,7 +81,7 @@ async def get_study_session(
     )
 
 
-@router.post("/progress", response_model=StudyProgressResponse)
+@router.post("/progress", response_model=StudyAnswerResponse)
 async def update_study_progress(
     data: StudyProgressUpdate,
     user: User = Depends(get_current_student),
@@ -94,14 +95,11 @@ async def update_study_progress(
     
     Request body:
         - flashcard_id: The card that was studied
-        - is_correct: Did the student get it right?
-        - quality: Self-rating 0-5 (for SM-2 algorithm)
-            - 0: Complete blackout
-            - 1: Wrong, but remembered seeing answer
-            - 2: Wrong, but answer seemed easy
-            - 3: Correct with difficulty
-            - 4: Correct after hesitation
-            - 5: Perfect response
+        - selected_option: The selected option text, or null for a timeout
+        - selected_option_index: Alternatively, an option index from 0 to 3
+
+    The server compares the selection with the canonical answer and assigns
+    quality 5 for correct answers or 1 for incorrect answers.
     """
     # Verify the flashcard exists and user has access
     flashcard = await FlashcardService.get_flashcard(db, data.flashcard_id)
@@ -120,13 +118,12 @@ async def update_study_progress(
         )
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
     
-    # Update progress
-    progress = await FlashcardService.update_progress(db, user.id, data)
-    
-    return progress
+    answer = await FlashcardService.update_progress(db, user.id, flashcard, data)
+    await db.commit()
+    return answer
 
 
-@router.get("/sets/{set_id}/progress")
+@router.get("/sets/{set_id}/progress", response_model=SetProgressResponse)
 async def get_set_progress(
     set_id: UUID,
     user: User = Depends(get_current_student),
@@ -141,7 +138,8 @@ async def get_set_progress(
         - learning: Cards being learned
         - review: Cards in review phase
         - mastered: Cards mastered
-        - completion_percentage: Percentage of cards mastered/reviewed
+        - completion_percentage: Percentage attempted at least once
+        - mastery_percentage: Percentage in review or mastered
     """
     # Verify access
     flashcard_set = await SubjectService.get_flashcard_set(db, set_id)
@@ -163,9 +161,9 @@ async def get_set_progress(
     return progress
 
 
-@router.post("/sync")
+@router.post("/sync", response_model=StudySyncResponse)
 async def sync_offline_progress(
-    progress_updates: List[StudyProgressUpdate],
+    progress_updates: Annotated[list[StudyProgressUpdate], Body(min_length=1, max_length=100)],
     user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -181,28 +179,16 @@ async def sync_offline_progress(
     Returns:
         Number of updates synced
     """
-    synced = 0
-    errors = []
-    
+    cards = await FlashcardService.get_studyable_cards(
+        db,
+        user.id,
+        (update.flashcard_id for update in progress_updates),
+    )
+    missing_ids = {update.flashcard_id for update in progress_updates} - cards.keys()
+    if missing_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more flashcards are not studyable")
+
     for update in progress_updates:
-        try:
-            flashcard = await FlashcardService.get_flashcard(db, update.flashcard_id)
-            if not flashcard or not flashcard.is_approved:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
-            flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id)
-            if not flashcard_set or not flashcard_set.is_published:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard set not found")
-            await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
-            await FlashcardService.update_progress(db, user.id, update)
-            synced += 1
-        except Exception as e:
-            errors.append({
-                "flashcard_id": str(update.flashcard_id),
-                "error": str(e)
-            })
-    
-    return {
-        "synced_count": synced,
-        "error_count": len(errors),
-        "errors": errors if errors else None
-    }
+        await FlashcardService.update_progress(db, user.id, cards[update.flashcard_id], update)
+    await db.commit()
+    return StudySyncResponse(synced_count=len(progress_updates))

@@ -25,8 +25,13 @@ from app.schemas.flashcard import (
     FlashcardCreate,
     FlashcardUpdate,
     FlashcardResponse,
+    SetProgressResponse,
+    StudyAnswerResponse,
+    StudyCardResponse,
     StudyProgressUpdate,
     StudyProgressResponse,
+    StudySessionResponse,
+    StudySyncResponse,
 )
 
 __all__ = [
@@ -54,6 +59,11 @@ __all__ = [
     "FlashcardCreate",
     "FlashcardUpdate",
     "FlashcardResponse",
+    "SetProgressResponse",
+    "StudyAnswerResponse",
+    "StudyCardResponse",
     "StudyProgressUpdate",
     "StudyProgressResponse",
+    "StudySessionResponse",
+    "StudySyncResponse",
 ]

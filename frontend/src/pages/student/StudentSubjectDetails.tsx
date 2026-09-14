@@ -6,16 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ChevronLeft, FileText, Brain, Loader2, CheckCircle2, Trophy } from "lucide-react"
-
-interface SetProgress {
-  total: number;
-  new: number;
-  learning: number;
-  review: number;
-  mastered: number;
-  studied: number;  // Cards seen at least once
-  correct_count: number;
-}
+import type { SetProgress } from "@/services/types"
 
 export default function StudentSubjectDetails() {
   const { id } = useParams<{ id: string }>()
@@ -80,11 +71,10 @@ export default function StudentSubjectDetails() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {sets.map((set) => {
           const progress = progressMap[set.id]
-          const totalCards = progress?.total || set.flashcard_count || 0
-          const studiedCount = progress?.studied || 0  // Cards seen at least once
-          const progressPercent = totalCards > 0 
-            ? Math.round((studiedCount / totalCards) * 100) 
-            : 0
+          const totalCards = progress?.total ?? set.flashcard_count ?? 0
+          const studiedCount = progress?.studied ?? 0
+          const progressPercent = Math.round(progress?.completion_percentage ?? 0)
+          const masteryPercent = Math.round(progress?.mastery_percentage ?? 0)
           const isComplete = progressPercent === 100 && totalCards > 0
           
           return (
@@ -122,6 +112,7 @@ export default function StudentSubjectDetails() {
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>{progressPercent}% complete</span>
+                        <span>{masteryPercent}% mastery</span>
                         {!isComplete && progress.new > 0 && (
                           <span className="text-blue-500">{progress.new} new</span>
                         )}

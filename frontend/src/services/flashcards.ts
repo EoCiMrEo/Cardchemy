@@ -1,8 +1,9 @@
 import api from './api';
+import type { Flashcard, FlashcardUpdate } from './types';
 
 export const flashcardService = {
-  async getCards(setId: string) {
-    const response = await api.get(`/flashcards/sets/${setId}/cards`);
+  async getCards(setId: string): Promise<Flashcard[]> {
+    const response = await api.get<Flashcard[]>(`/flashcards/sets/${setId}/cards`);
     return response.data;
   },
 
@@ -17,8 +18,8 @@ export const flashcardService = {
     return response.data;
   },
 
-  async updateCard(id: string, data: any) {
-    const response = await api.put(`/flashcards/${id}`, data);
+  async updateCard(id: string, data: FlashcardUpdate): Promise<Flashcard> {
+    const response = await api.put<Flashcard>(`/flashcards/${id}`, data);
     return response.data;
   },
 

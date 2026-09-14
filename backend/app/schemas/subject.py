@@ -1,79 +1,97 @@
-"""
-subject.py - Subject and FlashcardSet Schemas
+"""Validated request and response schemas for subjects and flashcard sets."""
 
-Schemas for managing subjects (courses) and flashcard sets.
-"""
-
-from pydantic import BaseModel
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
-from typing import Optional, List
+
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 
-# ============================================
-# Subject Schemas
-# ============================================
+BoundedName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+BoundedDescription = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)]
+
+
+def _blank_to_none(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip()
+    return normalized or None
+
 
 class SubjectCreate(BaseModel):
-    """Schema for creating a new subject."""
-    name: str
-    description: Optional[str] = None
+    model_config = {"extra": "forbid"}
+
+    name: BoundedName
+    description: BoundedDescription | None = None
+
+    _normalize_description = field_validator("description", mode="before")(_blank_to_none)
 
 
 class SubjectUpdate(BaseModel):
-    """Schema for updating an existing subject."""
-    name: Optional[str] = None
-    description: Optional[str] = None
+    model_config = {"extra": "forbid"}
+
+    name: BoundedName | None = None
+    description: BoundedDescription | None = None
+
+    _normalize_description = field_validator("description", mode="before")(_blank_to_none)
+
+    @model_validator(mode="after")
+    def reject_null_name(self) -> "SubjectUpdate":
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name cannot be null")
+        return self
 
 
 class SubjectResponse(BaseModel):
-    """Schema for subject data in API responses."""
     id: UUID
     name: str
-    description: Optional[str]
+    description: str | None
     instructor_id: UUID
     created_at: datetime
-    flashcard_set_count: Optional[int] = 0
-    student_count: Optional[int] = 0
-    
+    flashcard_set_count: int = 0
+    student_count: int = 0
+
     model_config = {"from_attributes": True}
 
 
-# ============================================
-# FlashcardSet Schemas
-# ============================================
-
 class FlashcardSetCreate(BaseModel):
-    """
-    Schema for creating a new flashcard set.
-    
-    Note: Usually created automatically when uploading a PDF,
-    but can also be created manually.
-    """
+    model_config = {"extra": "forbid"}
+
     subject_id: UUID
-    title: str
-    description: Optional[str] = None
+    title: BoundedName
+    description: BoundedDescription | None = None
+
+    _normalize_description = field_validator("description", mode="before")(_blank_to_none)
 
 
 class FlashcardSetUpdate(BaseModel):
-    """Schema for updating a flashcard set."""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    is_published: Optional[bool] = None
-    time_limit: Optional[int] = None
+    model_config = {"extra": "forbid"}
+
+    title: BoundedName | None = None
+    description: BoundedDescription | None = None
+    is_published: bool | None = None
+    time_limit: int | None = Field(default=None, ge=5, le=3600)
+
+    _normalize_description = field_validator("description", mode="before")(_blank_to_none)
+
+    @model_validator(mode="after")
+    def reject_null_non_nullable_fields(self) -> "FlashcardSetUpdate":
+        for field_name in ("title", "is_published"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 
 class FlashcardSetResponse(BaseModel):
-    """Schema for flashcard set data in API responses."""
     id: UUID
     subject_id: UUID
     title: str
-    description: Optional[str]
-    source_pdf_name: Optional[str]
+    description: str | None
+    source_pdf_name: str | None
     is_published: bool
-    time_limit: Optional[int]
+    time_limit: int | None
     created_at: datetime
-    flashcard_count: Optional[int] = 0
-    approved_count: Optional[int] = 0
-    
+    flashcard_count: int = 0
+    approved_count: int = 0
+
     model_config = {"from_attributes": True}

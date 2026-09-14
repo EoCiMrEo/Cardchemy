@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    invitation_min_hours: int = Field(default=1, ge=1, le=24)
-    invitation_max_hours: int = Field(default=720, ge=24, le=2160)
+    invitation_min_hours: int = Field(default=1, ge=1, le=720)
+    invitation_max_hours: int = Field(default=720, ge=1, le=720)
     password_reset_expire_minutes: int = Field(default=30, ge=5, le=120)
     email_verification_required: bool = False
 

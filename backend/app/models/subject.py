@@ -12,12 +12,25 @@ Hierarchy:
 """
 
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, Boolean, ForeignKey, text, Integer
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.time_utils import utcnow
 
 
 class Subject(Base):
@@ -52,17 +65,26 @@ class Subject(Base):
     # Foreign key to the instructor who created this
     instructor_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
     # Relationships
     instructor = relationship("User", back_populates="subjects")
-    flashcard_sets = relationship("FlashcardSet", back_populates="subject", cascade="all, delete-orphan")
-    enrollments = relationship("Enrollment", back_populates="subject", cascade="all, delete-orphan")
-    invite_links = relationship("InviteLink", back_populates="subject")
+    flashcard_sets = relationship("FlashcardSet", back_populates="subject", passive_deletes=True)
+    enrollments = relationship("Enrollment", back_populates="subject", passive_deletes=True)
+    invite_links = relationship("InviteLink", back_populates="subject", passive_deletes=True)
+
+    __table_args__ = (
+        CheckConstraint("length(trim(name)) BETWEEN 1 AND 255", name="ck_subjects_name_length"),
+        CheckConstraint(
+            "description IS NULL OR length(trim(description)) BETWEEN 1 AND 10000",
+            name="ck_subjects_description_length",
+        ),
+        Index("ix_subjects_instructor_id", "instructor_id"),
+    )
 
 
 class FlashcardSet(Base):
@@ -98,7 +120,7 @@ class FlashcardSet(Base):
     
     subject_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("subjects.id"),
+        ForeignKey("subjects.id", ondelete="CASCADE"),
         nullable=False
     )
     
@@ -109,13 +131,30 @@ class FlashcardSet(Base):
     source_pdf_name = Column(String(255), nullable=True)
     
     # Only published sets are visible to students
-    is_published = Column(Boolean, default=False)
+    is_published = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     
     # Optional time limit in seconds per card
     time_limit = Column(Integer, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
     # Relationships
     subject = relationship("Subject", back_populates="flashcard_sets")
-    flashcards = relationship("Flashcard", back_populates="flashcard_set", cascade="all, delete-orphan")
+    flashcards = relationship("Flashcard", back_populates="flashcard_set", passive_deletes=True)
+
+    __table_args__ = (
+        CheckConstraint("length(trim(title)) BETWEEN 1 AND 255", name="ck_flashcard_sets_title_length"),
+        CheckConstraint(
+            "description IS NULL OR length(trim(description)) BETWEEN 1 AND 10000",
+            name="ck_flashcard_sets_description_length",
+        ),
+        CheckConstraint(
+            "source_pdf_name IS NULL OR length(source_pdf_name) <= 255",
+            name="ck_flashcard_sets_source_name_length",
+        ),
+        CheckConstraint(
+            "time_limit IS NULL OR time_limit BETWEEN 5 AND 3600",
+            name="ck_flashcard_sets_time_limit",
+        ),
+        Index("ix_flashcard_sets_subject_id", "subject_id"),
+    )
