@@ -5,6 +5,19 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+### Phase 6 - reliable and accessible study
+
+- Added durable, per-student idempotency receipts for study answers so rapid
+  activation, ambiguous retries, and timer races cannot record one logical
+  answer more than once.
+- Added deliberate review-all sessions, reliable save retry behavior, exact
+  timer cleanup/boundaries, keyboard focus management, reduced-motion support,
+  semantic progress values, higher-contrast text cues, and mobile-safe layouts.
+- Added automated axe, keyboard, touch, timer, responsive, and accessibility
+  browser gates plus the manual assistive-technology release procedure.
+- Retired the unused offline-sync endpoint/client and removed PWA/offline claims;
+  the responsive web client is explicitly online-first.
+
 ### Security
 
 - Added typed JWTs, rotating server-side refresh sessions, reuse detection, and logout revocation.

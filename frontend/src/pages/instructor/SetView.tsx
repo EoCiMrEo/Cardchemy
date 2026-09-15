@@ -177,23 +177,23 @@ export default function SetView() {
   }
 
   if (loading) {
-    return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
+    return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
   }
 
   if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
           <Button asChild variant="ghost" size="icon">
             <Link to={set ? `/subjects/${set.subject_id}` : '/dashboard'} aria-label={copy.common.backToDashboard}>
               <ChevronLeft className="h-5 w-5" aria-hidden="true" />
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold">{set?.title || copy.setReview.defaultTitle}</h1>
+          <h1 className="min-w-0 break-words text-2xl font-bold">{set?.title || copy.setReview.defaultTitle}</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Button type="button" onClick={() => setPreviewOpen(true)} variant="outline" disabled={cards.length === 0}>
             <Play className="mr-2 h-4 w-4" aria-hidden="true" /> {copy.setReview.preview}
           </Button>
@@ -211,11 +211,11 @@ export default function SetView() {
           const isEditing = editingId === card.id
           const isBusy = busyCardIds.has(card.id)
           return (
-            <Card key={card.id} className={card.is_approved ? 'border-green-200 bg-green-50/30' : 'border-yellow-200 bg-yellow-50/30'}>
+            <Card key={card.id} className={`min-w-0 ${card.is_approved ? 'border-green-200 bg-green-50/30' : 'border-yellow-200 bg-yellow-50/30'}`}>
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="min-w-0 text-sm font-medium text-muted-foreground">
                   {card.is_approved ? (
-                    <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" aria-hidden="true" /> {copy.setReview.approved}</span>
+                    <span className="flex items-center gap-1 text-green-700"><Check className="h-3 w-3" aria-hidden="true" /> {copy.setReview.approved}</span>
                   ) : copy.setReview.needsReview}
                 </CardTitle>
                 <div className="flex flex-wrap justify-end gap-1">
@@ -242,15 +242,17 @@ export default function SetView() {
                     <fieldset className="space-y-2">
                       <legend className="text-xs font-bold uppercase text-muted-foreground">{copy.setReview.optionsAndAnswer}</legend>
                       {editValues.options.map((option, optionIndex) => (
-                        <div key={optionIndex} className="flex items-start gap-2">
-                          <input
-                            type="radio"
-                            name={`correct-${card.id}`}
-                            checked={editValues.correctOptionIndex === optionIndex}
-                            onChange={() => setEditValues((values) => ({ ...values, correctOptionIndex: optionIndex }))}
-                            className="mt-3"
-                            aria-label={copy.setReview.correctAnswer(optionIndex)}
-                          />
+                        <div key={optionIndex} className="flex min-w-0 items-start gap-2">
+                          <label className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-start justify-center pt-3">
+                            <input
+                              type="radio"
+                              name={`correct-${card.id}`}
+                              checked={editValues.correctOptionIndex === optionIndex}
+                              onChange={() => setEditValues((values) => ({ ...values, correctOptionIndex: optionIndex }))}
+                              className="h-5 w-5"
+                              aria-label={copy.setReview.correctAnswer(optionIndex)}
+                            />
+                          </label>
                           <Label htmlFor={`option-${card.id}-${optionIndex}`} className="sr-only">{copy.setReview.optionLabel(optionIndex)}</Label>
                           <Textarea
                             id={`option-${card.id}-${optionIndex}`}
@@ -271,28 +273,28 @@ export default function SetView() {
                   <>
                     <div>
                       <div className="mb-1 text-xs font-bold uppercase text-muted-foreground">{copy.setReview.front}</div>
-                      <p className="text-sm font-medium">{card.front_content}</p>
+                      <p className="break-words text-sm font-medium">{card.front_content}</p>
                     </div>
                     <div>
                       <div className="mb-1 text-xs font-bold uppercase text-muted-foreground">{copy.setReview.answer}</div>
-                      <p className="text-sm text-gray-700">{card.back_content}</p>
+                      <p className="break-words text-sm text-gray-700">{card.back_content}</p>
                     </div>
                   </>
                 )}
 
                 {card.source_snippet ? (
                   <figure className="mt-2 border-t pt-2 text-xs text-muted-foreground">
-                    <figcaption className="font-medium not-italic">
+                    <figcaption className="break-words font-medium not-italic">
                       {copy.setReview.verifiedSource}
                       {card.source_page ? ` · ${copy.setReview.sourcePage(card.source_page)}` : ''}
                       {card.source_section ? ` · ${card.source_section}` : ''}
                     </figcaption>
-                    <blockquote className="mt-1 border-l-2 pl-2 italic">“{card.source_snippet}”</blockquote>
+                    <blockquote className="mt-1 break-words border-l-2 pl-2 italic">“{card.source_snippet}”</blockquote>
                   </figure>
                 ) : <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">{copy.setReview.manualCard}</p>}
               </CardContent>
               {isEditing ? (
-                <CardFooter className="flex justify-end gap-2">
+                <CardFooter className="flex flex-wrap justify-end gap-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)} disabled={isBusy}>{copy.common.cancel}</Button>
                   <Button type="button" size="sm" onClick={() => void handleSave(card.id)} disabled={isBusy || approvingAll}>
                     {isBusy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Save className="mr-1 h-3 w-3" aria-hidden="true" />} {copy.setReview.save}

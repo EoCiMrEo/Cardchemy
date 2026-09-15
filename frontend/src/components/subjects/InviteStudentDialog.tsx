@@ -63,7 +63,7 @@ export function InviteStudentDialog({ open, onOpenChange, subjectId, subjectName
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{copy.invite.title}</DialogTitle>
-          <DialogDescription>{copy.invite.description(subjectName)}</DialogDescription>
+          <DialogDescription className="break-words">{copy.invite.description(subjectName)}</DialogDescription>
         </DialogHeader>
 
         {!inviteLink ? (
@@ -93,9 +93,9 @@ export function InviteStudentDialog({ open, onOpenChange, subjectId, subjectName
             <p className="rounded-lg bg-green-50 p-4 text-center text-sm text-green-800" role="status">
               {copy.invite.generated}
             </p>
-            <div className="flex items-center space-x-2">
+            <div className="flex min-w-0 items-center gap-2">
               <label htmlFor="invite-link" className="sr-only">{copy.invite.generated}</label>
-              <Input id="invite-link" readOnly value={inviteLink} className="flex-1 bg-slate-50 font-mono text-xs" onClick={(event) => event.currentTarget.select()} />
+              <Input id="invite-link" readOnly value={inviteLink} className="min-w-0 flex-1 bg-slate-50 font-mono text-xs" onClick={(event) => event.currentTarget.select()} />
               <Button type="button" size="icon" variant="outline" onClick={() => void handleCopy()} aria-label={copied ? copy.invite.copied : copy.invite.copy}>
                 {copied ? <Check className="h-4 w-4 text-green-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
               </Button>

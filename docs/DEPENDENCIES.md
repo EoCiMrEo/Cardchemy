@@ -16,6 +16,9 @@ them. Radix packages remain because the shared UI components import them.
 `@playwright/test` is a development-only dependency for the Phase 5 browser
 acceptance suite; install its pinned Chromium runtime with
 `npx playwright install chromium` before running `npm run test:e2e`.
+`@axe-core/playwright` is a development-only Phase 6 accessibility gate. It
+fails browser tests on serious or critical automated accessibility findings;
+manual assistive-technology checks remain part of the release procedure.
 
 Phase 2 introduced Alembic as the required schema owner. Phase 3 directly pins
 `cryptography` because temporary PDF sources use AES-256-GCM authenticated

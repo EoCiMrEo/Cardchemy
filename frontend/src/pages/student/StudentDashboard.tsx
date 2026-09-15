@@ -81,21 +81,21 @@ export default function StudentDashboard() {
     }
   }
 
-  if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
+  if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
 
   if (loadError) return <PageError message={loadError} onRetry={() => void loadSubjects()} />
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{copy.dashboard.studentTitle}</h1>
-          <p className="text-muted-foreground mt-1">{copy.dashboard.studentDescription}</p>
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="break-words text-3xl font-bold tracking-tight">{copy.dashboard.studentTitle}</h1>
+          <p className="mt-1 break-words text-muted-foreground">{copy.dashboard.studentDescription}</p>
         </div>
         
         <Dialog open={joinDialogOpen} onOpenChange={changeJoinDialog}>
           <DialogTrigger asChild>
-            <Button className="gap-2">
+            <Button className="w-full gap-2 sm:w-auto">
               <UserPlus className="h-4 w-4" aria-hidden="true" />
               {copy.dashboard.joinCourse}
             </Button>
@@ -116,16 +116,16 @@ export default function StudentDashboard() {
                 onChange={(e) => setJoinToken(e.target.value)}
                 disabled={joining}
               />
-              {joinError && (
+              {joinError ? (
                 <p className="text-sm text-destructive" role="alert">{joinError}</p>
-              )}
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => changeJoinDialog(false)} disabled={joining}>
                 {copy.common.cancel}
               </Button>
               <Button onClick={handleJoinCourse} disabled={joining || !joinToken.trim()}>
-                {joining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {joining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
                 {copy.dashboard.joinCourse}
               </Button>
             </DialogFooter>
@@ -135,14 +135,14 @@ export default function StudentDashboard() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {subjects.map((subject) => (
-          <Link key={subject.id} to={`/subjects/${subject.id}`}>
-             <Card className="hover:shadow-md transition-shadow cursor-pointer h-full border-l-4 border-l-primary">
+          <Link key={subject.id} to={`/subjects/${subject.id}`} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+             <Card className="h-full cursor-pointer border-l-4 border-l-primary transition-shadow hover:shadow-md motion-reduce:transition-none">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-primary" aria-hidden="true" />
-                  {subject.name}
+                <CardTitle className="flex min-w-0 items-start gap-2">
+                  <BookOpen className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="min-w-0 break-words">{subject.name}</span>
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="break-words">
                   {subject.description || copy.common.noDescription}
                 </CardDescription>
               </CardHeader>

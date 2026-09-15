@@ -1,7 +1,14 @@
 # Models package - exports all database models
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, RateLimitBucket, User
 from app.models.subject import Subject, FlashcardSet
-from app.models.flashcard import CardStatus, CardType, Enrollment, Flashcard, StudyProgress
+from app.models.flashcard import (
+    CardStatus,
+    CardType,
+    Enrollment,
+    Flashcard,
+    StudyAnswerSubmission,
+    StudyProgress,
+)
 from app.models.generation import (
     GenerationJob,
     GenerationJobSource,
@@ -20,6 +27,7 @@ __all__ = [
     "Flashcard",
     "Enrollment",
     "StudyProgress",
+    "StudyAnswerSubmission",
     "CardStatus",
     "CardType",
     "GenerationJob",

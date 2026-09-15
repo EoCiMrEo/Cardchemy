@@ -31,7 +31,6 @@ from app.schemas.flashcard import (
     StudyProgressUpdate,
     StudyProgressResponse,
     StudySessionResponse,
-    StudySyncResponse,
 )
 
 __all__ = [
@@ -65,5 +64,4 @@ __all__ = [
     "StudyProgressUpdate",
     "StudyProgressResponse",
     "StudySessionResponse",
-    "StudySyncResponse",
 ]

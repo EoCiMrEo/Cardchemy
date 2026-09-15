@@ -276,35 +276,35 @@ screen reader, mobile, and reduced-motion users.
 
 ### Study reliability
 
-- [ ] **P0** Ensure every supported card type has a way to answer and advance;
+- [x] **P0** Ensure every supported card type has a way to answer and advance;
   cards without options/timers must not trap the user.
-- [ ] **P0** Add a submission lock/idempotency key so double-clicks and timer
+- [x] **P0** Add a submission lock/idempotency key so double-clicks and timer
   races cannot record the same answer multiple times.
-- [ ] **P0** Fix the timer interval typing, off-by-one behavior, cleanup, and side
+- [x] **P0** Fix the timer interval typing, off-by-one behavior, cleanup, and side
   effects currently performed inside state updates.
-- [ ] **P0** Do not advance silently when progress saving fails; provide retry or
+- [x] **P0** Do not advance silently when progress saving fails; provide retry or
   queue the update durably.
-- [ ] **P1** Either implement the advertised offline outbox/sync behavior or
+- [x] **P1** Either implement the advertised offline outbox/sync behavior or
   remove the PWA/offline claims and unused IndexedDB dependency.
-- [ ] **P1** Make `Review Again` start a valid session rather than returning an
+- [x] **P1** Make `Review Again` start a valid session rather than returning an
   unexpected `All Caught Up` state.
 
 ### Accessibility and interaction semantics
 
-- [ ] **P0** Associate all visible labels with their form controls; the login
+- [x] **P0** Associate all visible labels with their form controls; the login
   password field currently has no accessible label.
-- [ ] **P0** Fix the shared Button `asChild` implementation so links and buttons
+- [x] **P0** Fix the shared Button `asChild` implementation so links and buttons
   are not nested interactive elements.
-- [ ] **P1** Give every icon-only action an accessible name.
-- [ ] **P1** Replace clickable non-interactive containers in preview/study views
+- [x] **P1** Give every icon-only action an accessible name.
+- [x] **P1** Replace clickable non-interactive containers in preview/study views
   with keyboard-operable controls.
-- [ ] **P1** Add visible focus states and verify complete keyboard navigation.
-- [ ] **P1** Respect `prefers-reduced-motion` and avoid essential information that
+- [x] **P1** Add visible focus states and verify complete keyboard navigation.
+- [x] **P1** Respect `prefers-reduced-motion` and avoid essential information that
   depends only on animation or color.
-- [ ] **P1** Use mobile-safe viewport sizing and sufficient touch targets.
-- [ ] **P1** Make header, email, subject actions, and dialog layouts wrap correctly
+- [x] **P1** Use mobile-safe viewport sizing and sufficient touch targets.
+- [x] **P1** Make header, email, subject actions, and dialog layouts wrap correctly
   on narrow screens.
-- [ ] **P2** Run automated accessibility checks and a manual screen-reader pass in
+- [x] **P2** Run automated accessibility checks and a manual screen-reader pass in
   CI/release testing.
 
 **Phase complete when:** the full study flow works with keyboard only at a mobile

@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.flashcard import Enrollment, Flashcard, StudyProgress
+from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, User, UserRole
 from app.schemas.flashcard import StudyProgressUpdate
@@ -36,7 +36,7 @@ async def pg_session_factory():
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260914_0003":
+        if revision != "20260915_0004":
             pytest.fail(f"PostgreSQL test database is at Alembic revision {revision!r}")
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
@@ -174,10 +174,47 @@ async def test_migration_installs_timestamptz_constraints_and_indexes(pg_session
             ("users", "created_at"),
             ("study_progress", "next_review"),
             ("study_progress", "last_reviewed"),
+            ("study_answer_submissions", "created_at"),
             ("invite_links", "expires_at"),
             ("auth_sessions", "expires_at"),
         }
         assert expected_timestamp_columns <= timestamp_columns
+
+        receipt_columns = set(
+            (await session.scalars(text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'study_answer_submissions'
+                """
+            ))).all()
+        )
+        assert {
+            "id",
+            "student_id",
+            "flashcard_id",
+            "idempotency_key_hash",
+            "request_fingerprint",
+            "response_payload",
+            "created_at",
+        } == receipt_columns
+
+        receipt_constraints = set(
+            (await session.scalars(text(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = 'public'
+                  AND table_name = 'study_answer_submissions'
+                """
+            ))).all()
+        )
+        assert {
+            "uq_study_answer_submissions_student_key",
+            "ck_study_answer_submissions_key_hash",
+            "ck_study_answer_submissions_request_fingerprint",
+        } <= receipt_constraints
 
         indexes = set(
             (await session.scalars(text(
@@ -188,6 +225,8 @@ async def test_migration_installs_timestamptz_constraints_and_indexes(pg_session
             "uq_users_email_normalized",
             "ix_flashcards_approved_due_source",
             "ix_study_progress_student_due",
+            "ix_study_answer_submissions_created_at",
+            "uq_study_answer_submissions_student_key",
             "ix_invite_links_subject_id",
         } <= indexes
 
@@ -477,7 +516,7 @@ async def test_concurrent_progress_updates_are_lossless(pg_session_factory):
     arrived = 0
     arrival_lock = asyncio.Lock()
 
-    async def answer_once() -> None:
+    async def answer_once(idempotency_key: str) -> None:
         nonlocal arrived
         async with pg_session_factory() as session:
             card = await session.get(Flashcard, course.card_ids[0])
@@ -494,10 +533,14 @@ async def test_concurrent_progress_updates_are_lossless(pg_session_factory):
                     flashcard_id=card.id,
                     selected_option="canonical answer",
                 ),
+                idempotency_key,
             )
             await session.commit()
 
-    await asyncio.gather(answer_once(), answer_once())
+    await asyncio.gather(
+        answer_once(f"distinct-answer-{uuid4().hex}"),
+        answer_once(f"distinct-answer-{uuid4().hex}"),
+    )
     async with pg_session_factory() as session:
         rows = list(
             (await session.scalars(select(StudyProgress).where(
@@ -508,6 +551,115 @@ async def test_concurrent_progress_updates_are_lossless(pg_session_factory):
         assert len(rows) == 1
         assert rows[0].correct_count == 2
         assert rows[0].incorrect_count == 0
+
+
+async def test_concurrent_duplicate_answer_replays_one_durable_receipt(pg_session_factory):
+    course = await seed_course(pg_session_factory, published=True)
+    idempotency_key = f"same-answer-{uuid4().hex}"
+    ready = asyncio.Event()
+    arrived = 0
+    arrival_lock = asyncio.Lock()
+
+    async def submit_once() -> dict:
+        nonlocal arrived
+        async with pg_session_factory() as session:
+            card = await session.get(Flashcard, course.card_ids[0])
+            async with arrival_lock:
+                arrived += 1
+                if arrived == 2:
+                    ready.set()
+            await ready.wait()
+            answer = await FlashcardService.update_progress(
+                session,
+                course.student_id,
+                card,
+                StudyProgressUpdate(
+                    flashcard_id=card.id,
+                    selected_option="Canonical Answer",
+                ),
+                idempotency_key,
+            )
+            await session.commit()
+            return answer.model_dump(mode="json")
+
+    first, replay = await asyncio.gather(submit_once(), submit_once())
+    assert replay == first
+
+    async with pg_session_factory() as session:
+        progress = await session.scalar(
+            select(StudyProgress).where(
+                StudyProgress.student_id == course.student_id,
+                StudyProgress.flashcard_id == course.card_ids[0],
+            )
+        )
+        assert progress is not None
+        assert progress.correct_count == 1
+        assert progress.incorrect_count == 0
+        assert await session.scalar(
+            select(func.count(StudyAnswerSubmission.id)).where(
+                StudyAnswerSubmission.student_id == course.student_id,
+            )
+        ) == 1
+
+
+async def test_concurrent_mismatched_answers_with_one_key_conflict_without_double_counting(
+    pg_session_factory,
+):
+    course = await seed_course(pg_session_factory, published=True)
+    idempotency_key = f"mismatched-answer-{uuid4().hex}"
+    ready = asyncio.Event()
+    arrived = 0
+    arrival_lock = asyncio.Lock()
+
+    async def submit_once(selected_option: str) -> tuple[str, bool | str]:
+        nonlocal arrived
+        async with pg_session_factory() as session:
+            card = await session.get(Flashcard, course.card_ids[0])
+            async with arrival_lock:
+                arrived += 1
+                if arrived == 2:
+                    ready.set()
+            await ready.wait()
+            try:
+                answer = await FlashcardService.update_progress(
+                    session,
+                    course.student_id,
+                    card,
+                    StudyProgressUpdate(
+                        flashcard_id=card.id,
+                        selected_option=selected_option,
+                    ),
+                    idempotency_key,
+                )
+                await session.commit()
+                return "accepted", answer.is_correct
+            except HTTPException as exc:
+                await session.rollback()
+                return "conflict", exc.detail["code"]
+
+    results = await asyncio.gather(
+        submit_once("Canonical Answer"),
+        submit_once("Distractor B"),
+    )
+    assert sorted(results) in (
+        [("accepted", False), ("conflict", "idempotency_key_reused")],
+        [("accepted", True), ("conflict", "idempotency_key_reused")],
+    )
+
+    async with pg_session_factory() as session:
+        progress = await session.scalar(
+            select(StudyProgress).where(
+                StudyProgress.student_id == course.student_id,
+                StudyProgress.flashcard_id == course.card_ids[0],
+            )
+        )
+        assert progress is not None
+        assert progress.correct_count + progress.incorrect_count == 1
+        assert await session.scalar(
+            select(func.count(StudyAnswerSubmission.id)).where(
+                StudyAnswerSubmission.student_id == course.student_id,
+            )
+        ) == 1
 
 
 async def test_failed_generation_and_progress_batches_leave_no_partial_records(pg_session_factory):
@@ -553,21 +705,30 @@ async def test_failed_generation_and_progress_batches_leave_no_partial_records(p
     async with pg_session_factory() as session:
         with pytest.raises(HTTPException):
             async with session.begin():
-                cards = await FlashcardService.get_studyable_cards(
-                    session,
-                    course.student_id,
-                    (update.flashcard_id for update in updates),
-                )
+                cards = {
+                    card.id: card
+                    for card in (
+                        await session.scalars(
+                            select(Flashcard).where(Flashcard.id.in_(course.card_ids))
+                        )
+                    ).all()
+                }
                 for update in updates:
                     await FlashcardService.update_progress(
                         session,
                         course.student_id,
                         cards[update.flashcard_id],
                         update,
+                        f"rollback-answer-{update.flashcard_id}",
                     )
         assert await session.scalar(
             select(func.count(StudyProgress.id)).where(
                 StudyProgress.student_id == course.student_id,
                 StudyProgress.flashcard_id.in_(course.card_ids),
+            )
+        ) == 0
+        assert await session.scalar(
+            select(func.count(StudyAnswerSubmission.id)).where(
+                StudyAnswerSubmission.student_id == course.student_id,
             )
         ) == 0

@@ -69,7 +69,7 @@ app = FastAPI(
     - 👥 Invite students via unique links
     - 📚 Organize content by subjects and sets
     - 🧠 Spaced repetition for optimal learning
-    - 📱 Mobile-friendly PWA with offline support
+    - 📱 Responsive browser-based study experience
     
     ### Authentication
     Use the `/auth/login` endpoint to get a JWT token, then click

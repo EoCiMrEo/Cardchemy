@@ -23,7 +23,7 @@ export default function Register() {
 
   if (!inviteToken) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader>
             <CardTitle className="text-2xl text-center">{copy.auth.invitationRequired}</CardTitle>
@@ -59,7 +59,7 @@ export default function Register() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl text-center">{copy.auth.joinCourse}</CardTitle>

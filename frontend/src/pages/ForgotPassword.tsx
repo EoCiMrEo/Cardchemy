@@ -28,7 +28,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{copy.auth.resetPasswordTitle}</CardTitle>

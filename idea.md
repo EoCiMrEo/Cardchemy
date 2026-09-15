@@ -47,7 +47,9 @@ Nice — this is a strong idea with lots of real value. Below I’ll (A) review 
 3. **Privacy & compliance** — student data and lecture contents may be sensitive; need consent, retention policies, export/delete features, and possibly GDPR/FERPA considerations.
 4. **Scaling AI work** — provider calls require durable queues, concurrency limits, and cost controls.
 5. **Auth & roles** — instructors vs students requires RBAC, invite flows, and token refresh strategies.
-6. **Offline / mobile caching** — for mobile use, either PWA or native app with sync will be required for offline study.
+6. **Mobile connectivity** — the current responsive web experience requires a
+   network connection; offline study would require a separately designed durable
+   outbox before it can be advertised.
 7. **Cheating / integrity** — quizzes might be gamed — think about randomized quizzes, question pools, time limits.
 8. **Cost control** — model calls can be expensive if not bounded and measured.
 
@@ -60,7 +62,7 @@ Nice — this is a strong idea with lots of real value. Below I’ll (A) review 
 3. Use direct provider SDKs behind a small Python interface.
 4. You prefer using open-source components where possible; commercial SaaS (Pinecone/OpenAI) is optional.
 5. Students do not create their own flashcards initially (instructor-managed flow).
-6. Mobile-first **responsive web app** (PWA), not native mobile apps, at first.
+6. Mobile-first **responsive web app**, not native mobile apps, at first.
 7. Reward system is gamified points/badges — no fiat payouts or complicated economics.
 8. You have control of instructor accounts (no single sign-on integration required yet).
 
@@ -72,7 +74,7 @@ Nice — this is a strong idea with lots of real value. Below I’ll (A) review 
 
 Start with a modular monolith to iterate quickly; split into services later.
 
-- **Frontend**: React + TypeScript. Make it a Progressive Web App (PWA) so mobile users can install it.
+- **Frontend**: React + TypeScript with an online-first, responsive browser experience.
 - **Backend**: Python (FastAPI) — reasons: excellent async support and typed validation.
 - **DB (primary)**: PostgreSQL for users, sets, progress, and durable generation jobs.
 - **Cache / Session**: Redis (caching, background job broker for Celery/RQ).
@@ -201,7 +203,8 @@ Admin / Rewards:
   - Points, badges, streaks.
 
 - **Responsiveness**:
-  - Use mobile-first CSS (Tailwind recommended) and implement as PWA (service worker, manifest).
+  - Use mobile-first CSS (Tailwind recommended) with touch-safe controls and
+    dynamic viewport sizing.
 
 - **Accessibility**: keyboard navigation, ARIA labels, color-contrast, text-scaling.
 
@@ -299,7 +302,8 @@ I’ll give deliverable-focused milestones (so you can iterate):
 - OCR support; improved parsing for tables/figures.
 - Human-in-loop review UI and confidence scoring.
 - Quiz generation + attempts + leaderboard.
-- PWA support and offline caching.
+- Evaluate offline study only after defining conflict handling, durable client
+  storage, retention, and observable synchronization semantics.
 
 **Phase 3**
 
@@ -355,7 +359,8 @@ I’m not asking — this is a checklist. Pick defaults if you want to move forw
 
 - Pick backend language: **FastAPI/Python** (recommended).
 - Choose the provider/model profile and configure current token pricing.
-- Decide whether you want PWA only or native mobile later.
+- Decide whether a separately scoped offline web experience or native mobile
+  client is justified later.
 - Choose hosting: start with Docker Compose locally + PostgreSQL, then choose cloud provider later.
 
 ---

@@ -60,11 +60,11 @@ export default function JoinCourse() {
   }
 
   if (authLoading || (!user && token) || displayStatus === 'loading') {
-    return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin" /></div>
+    return <div className="flex min-h-dvh items-center justify-center"><Loader2 className="h-10 w-10 animate-spin" /></div>
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
           {displayStatus === 'success' ? <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" /> : <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />}

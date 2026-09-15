@@ -18,7 +18,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
+    return <div className="flex min-h-dvh items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
   }
 
   if (!user) {
@@ -30,7 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function RoleRoute({ children, role }: { children: React.ReactNode; role: 'instructor' | 'student' }) {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <div className="flex h-screen items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
+  if (isLoading) return <div className="flex min-h-dvh items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== role) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
@@ -69,7 +69,7 @@ function App() {
             path="/subjects/:id"
             element={
               <ProtectedRoute>
-                <div className="min-h-screen bg-gray-50">
+                <div className="min-h-dvh bg-gray-50">
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                         <RoleBasedSubjectDetails />
                     </main>
@@ -82,7 +82,7 @@ function App() {
             path="/sets/:id"
             element={
               <RoleRoute role="instructor">
-                <div className="min-h-screen bg-gray-50">
+                <div className="min-h-dvh bg-gray-50">
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                         <SetView />
                     </main>

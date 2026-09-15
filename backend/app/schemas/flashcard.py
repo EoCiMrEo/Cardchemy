@@ -183,7 +183,3 @@ class SetProgressResponse(BaseModel):
     correct_count: int
     completion_percentage: float = Field(ge=0, le=100)
     mastery_percentage: float = Field(ge=0, le=100)
-
-
-class StudySyncResponse(BaseModel):
-    synced_count: int

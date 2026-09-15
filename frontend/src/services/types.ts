@@ -120,6 +120,8 @@ export interface StudyCard {
   card_type: 'multiple_choice'
 }
 
+export type StudySessionMode = 'due' | 'review_all'
+
 export interface Flashcard extends StudyCard {
   back_content: string
   quality_score: number
@@ -172,10 +174,6 @@ export interface SetProgress {
   correct_count: number
   completion_percentage: number
   mastery_percentage: number
-}
-
-export interface StudySyncResponse {
-  synced_count: number
 }
 
 export interface FlashcardUpdate {

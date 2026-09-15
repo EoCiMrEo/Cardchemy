@@ -38,12 +38,12 @@ export default function Dashboard() {
 
   if (user?.role === 'instructor') {
       return (
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-dvh bg-gray-50">
             <header className="bg-white border-b sticky top-0 z-10">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                <h1 className="text-xl font-bold text-gray-900">{copy.common.appName}</h1>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-600">
+              <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+                <h1 className="min-w-0 break-words text-xl font-bold text-gray-900">{copy.common.appName}</h1>
+                <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:gap-4">
+                  <span className="max-w-full break-all text-sm text-gray-600">
                     {user?.email}
                   </span>
                   {logoutButton}
@@ -60,12 +60,12 @@ export default function Dashboard() {
 
   if (user?.role === 'student') {
       return (
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-dvh bg-gray-50">
             <header className="bg-white border-b sticky top-0 z-10">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                <h1 className="text-xl font-bold text-gray-900">{copy.common.appName}</h1>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-600">
+              <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+                <h1 className="min-w-0 break-words text-xl font-bold text-gray-900">{copy.common.appName}</h1>
+                <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:gap-4">
+                  <span className="max-w-full break-all text-sm text-gray-600">
                     {user?.email}
                   </span>
                   {logoutButton}
@@ -81,7 +81,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center bg-gray-50">
         <div className="text-center">
              {copy.routing.unknownRole(user?.role ?? '')} {logoutButton}
         </div>

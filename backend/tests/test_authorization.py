@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
 
-from app.models.flashcard import Enrollment, Flashcard, StudyProgress
+from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_instructor, get_current_student
@@ -110,7 +110,7 @@ async def test_progress_requires_enrollment_publication_and_approval(db):
     data = StudyProgressUpdate(flashcard_id=card.id, selected_option="Answer")
 
     with pytest.raises(HTTPException) as unenrolled:
-        await update_study_progress(data, student, db)
+        await update_study_progress(data, "authorization-answer-0001", student, db)
     assert unenrolled.value.status_code == 403
 
     db.add(Enrollment(student_id=student.id, subject_id=subject.id))
@@ -118,18 +118,20 @@ async def test_progress_requires_enrollment_publication_and_approval(db):
     card.is_approved = False
     await db.commit()
     with pytest.raises(HTTPException) as unapproved:
-        await update_study_progress(data, student, db)
+        await update_study_progress(data, "authorization-answer-0002", student, db)
     assert unapproved.value.status_code == 404
 
     card.is_approved = True
     flashcard_set.is_published = False
     await db.commit()
     with pytest.raises(HTTPException) as unpublished:
-        await update_study_progress(data, student, db)
+        await update_study_progress(data, "authorization-answer-0003", student, db)
     assert unpublished.value.status_code == 404
 
     count = await db.scalar(select(func.count()).select_from(StudyProgress))
     assert count == 0
+    receipt_count = await db.scalar(select(func.count()).select_from(StudyAnswerSubmission))
+    assert receipt_count == 0
 
 
 async def test_student_cannot_read_an_approved_card_from_an_unpublished_set(db):

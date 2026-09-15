@@ -5,6 +5,7 @@ This module contains:
 - Flashcard: Individual Q&A cards (the core content)
 - Enrollment: Links students to subjects
 - StudyProgress: Tracks how well a student knows each card
+- StudyAnswerSubmission: Durable idempotency receipts for answer submissions
 
 The StudyProgress model implements a simplified spaced repetition
 algorithm (similar to Anki's SM-2) to optimize learning.
@@ -290,3 +291,56 @@ class StudyProgress(Base):
     # Relationships
     flashcard = relationship("Flashcard", back_populates="study_progress")
     student = relationship("User", back_populates="study_progress")
+
+
+class StudyAnswerSubmission(Base):
+    """Durable receipt that makes one logical answer safe to retry."""
+
+    __tablename__ = "study_answer_submissions"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    student_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    flashcard_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("flashcards.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    idempotency_key_hash = Column(String(64), nullable=False)
+    request_fingerprint = Column(String(64), nullable=False)
+    response_payload = Column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "idempotency_key_hash",
+            name="uq_study_answer_submissions_student_key",
+        ),
+        CheckConstraint(
+            "length(idempotency_key_hash) = 64",
+            name="ck_study_answer_submissions_key_hash",
+        ),
+        CheckConstraint(
+            "length(request_fingerprint) = 64",
+            name="ck_study_answer_submissions_request_fingerprint",
+        ),
+        Index("ix_study_answer_submissions_flashcard_id", "flashcard_id"),
+        Index("ix_study_answer_submissions_created_at", "created_at"),
+    )

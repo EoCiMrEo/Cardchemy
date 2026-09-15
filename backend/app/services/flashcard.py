@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Iterable
+import hashlib
+import json
+import re
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -13,8 +15,13 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.flashcard import CardStatus, CardType, Enrollment, Flashcard, StudyProgress
-from app.models.subject import FlashcardSet
+from app.models.flashcard import (
+    CardStatus,
+    CardType,
+    Flashcard,
+    StudyAnswerSubmission,
+    StudyProgress,
+)
 from app.schemas.flashcard import (
     FlashcardCreate,
     FlashcardUpdate,
@@ -23,6 +30,9 @@ from app.schemas.flashcard import (
     StudyProgressUpdate,
 )
 from app.time_utils import utcnow
+
+
+STUDY_IDEMPOTENCY_PATTERN = re.compile(r"^[\x21-\x7e]{8,128}$")
 
 
 class FlashcardService:
@@ -250,7 +260,10 @@ class FlashcardService:
         return progress
 
     @staticmethod
-    def _resolve_answer(flashcard: Flashcard, data: StudyProgressUpdate) -> tuple[bool, int, str, int]:
+    def _resolve_answer(
+        flashcard: Flashcard,
+        data: StudyProgressUpdate,
+    ) -> tuple[bool, int, str, int, int]:
         options = list(flashcard.options)
         correct_key = flashcard.back_content.strip().casefold()
         correct_index = next(
@@ -279,7 +292,105 @@ class FlashcardService:
             selected_index = matches[0]
 
         is_correct = selected_index == correct_index
-        return is_correct, 5 if is_correct else 1, options[correct_index], correct_index
+        return (
+            is_correct,
+            5 if is_correct else 1,
+            options[correct_index],
+            correct_index,
+            selected_index,
+        )
+
+    @staticmethod
+    def _answer_submission_identity(
+        idempotency_key: str,
+        flashcard_id: UUID,
+        selected_option_index: int,
+    ) -> tuple[str, str]:
+        if not STUDY_IDEMPOTENCY_PATTERN.fullmatch(idempotency_key):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "code": "invalid_idempotency_key",
+                    "message": "Idempotency-Key must contain 8 to 128 visible ASCII characters.",
+                },
+            )
+        key_hash = hashlib.sha256(idempotency_key.encode("ascii")).hexdigest()
+        canonical_request = json.dumps(
+            {
+                "flashcard_id": str(flashcard_id),
+                "selected_option_index": selected_option_index,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        fingerprint = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+        return key_hash, fingerprint
+
+    @staticmethod
+    async def _reserve_answer_submission(
+        db: AsyncSession,
+        *,
+        student_id: UUID,
+        flashcard_id: UUID,
+        key_hash: str,
+        request_fingerprint: str,
+    ) -> tuple[StudyAnswerSubmission, bool]:
+        """Atomically reserve a key or return its completed receipt.
+
+        PostgreSQL waits for an in-flight conflicting INSERT before returning
+        from ``ON CONFLICT DO NOTHING``. Because the answer aggregate and the
+        receipt are committed in one transaction, a concurrent caller then
+        observes either the completed receipt or becomes the winner after a
+        rollback.
+        """
+
+        receipt_id = uuid4()
+        values = {
+            "id": receipt_id,
+            "student_id": student_id,
+            "flashcard_id": flashcard_id,
+            "idempotency_key_hash": key_hash,
+            "request_fingerprint": request_fingerprint,
+            "response_payload": {},
+        }
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            statement = postgresql_insert(StudyAnswerSubmission).values(**values).on_conflict_do_nothing(
+                index_elements=["student_id", "idempotency_key_hash"]
+            )
+        elif dialect == "sqlite":
+            statement = sqlite_insert(StudyAnswerSubmission).values(**values).on_conflict_do_nothing(
+                index_elements=["student_id", "idempotency_key_hash"]
+            )
+        else:
+            raise RuntimeError(f"Unsupported database dialect for answer idempotency: {dialect}")
+
+        inserted_id = await db.scalar(statement.returning(StudyAnswerSubmission.id))
+        if inserted_id is not None:
+            receipt = await db.get(StudyAnswerSubmission, inserted_id)
+            if receipt is None:
+                raise RuntimeError("answer receipt INSERT did not produce a row")
+            return receipt, True
+
+        receipt = await db.scalar(
+            select(StudyAnswerSubmission).where(
+                StudyAnswerSubmission.student_id == student_id,
+                StudyAnswerSubmission.idempotency_key_hash == key_hash,
+            )
+        )
+        if receipt is None:
+            raise RuntimeError("conflicting answer receipt could not be loaded")
+        if receipt.request_fingerprint != request_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "idempotency_key_reused",
+                    "message": "This Idempotency-Key was already used for a different answer.",
+                },
+            )
+        if not receipt.response_payload:
+            raise RuntimeError("completed answer receipt has no response payload")
+        return receipt, False
 
     @staticmethod
     async def update_progress(
@@ -287,8 +398,30 @@ class FlashcardService:
         student_id: UUID,
         flashcard: Flashcard,
         data: StudyProgressUpdate,
+        idempotency_key: str,
     ) -> StudyAnswerResponse:
-        is_correct, quality, correct_option, correct_index = FlashcardService._resolve_answer(flashcard, data)
+        (
+            is_correct,
+            quality,
+            correct_option,
+            correct_index,
+            selected_index,
+        ) = FlashcardService._resolve_answer(flashcard, data)
+        key_hash, request_fingerprint = FlashcardService._answer_submission_identity(
+            idempotency_key,
+            data.flashcard_id,
+            selected_index,
+        )
+        receipt, is_new = await FlashcardService._reserve_answer_submission(
+            db,
+            student_id=student_id,
+            flashcard_id=data.flashcard_id,
+            key_hash=key_hash,
+            request_fingerprint=request_fingerprint,
+        )
+        if not is_new:
+            return StudyAnswerResponse.model_validate(receipt.response_payload)
+
         progress = await FlashcardService.get_or_create_progress(db, student_id, data.flashcard_id)
 
         if is_correct:
@@ -321,46 +454,16 @@ class FlashcardService:
         progress.next_review = now + timedelta(days=progress.interval_days)
         progress.last_reviewed = now
         await db.flush()
-        return StudyAnswerResponse(
+        answer = StudyAnswerResponse(
             progress=StudyProgressResponse.model_validate(progress),
             is_correct=is_correct,
             quality=quality,
             correct_option=correct_option,
             correct_option_index=correct_index,
         )
-
-    @staticmethod
-    async def get_studyable_cards(
-        db: AsyncSession,
-        student_id: UUID,
-        flashcard_ids: Iterable[UUID],
-    ) -> dict[UUID, Flashcard]:
-        """Fetch and lock an authorized batch in a deterministic order."""
-
-        unique_ids = sorted(set(flashcard_ids), key=str)
-        if not unique_ids:
-            return {}
-        query = (
-            select(Flashcard)
-            .join(FlashcardSet, FlashcardSet.id == Flashcard.set_id)
-            .join(
-                Enrollment,
-                and_(
-                    Enrollment.subject_id == FlashcardSet.subject_id,
-                    Enrollment.student_id == student_id,
-                ),
-            )
-            .where(
-                Flashcard.id.in_(unique_ids),
-                Flashcard.is_approved.is_(True),
-                FlashcardSet.is_published.is_(True),
-            )
-            .order_by(Flashcard.id)
-        )
-        if db.get_bind().dialect.name == "postgresql":
-            query = query.with_for_update(of=Flashcard)
-        result = await db.execute(query)
-        return {card.id: card for card in result.scalars().all()}
+        receipt.response_payload = answer.model_dump(mode="json")
+        await db.flush()
+        return answer
 
     @staticmethod
     async def get_due_cards(
@@ -393,6 +496,42 @@ class FlashcardService:
             .order_by(
                 case((StudyProgress.id.is_not(None), 0), else_=1),
                 StudyProgress.next_review.asc().nulls_last(),
+                Flashcard.created_at,
+                Flashcard.id,
+            )
+            .limit(limit)
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_review_cards(
+        db: AsyncSession,
+        student_id: UUID,
+        set_id: UUID,
+        limit: int = 20,
+    ) -> list[Flashcard]:
+        """Return approved cards for a deliberate review-all session.
+
+        Least-recently reviewed cards come first, followed by stable card
+        creation/ID ordering. This mode intentionally ignores ``next_review``.
+        """
+
+        query = (
+            select(Flashcard)
+            .outerjoin(
+                StudyProgress,
+                and_(
+                    StudyProgress.flashcard_id == Flashcard.id,
+                    StudyProgress.student_id == student_id,
+                ),
+            )
+            .where(
+                Flashcard.set_id == set_id,
+                Flashcard.is_approved.is_(True),
+            )
+            .order_by(
+                StudyProgress.last_reviewed.asc().nulls_first(),
                 Flashcard.created_at,
                 Flashcard.id,
             )

@@ -126,20 +126,22 @@ export default function StudentSubjectDetails() {
                       <Progress 
                         value={progressPercent} 
                         className={`h-2 ${isComplete ? '[&>div]:bg-green-500' : ''}`}
+                        aria-label={copy.studentSubject.progressFor(set.title)}
+                        aria-valuetext={copy.studentSubject.progressValue(progressPercent, masteryPercent)}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>{copy.studentSubject.complete(progressPercent)}</span>
                         <span>{copy.studentSubject.mastery(masteryPercent)}</span>
                         {!isComplete && progress.new > 0 && (
-                          <span className="text-blue-500">{copy.studentSubject.newCards(progress.new)}</span>
+                          <span className="text-blue-700">{copy.studentSubject.newCards(progress.new)}</span>
                         )}
                       </div>
                     </div>
                   )}
                   
                   <Button asChild className={`w-full gap-2 group ${isComplete ? 'bg-green-600 hover:bg-green-700' : ''}`}>
-                    <Link to={`/study/${set.id}`}>
-                      <Brain className="h-4 w-4 group-hover:text-yellow-300 transition-colors" aria-hidden="true" />
+                    <Link to={isComplete ? `/study/${set.id}?mode=review_all` : `/study/${set.id}`}>
+                      <Brain className="h-4 w-4 transition-colors motion-reduce:transition-none group-hover:text-yellow-300" aria-hidden="true" />
                       {isComplete ? copy.studentSubject.reviewAgain : copy.studentSubject.studyNow}
                     </Link>
                   </Button>

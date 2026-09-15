@@ -99,6 +99,7 @@ async def test_server_derives_correctness_and_progress_percentages(db):
         student_id,
         first,
         StudyProgressUpdate(flashcard_id=first.id, selected_option=" answer "),
+        "phase2-answer-0001",
     )
     await db.commit()
     assert answer.is_correct is True

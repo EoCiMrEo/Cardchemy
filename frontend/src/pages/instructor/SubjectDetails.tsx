@@ -199,7 +199,7 @@ export default function SubjectDetails() {
     setIsEditSetOpen(true)
   }
 
-  if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
+  if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
 
   if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
 
@@ -211,19 +211,19 @@ export default function SubjectDetails() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex min-w-0 items-start gap-4">
         <Button asChild variant="ghost" size="icon">
           <Link to="/dashboard" aria-label={copy.common.backToDashboard}>
             <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </Link>
         </Button>
-        <div className="flex-1">
-          <div className="flex justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold">{subject?.name}</h1>
-              <p className="text-muted-foreground">{subject?.description || copy.common.noDescription}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="break-words text-2xl font-bold">{subject?.name}</h1>
+              <p className="break-words text-muted-foreground">{subject?.description || copy.common.noDescription}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
               <Button variant="outline" size="sm" onClick={() => setIsInviteOpen(true)}>
                 <UserPlus className="mr-1 h-4 w-4" aria-hidden="true" /> {copy.subject.invite}
               </Button>
@@ -247,7 +247,7 @@ export default function SubjectDetails() {
         <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{actionError}</div>
       ) : null}
 
-      <div className="flex items-center justify-between border-b pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <h2 className="text-xl font-semibold">{copy.subject.flashcardSets}</h2>
         <Button onClick={() => setIsUploadOpen((open) => !open)} disabled={uploading}>
           <Upload className="mr-2 h-4 w-4" aria-hidden="true" /> {copy.subject.generateSet}
@@ -326,8 +326,8 @@ export default function SubjectDetails() {
                 </p>
               ) : null}
 
-              <div className="flex gap-2">
-                <Button type="submit" disabled={uploading || submissionDisabled} className="flex-1">
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={uploading || submissionDisabled} className="flex-[1_1_12rem]">
                   {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
                   {uploading ? copy.subject.uploading : submissionKey ? copy.subject.retryUpload : copy.subject.generateWithAi}
                 </Button>
@@ -369,38 +369,39 @@ export default function SubjectDetails() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {sets.map((set) => (
-          <Card key={set.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-lg">
-                <span className="flex min-w-0 items-center gap-2">
-                  <FileText className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
-                  <span className="truncate">{set.title}</span>
-                </span>
-                <span className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    aria-label={copy.subject.editSet(set.title)}
-                    onClick={(event) => openEditSet(event, set)}
-                  >
-                    <Pencil className="h-3 w-3" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
-                    aria-label={copy.subject.deleteSet(set.title)}
-                    onClick={(event) => void handleDeleteSet(set.id, event)}
-                  >
-                    <Trash2 className="h-3 w-3" aria-hidden="true" />
-                  </Button>
-                </span>
-              </CardTitle>
-              <CardDescription>{copy.subject.generatedFrom(set.source_pdf_name || copy.subject.manualSource)}</CardDescription>
+          <Card key={set.id} className="min-w-0">
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+              <div className="min-w-0 space-y-1.5">
+                <CardTitle className="flex min-w-0 items-start gap-2 text-lg">
+                  <span className="flex min-w-0 items-start gap-2">
+                    <FileText className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
+                    <span className="break-words">{set.title}</span>
+                  </span>
+                </CardTitle>
+                <CardDescription className="break-words">{copy.subject.generatedFrom(set.source_pdf_name || copy.subject.manualSource)}</CardDescription>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={copy.subject.editSet(set.title)}
+                  onClick={(event) => openEditSet(event, set)}
+                >
+                  <Pencil className="h-3 w-3" aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                  aria-label={copy.subject.deleteSet(set.title)}
+                  onClick={(event) => void handleDeleteSet(set.id, event)}
+                >
+                  <Trash2 className="h-3 w-3" aria-hidden="true" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className={`rounded-full px-2 py-1 ${set.is_published ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                   {set.is_published ? copy.subject.published : copy.subject.draft}
                 </span>

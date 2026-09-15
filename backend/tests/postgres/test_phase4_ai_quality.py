@@ -18,7 +18,7 @@ async def test_phase4_migration_columns_constraints_and_revision():
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
-            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260914_0003"
+            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260915_0004"
 
             def inspect_schema(sync_connection):
                 inspector = inspect(sync_connection)

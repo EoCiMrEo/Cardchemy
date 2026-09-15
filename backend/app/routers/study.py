@@ -7,13 +7,12 @@ Endpoints:
 - GET /study/sets/{set_id}/session - Get cards due for study
 - POST /study/progress - Submit study result for a card
 - GET /study/sets/{set_id}/progress - Get progress stats for a set
-- POST /study/sync - Sync offline progress (for PWA)
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -24,7 +23,6 @@ from app.schemas.flashcard import (
     StudyAnswerResponse,
     StudyProgressUpdate,
     StudySessionResponse,
-    StudySyncResponse,
 )
 from app.services.flashcard import FlashcardService
 from app.services.subject import SubjectService
@@ -36,6 +34,7 @@ router = APIRouter(prefix="/study", tags=["Study"])
 async def get_study_session(
     set_id: UUID,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    mode: Annotated[Literal["due", "review_all"], Query()] = "due",
     user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -66,8 +65,10 @@ async def get_study_session(
             detail="This flashcard set is not yet published"
         )
     
-    # Get due cards
-    cards = await FlashcardService.get_due_cards(db, user.id, set_id, limit)
+    if mode == "review_all":
+        cards = await FlashcardService.get_review_cards(db, user.id, set_id, limit)
+    else:
+        cards = await FlashcardService.get_due_cards(db, user.id, set_id, limit)
     
     # Get stats
     progress = await FlashcardService.get_set_progress(db, user.id, set_id)
@@ -84,6 +85,15 @@ async def get_study_session(
 @router.post("/progress", response_model=StudyAnswerResponse)
 async def update_study_progress(
     data: StudyProgressUpdate,
+    idempotency_key: Annotated[
+        str,
+        Header(
+            alias="Idempotency-Key",
+            min_length=8,
+            max_length=128,
+            pattern=r"^[\x21-\x7e]+$",
+        ),
+    ],
     user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -118,7 +128,13 @@ async def update_study_progress(
         )
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user)
     
-    answer = await FlashcardService.update_progress(db, user.id, flashcard, data)
+    answer = await FlashcardService.update_progress(
+        db,
+        user.id,
+        flashcard,
+        data,
+        idempotency_key,
+    )
     await db.commit()
     return answer
 
@@ -159,36 +175,3 @@ async def get_set_progress(
     progress = await FlashcardService.get_set_progress(db, user.id, set_id)
     
     return progress
-
-
-@router.post("/sync", response_model=StudySyncResponse)
-async def sync_offline_progress(
-    progress_updates: Annotated[list[StudyProgressUpdate], Body(min_length=1, max_length=100)],
-    user: User = Depends(get_current_student),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Sync offline study progress.
-    
-    When the PWA is offline, it stores progress locally.
-    When back online, it calls this endpoint to sync all updates.
-    
-    Request body:
-        List of progress updates (same format as single update)
-    
-    Returns:
-        Number of updates synced
-    """
-    cards = await FlashcardService.get_studyable_cards(
-        db,
-        user.id,
-        (update.flashcard_id for update in progress_updates),
-    )
-    missing_ids = {update.flashcard_id for update in progress_updates} - cards.keys()
-    if missing_ids:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more flashcards are not studyable")
-
-    for update in progress_updates:
-        await FlashcardService.update_progress(db, user.id, cards[update.flashcard_id], update)
-    await db.commit()
-    return StudySyncResponse(synced_count=len(progress_updates))
