@@ -15,6 +15,7 @@ from app.models.generation import (
     GenerationJobStatus,
     GenerationQuotaEvent,
 )
+from app.models.email import EmailMessageType, EmailOutboxMessage, EmailOutboxStatus
 
 __all__ = [
     "User",
@@ -34,4 +35,7 @@ __all__ = [
     "GenerationJobSource",
     "GenerationJobStatus",
     "GenerationQuotaEvent",
+    "EmailMessageType",
+    "EmailOutboxMessage",
+    "EmailOutboxStatus",
 ]

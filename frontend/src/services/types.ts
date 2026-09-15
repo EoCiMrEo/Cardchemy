@@ -91,10 +91,13 @@ export interface InvitationResponse {
   token: string
   subject_id: string
   expires_at: IsoDateTime
+  invite_url: string
+  delivery_queued: boolean
 }
 
 export interface InvitationCreate {
   expires_in_hours: number
+  recipient_email?: string
 }
 
 export interface InvitationAccept {

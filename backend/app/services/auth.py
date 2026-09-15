@@ -68,13 +68,14 @@ class AuthService:
         token_type: Literal["access", "refresh", "invitation", "password_reset"],
         subject: UUID,
         expires_at: datetime,
+        issued_at: datetime | None = None,
         jti: UUID | None = None,
         session_id: UUID | None = None,
         email: str | None = None,
         role: UserRole | str | None = None,
         subject_id: UUID | None = None,
     ) -> str:
-        now = utcnow()
+        now = as_utc(issued_at) if issued_at is not None else utcnow()
         role_value = role.value if isinstance(role, UserRole) else role
         claims: dict[str, object] = {
             "iss": settings.jwt_issuer,
@@ -169,11 +170,14 @@ class AuthService:
         return AuthService._decode_token(token, "password_reset", invalid_status=status.HTTP_400_BAD_REQUEST)
 
     @staticmethod
-    async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+    async def get_user_by_email(
+        db: AsyncSession, email: str, *, for_update: bool = False
+    ) -> User | None:
         normalized_email = AuthService.normalize_email(email)
-        result = await db.execute(
-            select(User).where(func.lower(User.email) == normalized_email)
-        )
+        query = select(User).where(func.lower(User.email) == normalized_email)
+        if for_update:
+            query = query.with_for_update()
+        result = await db.execute(query)
         return result.scalar_one_or_none()
 
     @staticmethod
@@ -324,6 +328,7 @@ class AuthService:
         instructor_id: UUID,
         subject_id: UUID,
         expires_in_hours: int,
+        recipient_email: str | None = None,
     ) -> tuple[InviteLink, str]:
         if not settings.invitation_min_hours <= expires_in_hours <= settings.invitation_max_hours:
             raise HTTPException(
@@ -339,20 +344,28 @@ class AuthService:
             code=AuthService.generate_invite_code(),
             instructor_id=instructor_id,
             subject_id=subject_id,
+            recipient_email=(
+                AuthService.normalize_email(recipient_email) if recipient_email else None
+            ),
             created_at=created_at,
             expires_at=expires_at,
         )
         db.add(invite)
         await db.flush()
-        token = AuthService._encode_token(
+        return invite, AuthService.issue_invitation_token(invite)
+
+    @staticmethod
+    def issue_invitation_token(invite: InviteLink) -> str:
+        return AuthService._encode_token(
             token_type="invitation",
-            subject=subject_id,
-            subject_id=subject_id,
+            subject=invite.subject_id,
+            subject_id=invite.subject_id,
             jti=invite.id,
             role=UserRole.STUDENT,
-            expires_at=expires_at.replace(tzinfo=UTC),
+            email=invite.recipient_email,
+            issued_at=invite.created_at,
+            expires_at=as_utc(invite.expires_at),
         )
-        return invite, token
 
     @staticmethod
     async def consume_invitation(db: AsyncSession, token: str, student: User) -> InviteLink:
@@ -366,6 +379,16 @@ class AuthService:
         now = db_utcnow()
         if not invite or invite.subject_id != claims.subject_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invitation")
+        normalized_student_email = AuthService.normalize_email(student.email)
+        if invite.recipient_email:
+            if (
+                claims.email != invite.recipient_email
+                or normalized_student_email != invite.recipient_email
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="This invitation was sent to another email address",
+                )
         if invite.used_by or invite.used_at:
             if invite.used_by == student.id and invite.used_at is not None:
                 enrollment = await db.scalar(
@@ -396,7 +419,9 @@ class AuthService:
         return invite
 
     @staticmethod
-    async def create_password_reset_token(db: AsyncSession, user: User) -> str:
+    async def create_password_reset_token(
+        db: AsyncSession, user: User
+    ) -> tuple[PasswordResetToken, str]:
         now = db_utcnow()
         await db.execute(
             update(PasswordResetToken)
@@ -410,15 +435,22 @@ class AuthService:
         )
         db.add(reset)
         await db.flush()
+        return reset, AuthService.issue_password_reset_token(reset)
+
+    @staticmethod
+    def issue_password_reset_token(reset: PasswordResetToken) -> str:
         return AuthService._encode_token(
             token_type="password_reset",
-            subject=user.id,
+            subject=reset.user_id,
             jti=reset.id,
-            expires_at=reset.expires_at.replace(tzinfo=UTC),
+            issued_at=reset.created_at,
+            expires_at=as_utc(reset.expires_at),
         )
 
     @staticmethod
-    async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+    async def reset_password(
+        db: AsyncSession, token: str, new_password: str
+    ) -> tuple[User, PasswordResetToken]:
         claims = AuthService.verify_password_reset_token(token)
         result = await db.execute(
             select(PasswordResetToken)
@@ -445,4 +477,5 @@ class AuthService:
             .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
             .values(revoked_at=now)
         )
-        await db.commit()
+        await db.flush()
+        return user, reset

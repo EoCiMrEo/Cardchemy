@@ -4,10 +4,12 @@ The database schema is owned by Alembic. The API never creates or alters tables
 at startup; it refuses to start when the database revision is not at the current
 head. The initial revision, `20260914_0001`, is a clean baseline and is not an
 adoption migration for older development databases. The current head,
-`20260914_0003`, adds AI provider/model snapshots, bounded usage/cost telemetry,
-and verified flashcard page/section provenance. Its predecessor,
-`20260914_0002`, adds durable generation jobs, encrypted temporary sources,
-quota events, and the exactly-once link from a job to its result set.
+`20260915_0005`, adds the transactional email outbox and optional recipient
+binding for emailed invitations. Revision `20260915_0004` adds durable
+study-answer idempotency receipts. Revision `20260914_0003` adds AI
+provider/model snapshots, bounded usage/cost telemetry, and verified flashcard
+page/section provenance; `20260914_0002` adds durable generation jobs,
+encrypted temporary sources, quotas, and the exactly-once job/result link.
 
 Before using Compose, define strong `POSTGRES_PASSWORD`, `SECRET_KEY`, and
 `GENERATION_SOURCE_ENCRYPTION_KEY` values in the root `.env`. Generate the two
@@ -24,7 +26,7 @@ and apply the baseline:
 docker compose down --volumes
 docker compose up -d db
 docker compose run --rm migrate
-docker compose up -d backend worker
+docker compose up -d backend worker email-worker
 ```
 
 Starting the complete stack with `docker compose up` also runs the one-shot
@@ -95,7 +97,11 @@ docker compose run --rm backend alembic downgrade -1
 docker compose run --rm backend alembic current
 ```
 
-Downgrading `20260914_0003` removes AI telemetry/provenance fields and restores
+Downgrading `20260915_0005` removes every email outbox row and emailed-invitation
+recipient binding. Stop the email worker and drain, inspect, or intentionally
+discard all pending and failed email before that downgrade. Downgrading
+`20260915_0004` removes study-answer idempotency receipts. Downgrading
+`20260914_0003` removes AI telemetry/provenance fields and restores
 the legacy confidence/source column names. Downgrading `20260914_0002` removes generation jobs, temporary sources, quota
 history, and job/result links. Stop the API and worker and drain or cancel jobs
 before doing so. Downgrading the `20260914_0001` baseline to `base` drops the

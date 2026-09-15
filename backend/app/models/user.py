@@ -164,6 +164,7 @@ class InviteLink(Base):
     # Track if/when the invite was used
     used_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     used_at = Column(DateTime(timezone=True), nullable=True)
+    recipient_email = Column(String(255), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
@@ -180,6 +181,12 @@ class InviteLink(Base):
             "expires_at <= created_at + INTERVAL '720 hours'",
             name="ck_invite_links_lifetime",
         ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "recipient_email IS NULL OR "
+            "(recipient_email = lower(trim(recipient_email)) AND "
+            "length(recipient_email) BETWEEN 3 AND 255)",
+            name="ck_invite_links_recipient_email_normalized",
+        ),
         Index("ix_invite_links_instructor_id", "instructor_id"),
         Index("ix_invite_links_subject_id", "subject_id"),
         Index("ix_invite_links_used_by", "used_by"),

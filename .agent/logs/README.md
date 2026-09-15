@@ -10,6 +10,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-15 | `2026-09-15-phase-7-remediation.md` | Transactional email outbox, bounded SMTP worker, Mailpit capture/fault tests, reset and invitation delivery, guarded recovery, and live browser verification. |
 | 2026-09-15 | `2026-09-15-phase-6-remediation.md` | Durable study-answer idempotency, valid review-all sessions, keyboard/screen-reader semantics, reduced motion, responsive/touch-safe UI, axe coverage, and 44 browser checks. |
 | 2026-09-15 | `2026-09-15-phase-5-remediation.md` | Typed frontend API architecture, race-safe authentication, guarded routing, resilient join/edit/progress flows, centralized English copy, and 31 browser checks. |
 | 2026-09-14 | `2026-09-14-phase-4-remediation.md` | Strict source-grounded generation, provider portability, hierarchical summaries, deterministic quality/deduplication, token/cost telemetry, operator UI, and fixed-corpus verification. |

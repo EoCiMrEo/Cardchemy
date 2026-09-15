@@ -8,6 +8,7 @@ os.environ.setdefault(
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 )
 os.environ.setdefault("AI_API_KEY", "test-only-provider-key")
+os.environ.setdefault("EMAIL_LEASE_SECONDS", "240")
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine

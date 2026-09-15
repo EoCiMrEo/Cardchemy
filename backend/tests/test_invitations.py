@@ -11,6 +11,7 @@ from app.routers.auth import register
 from app.routers.subjects import join_course_with_token
 from app.schemas.user import InvitationAccept, InvitationAcceptResponse, UserRegister
 from app.services.auth import AuthService
+from app.time_utils import utcnow
 
 
 async def seed_instructor_subject(db):
@@ -92,6 +93,67 @@ async def test_instructor_cannot_consume_student_invitation(db):
     with pytest.raises(HTTPException) as exc:
         await AuthService.consume_invitation(db, token, instructor)
     assert exc.value.status_code == 403
+
+
+async def test_emailed_invitation_is_bound_to_the_intended_student(db):
+    instructor, subject = await seed_instructor_subject(db)
+    _, token = await AuthService.create_invitation(
+        db,
+        instructor.id,
+        subject.id,
+        24,
+        recipient_email="invited@example.com",
+    )
+    intended = User(
+        id=uuid4(),
+        email="invited@example.com",
+        hashed_password=AuthService.hash_password("student password"),
+        role=UserRole.STUDENT,
+    )
+    other = User(
+        id=uuid4(),
+        email="other-student@example.com",
+        hashed_password=AuthService.hash_password("student password"),
+        role=UserRole.STUDENT,
+    )
+    db.add_all([intended, other])
+    await db.commit()
+    intended_id = intended.id
+
+    with pytest.raises(HTTPException) as error:
+        await AuthService.consume_invitation(db, token, other)
+    assert error.value.status_code == 403
+    await db.rollback()
+
+    intended = await db.get(User, intended_id)
+    consumed = await AuthService.consume_invitation(db, token, intended)
+    assert consumed.used_by == intended.id
+
+
+async def test_expired_and_malformed_invitations_are_rejected(db):
+    instructor, subject = await seed_instructor_subject(db)
+    invite, token = await AuthService.create_invitation(db, instructor.id, subject.id, 24)
+    student = User(
+        id=uuid4(),
+        email="expiry-student@example.com",
+        hashed_password=AuthService.hash_password("student password"),
+        role=UserRole.STUDENT,
+    )
+    db.add(student)
+    await db.commit()
+    student_id = student.id
+
+    invite.expires_at = utcnow()
+    await db.commit()
+    with pytest.raises(HTTPException) as expired:
+        await AuthService.consume_invitation(db, token, student)
+    assert expired.value.status_code == 400
+    await db.rollback()
+
+    student = await db.get(User, student_id)
+    with pytest.raises(HTTPException) as malformed:
+        await AuthService.consume_invitation(db, "not-a-signed-invitation", student)
+    assert malformed.value.status_code == 400
 
 
 @pytest.mark.parametrize("hours", [0, -1, 721, 1000000])

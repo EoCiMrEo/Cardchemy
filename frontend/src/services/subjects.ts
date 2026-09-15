@@ -178,9 +178,15 @@ export const subjectService = {
     await api.delete<void>(`/subjects/${subjectId}/sets/${setId}`)
   },
 
-  async generateInvite(subjectId: string, expiresInHours: number): Promise<InvitationResponse> {
+  async generateInvite(
+    subjectId: string,
+    expiresInHours: number,
+    recipientEmail?: string,
+  ): Promise<InvitationResponse> {
+    const normalizedRecipient = recipientEmail?.trim()
     const request: InvitationCreate = {
       expires_in_hours: expiresInHours,
+      ...(normalizedRecipient ? { recipient_email: normalizedRecipient } : {}),
     }
     const response = await api.post<InvitationResponse>(`/subjects/${subjectId}/invite`, request)
     return response.data

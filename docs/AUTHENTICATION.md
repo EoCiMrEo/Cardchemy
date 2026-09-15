@@ -17,7 +17,9 @@ issues, logs, shell history, or Git. To
 rotate the signing key, schedule a maintenance window, replace it in the secret
 store, restart every API instance, and require all users to sign in again.
 Production startup rejects known sample secrets, debug mode, insecure refresh
-cookies, localhost CORS origins, and missing SMTP delivery configuration.
+cookies, localhost CORS origins, and a non-HTTPS frontend base URL. The
+separate email worker validates its SMTP delivery configuration without making
+SMTP credentials available to the migration or API processes.
 
 ## Instructor bootstrap
 
@@ -39,12 +41,14 @@ rotated, stored only in an HttpOnly SameSite cookie, and linked to a server-side
 session with a 30-day absolute lifetime. Reusing an older refresh token revokes
 that session. Logout and password reset also revoke server-side sessions.
 
-## Password recovery and email verification
+## Password recovery
 
-Password recovery sends a single-use, 30-minute link through configured SMTP.
-Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and credentials when the
-relay requires them. Responses do not reveal whether an email is registered.
+Password recovery queues a single-use, 30-minute link in the transactional
+email outbox. Responses do not reveal whether an email is registered. A
+successful password change consumes the token, revokes every existing session,
+and queues a security notification that contains no reset token or other
+secret. Account email verification is not a supported workflow.
 
-Email verification is intentionally **not required** for the current self-hosted
-deployment model. This decision is explicit in `EMAIL_VERIFICATION_REQUIRED=false`;
-changing it requires implementing and testing a separate verification lifecycle.
+See [Transactional email delivery](EMAIL_DELIVERY.md) for local Mailpit usage,
+production SMTP security modes, retry and retention behavior, and sender-domain
+responsibilities.

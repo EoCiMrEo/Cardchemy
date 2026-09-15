@@ -471,6 +471,8 @@ test('keeps subject, set, and invitation mutation dialogs recoverable after serv
                 token: 'generated-invitation-token',
                 subject_id: fixtures.subject.id,
                 expires_at: '2026-09-16T00:00:00Z',
+                invite_url: 'https://cards.example.com/join?token=generated-invitation-token',
+                delivery_queued: false,
               },
             }
       }

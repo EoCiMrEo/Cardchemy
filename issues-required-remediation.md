@@ -313,7 +313,86 @@ network failure cannot silently lose progress.
 
 ---
 
-## Phase 7 - Complete deployment and self-hosting support
+## Phase 7 - Complete transactional email and SMTP delivery
+
+**Goal:** Deliver security-sensitive and transactional emails reliably, test
+them locally with Mailpit, and remain compatible with standard SMTP providers
+in production.
+
+### Local SMTP and configuration
+
+- [x] **P0** Add a pinned Mailpit container to the development/test Compose
+  profile with a health check and bounded message storage.
+- [x] **P0** Configure local delivery through `mailpit:1025` without SMTP auth or
+  TLS; expose only the Mailpit Web UI on loopback port `8025` and keep SMTP
+  internal to the Docker network.
+- [x] **P0** Pass `SMTP_STARTTLS` through Compose and make SMTP security explicit:
+  none for local Mailpit, STARTTLS or implicit TLS for production providers.
+- [x] **P0** Validate SMTP host, port, sender, authentication, TLS mode, and
+  frontend base URL at startup without logging credentials.
+- [x] **P1** Add configurable sender name and reply-to address with validated
+  email headers.
+
+### Delivery architecture and templates
+
+- [x] **P0** Refactor the password-reset-only email service into an injectable
+  SMTP transport and reusable typed message/template layer.
+- [x] **P0** Provide multipart plain-text and accessible HTML templates with
+  consistent branding and absolute HTTPS links in production.
+- [x] **P0** Queue email through a durable transactional outbox/background worker
+  so API requests do not wait for SMTP and database changes cannot succeed
+  without the related email being queued.
+- [x] **P0** Add bounded delivery timeouts, exponential-backoff retries, maximum
+  attempts, idempotency, and duplicate-send protection.
+- [x] **P0** Track pending, sent, and failed delivery state plus attempt count and
+  timestamps; retain only sanitized provider errors.
+- [x] **P0** Preserve account-enumeration resistance while making internal
+  delivery failures observable and recoverable.
+- [x] **P1** Add retention and cleanup rules for delivered, failed, and expired
+  outbox records.
+
+### Transactional email flows
+
+- [x] **P0** Send password-reset messages through the durable delivery path and
+  preserve single-use expiration and session revocation behavior.
+- [x] **P0** Fully implement optional email verification, including single-use
+  expiring tokens and resend limits, or remove the unused configuration flag.
+- [x] **P1** Allow instructors to send student invitations by email while keeping
+  copyable invitation links available.
+- [x] **P1** Send a password-changed security notification that contains no reset
+  token or other secret.
+- [x] **P1** Keep marketing and non-essential notification email outside the v1.0
+  transactional email scope.
+
+### Email testing and documentation
+
+- [x] **P0** Add unit tests for SMTP configuration, address/header safety,
+  template rendering, absolute links, and sanitized failures.
+- [x] **P0** Add Mailpit API integration tests that verify recipient, subject,
+  plain-text/HTML bodies, and reset/invitation links.
+- [x] **P0** Add an end-to-end password-reset test: request -> captured email ->
+  reset page -> new password succeeds -> old password and reused token fail.
+- [x] **P0** Test SMTP timeout, disconnect, authentication/TLS failure, retries,
+  terminal failure, and duplicate suppression; use Mailpit fault injection where
+  practical.
+- [x] **P1** Test the no-email-verification configuration decision and invitation
+  delivery, including expired, consumed, malformed, and rate-limited tokens.
+- [x] **P1** Verify that credentials, tokens, reset URLs, and message bodies never
+  appear in application logs.
+- [x] **P1** Document local Mailpit usage separately from production SMTP setup,
+  including common port/TLS examples and operator-owned SPF, DKIM, and DMARC
+  responsibilities.
+- [x] **P1** State clearly that Mailpit captures mail for development/CI and must
+  not be used as the production delivery service.
+
+**Phase complete when:** local Compose captures transactional mail in Mailpit,
+password reset passes end to end, SMTP failures retry without blocking requests
+or sending duplicates, sensitive values stay out of logs, and a self-hoster can
+connect a standard production SMTP provider using configuration only.
+
+---
+
+## Phase 8 - Complete deployment and self-hosting support
 
 **Goal:** Let a new user clone the repository and run a safe, production-like
 deployment without editing source code.
@@ -349,7 +428,7 @@ upgrade/backup path.
 
 ---
 
-## Phase 8 - Add tests, CI, and supply-chain checks
+## Phase 9 - Add tests, CI, and supply-chain checks
 
 **Goal:** Prevent security and behavior regressions before merging or releasing.
 
@@ -391,7 +470,7 @@ security boundaries, migrations, or critical user journey.
 
 ---
 
-## Phase 9 - Add observability, privacy, and operational controls
+## Phase 10 - Add observability, privacy, and operational controls
 
 **Goal:** Make failures diagnosable without exposing user documents or secrets.
 
@@ -421,7 +500,7 @@ and metrics without seeing secrets or unnecessary user content.
 
 ---
 
-## Phase 10 - Finish the open-source product and rebrand
+## Phase 11 - Finish the open-source product and rebrand
 
 **Goal:** Publish a trustworthy repository that users can understand, operate,
 and contribute to.
@@ -470,6 +549,8 @@ Do not publish v1.0 until all of the following are true:
 - [ ] Authentication and cross-subject authorization tests pass.
 - [ ] Database migration, backup, restore, and upgrade tests pass.
 - [ ] PDF jobs are bounded, durable, cancellable, and recoverable.
+- [ ] Transactional email passes Mailpit integration and end-to-end tests;
+  production SMTP setup and failure recovery are documented and verified.
 - [ ] Frontend typecheck, lint, tests, accessibility checks, and production build
   pass.
 - [ ] A fresh-clone production deployment has been tested on a clean machine.

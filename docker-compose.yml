@@ -4,10 +4,10 @@
 # This file defines all services needed to run the application locally.
 #
 # Usage:
-#   Start all services:     docker-compose up -d
-#   View logs:              docker-compose logs -f
-#   Stop all services:      docker-compose down
-#   Rebuild after changes:  docker-compose up -d --build
+#   Start development:      docker compose --profile dev up -d --build --wait
+#   Start test services:    docker compose --profile test up -d --build --wait
+#   View logs:              docker compose logs -f
+#   Stop all services:      docker compose down
 
 x-backend-build: &backend-build
   context: ./backend
@@ -78,6 +78,39 @@ x-generation-environment: &generation-environment
 
 services:
   # ===========================================
+  # Development/test SMTP capture
+  # ===========================================
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    container_name: flashcard_mailpit
+    profiles: ["dev", "test"]
+    ports:
+      - "127.0.0.1:8025:8025"
+    expose:
+      - "1025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "250"
+      MP_MAX_AGE: 7d
+      MP_MAX_MESSAGE_SIZE: "2"
+      MP_ALLOWED_HOSTS: localhost,127.0.0.1,mailpit
+      MP_SMTP_STRICT_RFC_HEADERS: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_IGNORE_DUPLICATE_IDS: "true"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_SMTP_DISABLE_RDNS: "true"
+      MP_ENABLE_CHAOS: "true"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  # ===========================================
   # PostgreSQL Database
   # ===========================================
   db:
@@ -106,6 +139,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: "false"
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
       <<: *generation-environment
     depends_on:
       db:
@@ -131,11 +168,6 @@ services:
       REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
       DEBUG: ${DEBUG:-false}
       <<: *generation-environment
     depends_on:
@@ -163,6 +195,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
       <<: *generation-environment
     depends_on:
       migrate:
@@ -171,6 +206,56 @@ services:
       - ./backend:/app
     command: python -m app.worker
     restart: unless-stopped
+
+  # ===========================================
+  # Durable transactional-email worker
+  # ===========================================
+  email-worker:
+    build: *backend-build
+    container_name: flashcard_email_worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
+      GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Set GENERATION_SOURCE_ENCRYPTION_KEY in the root .env file}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: "false"
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
+      APP_NAME: ${APP_NAME:-Flashcard Generator}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@example.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+      SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_IMPLICIT_TLS: ${SMTP_IMPLICIT_TLS:-false}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-15}
+      EMAIL_WORKER_CONCURRENCY: ${EMAIL_WORKER_CONCURRENCY:-4}
+      EMAIL_WORKER_POLL_SECONDS: ${EMAIL_WORKER_POLL_SECONDS:-1}
+      EMAIL_LEASE_SECONDS: ${EMAIL_LEASE_SECONDS:-240}
+      EMAIL_MAX_ATTEMPTS: ${EMAIL_MAX_ATTEMPTS:-5}
+      EMAIL_RETRY_BASE_SECONDS: ${EMAIL_RETRY_BASE_SECONDS:-5}
+      EMAIL_RETRY_MAX_SECONDS: ${EMAIL_RETRY_MAX_SECONDS:-300}
+      EMAIL_CLEANUP_INTERVAL_SECONDS: ${EMAIL_CLEANUP_INTERVAL_SECONDS:-3600}
+      EMAIL_SENT_RETENTION_DAYS: ${EMAIL_SENT_RETENTION_DAYS:-7}
+      EMAIL_FAILED_RETENTION_DAYS: ${EMAIL_FAILED_RETENTION_DAYS:-30}
+      EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS: ${EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS:-24}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/app
+    command: python -m app.email_worker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # ===========================================
   # Frontend (React + Vite) - Will be added later
@@ -190,3 +275,4 @@ services:
 
 volumes:
   postgres_data:
+  mailpit_data:

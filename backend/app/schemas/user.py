@@ -80,12 +80,23 @@ class InviteLinkCreate(BaseModel):
 
 class InvitationCreate(BaseModel):
     expires_in_hours: int = Field(default=24, ge=1, le=720)
+    recipient_email: EmailStr | None = None
+
+    @field_validator("recipient_email", mode="before")
+    @classmethod
+    def normalize_recipient_email(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized or None
+        return value
 
 
 class InviteLinkResponse(BaseModel):
     token: str
     subject_id: UUID
     expires_at: datetime
+    invite_url: str
+    delivery_queued: bool
 
 
 class InvitationAccept(BaseModel):

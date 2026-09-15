@@ -61,3 +61,7 @@ def test_environment_file_path_is_absolute_and_backend_relative():
     configured_path = Path(Settings.model_config["env_file"])
     assert configured_path.is_absolute()
     assert configured_path == BACKEND_DIR / ".env"
+
+
+def test_removed_email_verification_switch_cannot_create_a_partial_workflow():
+    assert "email_verification_required" not in Settings.model_fields

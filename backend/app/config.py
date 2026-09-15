@@ -9,6 +9,7 @@ import base64
 import binascii
 from decimal import Decimal
 from functools import lru_cache
+import ipaddress
 from pathlib import Path
 import re
 from typing import Literal
@@ -26,6 +27,7 @@ INSECURE_SECRET_VALUES = {
     "secret",
 }
 UNSTABLE_MODEL_PATTERN = re.compile(r"(?:^|[-_.])(preview|latest|experimental|exp)(?:$|[-_.])", re.I)
+DNS_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
 class Settings(BaseSettings):
@@ -39,7 +41,7 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
-    app_name: str = "Flashcard Generator"
+    app_name: str = Field(default="Flashcard Generator", min_length=1, max_length=128)
     app_version: str = "0.1.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
@@ -60,20 +62,34 @@ class Settings(BaseSettings):
     refresh_cookie_samesite: Literal["lax", "strict"] = "lax"
     refresh_cookie_domain: str | None = None
 
-    frontend_base_url: str = "http://localhost:5173"
+    frontend_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:5173")
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     invitation_min_hours: int = Field(default=1, ge=1, le=720)
     invitation_max_hours: int = Field(default=720, ge=1, le=720)
     password_reset_expire_minutes: int = Field(default=30, ge=5, le=120)
-    email_verification_required: bool = False
 
     smtp_host: str | None = None
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     smtp_from_email: EmailStr | None = None
-    smtp_starttls: bool = True
+    smtp_from_name: str | None = Field(default=None, max_length=128)
+    smtp_reply_to: EmailStr | None = None
+    smtp_starttls: bool = False
+    smtp_implicit_tls: bool = False
+    smtp_timeout_seconds: float = Field(default=15, ge=1, le=120)
+
+    email_worker_concurrency: int = Field(default=4, ge=1, le=32)
+    email_worker_poll_seconds: float = Field(default=1, ge=0.1, le=30)
+    email_lease_seconds: int = Field(default=240, ge=5, le=3_600)
+    email_max_attempts: int = Field(default=5, ge=1, le=10)
+    email_retry_base_seconds: float = Field(default=5, ge=0.1, le=3_600)
+    email_retry_max_seconds: float = Field(default=300, ge=1, le=86_400)
+    email_cleanup_interval_seconds: int = Field(default=3_600, ge=60, le=86_400)
+    email_sent_retention_days: int = Field(default=7, ge=1, le=365)
+    email_failed_retention_days: int = Field(default=30, ge=1, le=3_650)
+    email_security_notification_expire_hours: int = Field(default=24, ge=1, le=168)
 
     # Provider-independent AI settings. ``GEMINI_API_KEY`` remains as a
     # compatibility fallback while deployments migrate to ``AI_API_KEY``.
@@ -170,6 +186,31 @@ class Settings(BaseSettings):
         return self.secret_key.get_secret_value()
 
     @property
+    def smtp_security(self) -> Literal["none", "starttls", "implicit_tls"]:
+        if self.smtp_implicit_tls:
+            return "implicit_tls"
+        if self.smtp_starttls:
+            return "starttls"
+        return "none"
+
+    def require_email_delivery_config(self) -> "Settings":
+        """Fail an email worker startup unless its delivery settings are usable."""
+
+        missing = []
+        if not self.smtp_host:
+            missing.append("SMTP_HOST")
+        if not self.smtp_from_email:
+            missing.append("SMTP_FROM_EMAIL")
+        if missing:
+            raise ValueError(f"Email delivery requires {', '.join(missing)}")
+        if self.environment == "production":
+            if self.smtp_security == "none":
+                raise ValueError("Production email delivery requires STARTTLS or implicit TLS")
+            if self.smtp_host.casefold() == "mailpit":
+                raise ValueError("Mailpit cannot be used for production email delivery")
+        return self
+
+    @property
     def ai_api_key_value(self) -> str | None:
         """Return the configured key without ever including it in model output."""
 
@@ -213,6 +254,69 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
+    @field_validator("app_name", "smtp_from_name")
+    @classmethod
+    def validate_email_header_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized or any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("Email header text must be non-empty and contain no control characters")
+        return normalized
+
+    @field_validator("smtp_host", mode="before")
+    @classmethod
+    def validate_smtp_host(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if any(ord(character) <= 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("SMTP_HOST cannot contain whitespace or control characters")
+        if any(delimiter in normalized for delimiter in ("://", "/", "@", "?", "#")):
+            raise ValueError("SMTP_HOST must be a hostname or IP address without a URL or port")
+
+        ip_candidate = normalized[1:-1] if normalized.startswith("[") and normalized.endswith("]") else normalized
+        try:
+            return str(ipaddress.ip_address(ip_candidate))
+        except ValueError:
+            pass
+
+        try:
+            ascii_host = normalized.rstrip(".").encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise ValueError("SMTP_HOST is not a valid hostname") from exc
+        if not ascii_host or len(ascii_host) > 253:
+            raise ValueError("SMTP_HOST is not a valid hostname")
+        if any(not DNS_LABEL_PATTERN.fullmatch(label) for label in ascii_host.split(".")):
+            raise ValueError("SMTP_HOST is not a valid hostname")
+        return ascii_host
+
+    @field_validator("smtp_username", mode="before")
+    @classmethod
+    def validate_smtp_username(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        if not value:
+            return None
+        if len(value) > 320 or any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("SMTP_USERNAME is too long or contains control characters")
+        return value
+
+    @field_validator("frontend_base_url")
+    @classmethod
+    def validate_frontend_base_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if value.username or value.password or value.query or value.fragment:
+            raise ValueError(
+                "FRONTEND_BASE_URL cannot contain credentials, a query, or a fragment"
+            )
+        return value
+
     @field_validator("ai_model")
     @classmethod
     def validate_ai_model_name(cls, value: str) -> str:
@@ -238,6 +342,23 @@ class Settings(BaseSettings):
 
         if self.invitation_min_hours > self.invitation_max_hours:
             raise ValueError("INVITATION_MIN_HOURS cannot exceed INVITATION_MAX_HOURS")
+
+        username_configured = self.smtp_username is not None
+        password_configured = bool(
+            self.smtp_password and self.smtp_password.get_secret_value()
+        )
+        if username_configured != password_configured:
+            raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
+        if self.smtp_starttls and self.smtp_implicit_tls:
+            raise ValueError("SMTP_STARTTLS and SMTP_IMPLICIT_TLS cannot both be enabled")
+        if username_configured and self.smtp_security == "none":
+            raise ValueError("SMTP credentials require STARTTLS or implicit TLS")
+        if self.email_lease_seconds < self.smtp_timeout_seconds * 12:
+            raise ValueError(
+                "EMAIL_LEASE_SECONDS must be at least twelve times SMTP_TIMEOUT_SECONDS"
+            )
+        if self.email_retry_base_seconds > self.email_retry_max_seconds:
+            raise ValueError("EMAIL_RETRY_BASE_SECONDS cannot exceed EMAIL_RETRY_MAX_SECONDS")
 
         if self.generation_min_card_count > self.generation_max_card_count:
             raise ValueError("GENERATION_MIN_CARD_COUNT cannot exceed GENERATION_MAX_CARD_COUNT")
@@ -295,8 +416,8 @@ class Settings(BaseSettings):
                 raise ValueError("DEBUG must be false in production")
             if not self.refresh_cookie_secure:
                 raise ValueError("REFRESH_COOKIE_SECURE must be true in production")
-            if not self.smtp_host or not self.smtp_from_email:
-                raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required in production")
+            if self.frontend_base_url.scheme != "https":
+                raise ValueError("FRONTEND_BASE_URL must use HTTPS in production")
             if any("localhost" in origin or "127.0.0.1" in origin for origin in self.cors_origin_list):
                 raise ValueError("Production CORS_ORIGINS cannot contain localhost origins")
 

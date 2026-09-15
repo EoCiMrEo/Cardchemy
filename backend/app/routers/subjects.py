@@ -40,9 +40,11 @@ from app.schemas.subject import (
 )
 from app.services.subject import SubjectService
 from app.services.auth import AuthService
+from app.services.email import EmailOutboxService
 from app.services.rate_limit import limit_invitation, limit_join
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
+email_outbox = EmailOutboxService()
 
 
 # ============================================
@@ -179,9 +181,18 @@ async def generate_invite_token(
         instructor_id=user.id,
         subject_id=subject_id,
         expires_in_hours=data.expires_in_hours,
+        recipient_email=str(data.recipient_email) if data.recipient_email else None,
     )
+    if data.recipient_email:
+        await email_outbox.queue_student_invitation(db, invite=invite)
     await db.commit()
-    return InviteLinkResponse(token=token, subject_id=subject_id, expires_at=invite.expires_at)
+    return InviteLinkResponse(
+        token=token,
+        subject_id=subject_id,
+        expires_at=invite.expires_at,
+        invite_url=email_outbox.frontend_url("/join", token),
+        delivery_queued=bool(data.recipient_email),
+    )
 
 
 @router.post(

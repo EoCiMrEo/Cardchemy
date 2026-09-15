@@ -50,7 +50,7 @@ async def test_refresh_rotation_reuse_detection_and_logout_revocation(db):
 async def test_password_reset_is_single_use_and_revokes_sessions(db):
     user = await persisted_user(db)
     access, _ = await AuthService.create_session(db, user)
-    reset_token = await AuthService.create_password_reset_token(db, user)
+    _, reset_token = await AuthService.create_password_reset_token(db, user)
     await db.commit()
 
     await AuthService.reset_password(db, reset_token, "a completely new password")

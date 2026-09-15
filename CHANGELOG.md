@@ -5,6 +5,19 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+### Phase 7 - transactional email delivery
+
+- Replaced request-bound password-reset SMTP with a PostgreSQL transactional
+  outbox, lease-based email worker, bounded retries, sanitized delivery state,
+  guarded operator recovery, and retention cleanup.
+- Added validated SMTP none, STARTTLS, and implicit-TLS modes; safe multipart
+  reset, password-change, and student-invitation templates; and recipient-bound
+  emailed invitations while preserving copyable invitation links.
+- Added a pinned, bounded, loopback-only Mailpit development/test service plus
+  PostgreSQL concurrency, Mailpit API, fault-injection, and browser coverage.
+- Removed the unused email-verification switch so the documented no-verification
+  account contract cannot be partially enabled.
+
 ### Phase 6 - reliable and accessible study
 
 - Added durable, per-student idempotency receipts for study answers so rapid

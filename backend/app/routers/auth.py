@@ -1,10 +1,11 @@
 """Authentication endpoints and role dependencies."""
 
-from urllib.parse import quote
+import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -19,7 +20,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.auth import AuthService
-from app.services.email import EmailDeliveryUnavailable, EmailService
+from app.services.email import EmailCompositionError, EmailOutboxService
 from app.services.rate_limit import (
     limit_login,
     limit_password_reset,
@@ -31,6 +32,8 @@ from app.services.rate_limit import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 settings = get_settings()
+logger = logging.getLogger(__name__)
+email_outbox = EmailOutboxService(settings)
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -188,18 +191,24 @@ async def forgot_password(
     data: PasswordForgotRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
+    started = asyncio.get_running_loop().time()
     generic = MessageResponse(message="If that account exists, a password-reset email has been sent")
-    user = await AuthService.get_user_by_email(db, str(data.email))
-    if not user:
-        return generic
-
-    token = await AuthService.create_password_reset_token(db, user)
-    await db.commit()
-    reset_url = f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={quote(token)}"
     try:
-        await EmailService.send_password_reset(user.email, reset_url)
-    except EmailDeliveryUnavailable:
-        pass
+        async with db.begin():
+            user = await AuthService.get_user_by_email(
+                db, str(data.email), for_update=True
+            )
+            if user is not None:
+                reset, _ = await AuthService.create_password_reset_token(db, user)
+                await email_outbox.queue_password_reset(db, user=user, reset=reset)
+    except (SQLAlchemyError, EmailCompositionError):
+        await db.rollback()
+        logger.error("Password-reset email could not be queued")
+    finally:
+        # Keep the response path substantially less dependent on account
+        # existence while leaving SMTP entirely outside the request.
+        elapsed = asyncio.get_running_loop().time() - started
+        await asyncio.sleep(max(0.0, 0.125 - elapsed))
     return generic
 
 
@@ -213,6 +222,8 @@ async def reset_password(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
-    await AuthService.reset_password(db, data.token, data.new_password)
+    async with db.begin():
+        user, reset = await AuthService.reset_password(db, data.token, data.new_password)
+        await email_outbox.queue_password_changed(db, user=user, reset=reset)
     _clear_refresh_cookie(response)
     return MessageResponse(message="Password reset successfully. Sign in again on every device")
