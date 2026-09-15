@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiErrorMessage } from '@/services/errors'
 import { flashcardService } from '@/services/flashcards'
 import type { GenerationJob, GenerationLimits } from '@/services/types'
+import { copy } from '@/i18n/en'
 
 const ACTIVE_STATUSES = new Set(['awaiting_upload', 'queued', 'running'])
 
@@ -80,7 +81,7 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
         if (disposed || controller.signal.aborted) return
         setLoading(false)
         setStatusMessage(
-          apiErrorMessage(error, 'Generation status is temporarily unavailable. Retrying…'),
+          apiErrorMessage(error, copy.generation.statusUnavailable),
         )
         timer = setTimeout(() => void poll(false), retryDelay(error, failures++))
       }

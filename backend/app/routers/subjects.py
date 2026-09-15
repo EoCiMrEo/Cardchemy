@@ -23,12 +23,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_instructor, get_current_student, get_current_user
-from app.schemas.user import InvitationAccept, InvitationCreate, InviteLinkResponse
+from app.schemas.user import (
+    InvitationAccept,
+    InvitationAcceptResponse,
+    InvitationCreate,
+    InviteLinkResponse,
+)
 from app.schemas.subject import (
     SubjectCreate,
     SubjectUpdate,
     SubjectResponse,
     FlashcardSetCreate,
+    FlashcardSetCreateRequest,
     FlashcardSetUpdate,
     FlashcardSetResponse,
 )
@@ -178,12 +184,16 @@ async def generate_invite_token(
     return InviteLinkResponse(token=token, subject_id=subject_id, expires_at=invite.expires_at)
 
 
-@router.post("/invitations/accept", dependencies=[Depends(limit_join)])
+@router.post(
+    "/invitations/accept",
+    response_model=InvitationAcceptResponse,
+    dependencies=[Depends(limit_join)],
+)
 async def join_course_with_token(
     data: InvitationAccept,
     user: User = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
-):
+) -> InvitationAcceptResponse:
     """Consume the same single-use invitation used by student registration."""
     try:
         invite = await AuthService.consume_invitation(db, data.token, user)
@@ -197,7 +207,10 @@ async def join_course_with_token(
         ) from None
     if not subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
-    return {"message": "Successfully joined course", "subject_name": subject.name}
+    return InvitationAcceptResponse(
+        message="Successfully joined course",
+        subject_name=subject.name,
+    )
 
 
 # ============================================
@@ -227,7 +240,7 @@ async def list_flashcard_sets(
 @router.post("/{subject_id}/sets", response_model=FlashcardSetResponse, status_code=status.HTTP_201_CREATED)
 async def create_flashcard_set(
     subject_id: UUID,
-    data: FlashcardSetCreate,
+    data: FlashcardSetCreateRequest,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
 ):
@@ -239,10 +252,8 @@ async def create_flashcard_set(
     """
     await SubjectService.check_subject_access(db, subject_id, user, require_owner=True)
     
-    # Override subject_id from path
-    data.subject_id = subject_id
-    
-    flashcard_set = await SubjectService.create_flashcard_set(db, data)
+    create_data = FlashcardSetCreate(subject_id=subject_id, **data.model_dump())
+    flashcard_set = await SubjectService.create_flashcard_set(db, create_data)
     await db.commit()
     return flashcard_set
 

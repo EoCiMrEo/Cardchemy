@@ -1,5 +1,6 @@
 import api from './api'
 import type {
+  ApproveAllResponse,
   Flashcard,
   FlashcardUpdate,
   GenerationJob,
@@ -84,13 +85,12 @@ export const flashcardService = {
     return response.data
   },
 
-  async deleteCard(id: string) {
-    const response = await api.delete(`/flashcards/${id}`)
-    return response.data
+  async deleteCard(id: string): Promise<void> {
+    await api.delete<void>(`/flashcards/${id}`)
   },
 
-  async approveAll(setId: string) {
-    const response = await api.post(`/flashcards/sets/${setId}/approve-all`)
+  async approveAll(setId: string): Promise<ApproveAllResponse> {
+    const response = await api.post<ApproveAllResponse>(`/flashcards/sets/${setId}/approve-all`)
     return response.data
   },
 }

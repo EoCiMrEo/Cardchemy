@@ -22,27 +22,18 @@ import { useGenerationJobs } from '@/hooks/useGenerationJobs'
 import { apiErrorMessage } from '@/services/errors'
 import { flashcardService } from '@/services/flashcards'
 import { subjectService } from '@/services/subjects'
-
-interface SubjectSummary {
-  id: string
-  name: string
-  description?: string
-}
-
-interface SetSummary {
-  id: string
-  title: string
-  source_pdf_name: string | null
-  is_published: boolean
-  flashcard_count: number
-}
+import type { FlashcardSet, Subject } from '@/services/types'
+import { PageError } from '@/components/feedback/PageError'
+import { copy } from '@/i18n/en'
 
 export default function SubjectDetails() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [subject, setSubject] = useState<SubjectSummary | null>(null)
-  const [sets, setSets] = useState<SetSummary[]>([])
+  const [subject, setSubject] = useState<Subject | null>(null)
+  const [sets, setSets] = useState<FlashcardSet[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -56,7 +47,7 @@ export default function SubjectDetails() {
   const uploadJobIdRef = useRef<string | null>(null)
 
   const [isEditSubjectOpen, setIsEditSubjectOpen] = useState(false)
-  const [editingSet, setEditingSet] = useState<SetSummary | null>(null)
+  const [editingSet, setEditingSet] = useState<FlashcardSet | null>(null)
   const [isEditSetOpen, setIsEditSetOpen] = useState(false)
   const [isInviteOpen, setIsInviteOpen] = useState(false)
 
@@ -67,21 +58,26 @@ export default function SubjectDetails() {
   }, [id])
 
   const handleJobCompleted = useCallback(() => {
-    void refreshSets()
+    void refreshSets().catch((caught: unknown) => {
+      setActionError(apiErrorMessage(caught, copy.subject.loadFailed))
+    })
   }, [refreshSets])
 
   const generation = useGenerationJobs(id ?? null, handleJobCompleted)
 
   const loadData = useCallback(async () => {
     if (!id) return
+    setLoadError(null)
     setLoading(true)
     try {
       const [subjectData, setsData] = await Promise.all([
         subjectService.getSubject(id),
         subjectService.getSets(id),
       ])
-      setSubject({ ...subjectData, description: subjectData.description ?? undefined })
+      setSubject(subjectData)
       setSets(setsData)
+    } catch (caught: unknown) {
+      setLoadError(apiErrorMessage(caught, copy.subject.loadFailed))
     } finally {
       setLoading(false)
     }
@@ -103,11 +99,11 @@ export default function SubjectDetails() {
     if (!id || !file || !setTitle.trim() || uploading) return
     const limits = generation.limits
     if (limits && file.size > limits.max_upload_bytes) {
-      setUploadMessage(`The selected PDF exceeds the ${limits.max_upload_bytes}-byte limit.`)
+      setUploadMessage(copy.subject.selectedFileTooLarge(limits.max_upload_bytes))
       return
     }
     if (limits && (cardCount < limits.min_card_count || cardCount > limits.max_card_count)) {
-      setUploadMessage('The card count is outside the current server limits.')
+      setUploadMessage(copy.subject.cardCountOutsideLimits)
       return
     }
 
@@ -116,7 +112,7 @@ export default function SubjectDetails() {
     const controller = new AbortController()
     uploadControllerRef.current = controller
     setUploading(true)
-    setUploadMessage('Reserving a durable generation job…')
+    setUploadMessage(copy.subject.reservingJob)
     try {
       const reserved = await flashcardService.createGenerationJob(
         {
@@ -130,14 +126,14 @@ export default function SubjectDetails() {
       )
       uploadJobIdRef.current = reserved.id
       generation.trackJob(reserved)
-      setUploadMessage('Uploading the PDF within the configured byte limit…')
+      setUploadMessage(copy.subject.uploadingPdf)
       const queued = await flashcardService.uploadGenerationSource(
         reserved.id,
         file,
         controller.signal,
       )
       generation.trackJob(queued)
-      setUploadMessage('Upload complete. The worker will continue in the background.')
+      setUploadMessage(copy.subject.uploadComplete)
       setSubmissionKey(null)
       setFile(null)
       setSetTitle('')
@@ -147,7 +143,7 @@ export default function SubjectDetails() {
       setUploadMessage(
         apiErrorMessage(
           error,
-          'The upload did not finish. Retrying this form will reuse the same job safely.',
+          copy.subject.uploadFailed,
         ),
       )
       generation.refreshJobs()
@@ -164,19 +160,21 @@ export default function SubjectDetails() {
       try {
         await generation.cancelJob(jobId)
       } catch (error) {
-        setUploadMessage(apiErrorMessage(error, 'The upload stopped, but cancellation failed.'))
+        setUploadMessage(apiErrorMessage(error, copy.subject.uploadStoppedCancelFailed))
       }
     }
     generation.refreshJobs()
   }
 
   const handleDeleteSubject = async () => {
-    if (!id || !confirm('Are you sure? This deletes the subject, its sets, and active jobs.')) return
+    if (!id || !confirm(copy.subject.confirmDelete)) return
+    setActionError(null)
     setLoading(true)
     try {
       await subjectService.deleteSubject(id)
       navigate('/dashboard')
-    } catch {
+    } catch (caught: unknown) {
+      setActionError(apiErrorMessage(caught, copy.subject.deleteFailed))
       setLoading(false)
     }
   }
@@ -184,19 +182,26 @@ export default function SubjectDetails() {
   const handleDeleteSet = async (setId: string, event: React.MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    if (!id || !confirm('Are you sure you want to delete this flashcard set?')) return
-    await subjectService.deleteSet(id, setId)
-    setSets((current) => current.filter((set) => set.id !== setId))
+    if (!id || !confirm(copy.subject.confirmDeleteSet)) return
+    setActionError(null)
+    try {
+      await subjectService.deleteSet(id, setId)
+      setSets((current) => current.filter((set) => set.id !== setId))
+    } catch (caught: unknown) {
+      setActionError(apiErrorMessage(caught, copy.subject.deleteSetFailed))
+    }
   }
 
-  const openEditSet = (event: React.MouseEvent, set: SetSummary) => {
+  const openEditSet = (event: React.MouseEvent, set: FlashcardSet) => {
     event.preventDefault()
     event.stopPropagation()
     setEditingSet(set)
     setIsEditSetOpen(true)
   }
 
-  if (loading) return <div className="p-8"><Loader2 className="animate-spin" /></div>
+  if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
+
+  if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
 
   const limits = generation.limits
   const submissionDisabled = Boolean(
@@ -208,7 +213,7 @@ export default function SubjectDetails() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button asChild variant="ghost" size="icon">
-          <Link to="/dashboard" aria-label="Back to dashboard">
+          <Link to="/dashboard" aria-label={copy.common.backToDashboard}>
             <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </Link>
         </Button>
@@ -216,14 +221,14 @@ export default function SubjectDetails() {
           <div className="flex justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold">{subject?.name}</h1>
-              <p className="text-muted-foreground">{subject?.description || 'No description'}</p>
+              <p className="text-muted-foreground">{subject?.description || copy.common.noDescription}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setIsInviteOpen(true)}>
-                <UserPlus className="mr-1 h-4 w-4" aria-hidden="true" /> Invite
+                <UserPlus className="mr-1 h-4 w-4" aria-hidden="true" /> {copy.subject.invite}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setIsEditSubjectOpen(true)}>
-                <Pencil className="mr-1 h-4 w-4" aria-hidden="true" /> Edit
+                <Pencil className="mr-1 h-4 w-4" aria-hidden="true" /> {copy.subject.edit}
               </Button>
               <Button
                 variant="destructive"
@@ -231,32 +236,36 @@ export default function SubjectDetails() {
                 className="bg-red-700 text-white hover:bg-red-800"
                 onClick={() => void handleDeleteSubject()}
               >
-                <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> Delete
+                <Trash2 className="mr-1 h-4 w-4" aria-hidden="true" /> {copy.common.delete}
               </Button>
             </div>
           </div>
         </div>
       </div>
 
+      {actionError ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{actionError}</div>
+      ) : null}
+
       <div className="flex items-center justify-between border-b pb-4">
-        <h2 className="text-xl font-semibold">Flashcard Sets</h2>
+        <h2 className="text-xl font-semibold">{copy.subject.flashcardSets}</h2>
         <Button onClick={() => setIsUploadOpen((open) => !open)} disabled={uploading}>
-          <Upload className="mr-2 h-4 w-4" aria-hidden="true" /> Generate Flashcards Set
+          <Upload className="mr-2 h-4 w-4" aria-hidden="true" /> {copy.subject.generateSet}
         </Button>
       </div>
 
       {isUploadOpen ? (
         <Card className="border-dashed bg-slate-50">
           <CardHeader>
-            <CardTitle>Generate Flashcards from PDF</CardTitle>
+            <CardTitle>{copy.subject.generationTitle}</CardTitle>
             <CardDescription>
-              Upload returns quickly; durable processing continues if you leave this page.
+              {copy.subject.generationDescription}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={(event) => void handleUpload(event)} className="max-w-md space-y-4">
               <div>
-                <label htmlFor="generation-set-title" className="text-sm font-medium">Set Title</label>
+                <label htmlFor="generation-set-title" className="text-sm font-medium">{copy.subject.setTitle}</label>
                 <Input
                   id="generation-set-title"
                   value={setTitle}
@@ -270,7 +279,7 @@ export default function SubjectDetails() {
               </div>
               <div>
                 <label htmlFor="generation-card-count" className="text-sm font-medium">
-                  Number of Cards
+                  {copy.subject.numberOfCards}
                 </label>
                 <Input
                   id="generation-card-count"
@@ -286,7 +295,7 @@ export default function SubjectDetails() {
                 />
               </div>
               <div>
-                <label htmlFor="generation-pdf" className="text-sm font-medium">PDF File</label>
+                <label htmlFor="generation-pdf" className="text-sm font-medium">{copy.subject.pdfFile}</label>
                 <Input
                   key={fileInputKey}
                   id="generation-pdf"
@@ -300,10 +309,9 @@ export default function SubjectDetails() {
                 />
                 {limits ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Up to {(limits.max_upload_bytes / 1024 / 1024).toFixed(0)} MB and {limits.max_pages} pages.
-                    OCR is {limits.ocr_enabled ? 'enabled' : 'disabled'}.
-                    {' '}AI: {limits.ai_provider} / {limits.ai_model}; cost estimates are
-                    {limits.ai_pricing_configured ? ' enabled' : ' unavailable until pricing is configured'}.
+                    {copy.subject.fileLimit((limits.max_upload_bytes / 1024 / 1024).toFixed(0), limits.max_pages)}{' '}
+                    {copy.subject.ocrStatus(limits.ocr_enabled)}{' '}
+                    {copy.subject.aiStatus(limits.ai_provider, limits.ai_model, limits.ai_pricing_configured)}
                   </p>
                 ) : null}
               </div>
@@ -321,17 +329,17 @@ export default function SubjectDetails() {
               <div className="flex gap-2">
                 <Button type="submit" disabled={uploading || submissionDisabled} className="flex-1">
                   {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                  {uploading ? 'Uploading…' : submissionKey ? 'Retry Upload' : 'Generate with AI'}
+                  {uploading ? copy.subject.uploading : submissionKey ? copy.subject.retryUpload : copy.subject.generateWithAi}
                 </Button>
                 {uploading ? (
                   <Button type="button" variant="outline" onClick={() => void stopUpload()}>
-                    Stop
+                    {copy.subject.stop}
                   </Button>
                 ) : null}
               </div>
               {submissionDisabled ? (
                 <p className="text-sm text-amber-700" role="alert">
-                  {unavailableMessage || 'Generation is temporarily unavailable.'}
+                  {unavailableMessage || copy.subject.generationUnavailable}
                 </p>
               ) : null}
             </form>
@@ -339,13 +347,13 @@ export default function SubjectDetails() {
         </Card>
       ) : null}
 
-      {generation.loading ? <p className="text-sm text-muted-foreground">Loading generation jobs…</p> : null}
+      {generation.loading ? <p className="text-sm text-muted-foreground">{copy.subject.loadingJobs}</p> : null}
       {generation.statusMessage ? (
         <p className="text-sm text-amber-700" role="status">{generation.statusMessage}</p>
       ) : null}
       {generation.jobs.length > 0 ? (
         <section aria-labelledby="generation-jobs-heading" className="space-y-3">
-          <h2 id="generation-jobs-heading" className="text-lg font-semibold">Generation Jobs</h2>
+          <h2 id="generation-jobs-heading" className="text-lg font-semibold">{copy.subject.generationJobs}</h2>
           <div className="grid gap-3 md:grid-cols-2">
             {generation.jobs.map((job) => (
               <GenerationJobCard
@@ -373,7 +381,7 @@ export default function SubjectDetails() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    aria-label={`Edit ${set.title}`}
+                    aria-label={copy.subject.editSet(set.title)}
                     onClick={(event) => openEditSet(event, set)}
                   >
                     <Pencil className="h-3 w-3" aria-hidden="true" />
@@ -382,24 +390,24 @@ export default function SubjectDetails() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
-                    aria-label={`Delete ${set.title}`}
+                    aria-label={copy.subject.deleteSet(set.title)}
                     onClick={(event) => void handleDeleteSet(set.id, event)}
                   >
                     <Trash2 className="h-3 w-3" aria-hidden="true" />
                   </Button>
                 </span>
               </CardTitle>
-              <CardDescription>Generated from {set.source_pdf_name || 'Manual'}</CardDescription>
+              <CardDescription>{copy.subject.generatedFrom(set.source_pdf_name || copy.subject.manualSource)}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between text-sm">
                 <span className={`rounded-full px-2 py-1 ${set.is_published ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {set.is_published ? 'Published' : 'Draft'}
+                  {set.is_published ? copy.subject.published : copy.subject.draft}
                 </span>
-                <span className="text-muted-foreground">{set.flashcard_count || 0} cards</span>
+                <span className="text-muted-foreground">{copy.subject.cardCount(set.flashcard_count)}</span>
               </div>
               <Button asChild variant="secondary" className="mt-4 w-full">
-                <Link to={`/sets/${set.id}`}>View &amp; Edit Cards</Link>
+                <Link to={`/sets/${set.id}`}>{copy.subject.viewEditCards}</Link>
               </Button>
             </CardContent>
           </Card>
@@ -408,7 +416,7 @@ export default function SubjectDetails() {
         {sets.length === 0 ? (
           <div className="col-span-full py-12 text-center text-muted-foreground">
             <BrainCircuit className="mx-auto mb-4 h-12 w-12 opacity-20" aria-hidden="true" />
-            <p>No flashcard sets yet. Upload a PDF to generate one.</p>
+            <p>{copy.subject.noSets}</p>
           </div>
         ) : null}
       </div>
@@ -419,10 +427,7 @@ export default function SubjectDetails() {
           onOpenChange={setIsEditSubjectOpen}
           subject={subject}
           onSuccess={(updatedSubject) => {
-            setSubject({
-              ...updatedSubject,
-              description: updatedSubject.description ?? undefined,
-            })
+            setSubject(updatedSubject)
           }}
         />
       ) : null}
@@ -437,7 +442,10 @@ export default function SubjectDetails() {
       {editingSet ? (
         <EditSetDialog
           open={isEditSetOpen}
-          onOpenChange={setIsEditSetOpen}
+          onOpenChange={(open) => {
+            setIsEditSetOpen(open)
+            if (!open) setEditingSet(null)
+          }}
           subjectId={id!}
           set={editingSet}
           onSuccess={() => {

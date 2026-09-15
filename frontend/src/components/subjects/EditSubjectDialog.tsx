@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
+import { useState } from 'react'
+import { Loader2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -7,94 +9,103 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { subjectService } from "@/services/subjects"
-import { Loader2 } from "lucide-react"
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { copy } from '@/i18n/en'
+import { apiErrorMessage } from '@/services/errors'
+import { subjectService } from '@/services/subjects'
+import type { Subject } from '@/services/types'
 
 interface EditSubjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  subject: {
-    id: string
-    name: string
-    description?: string
-  }
-  onSuccess: (updatedSubject: any) => void
+  subject: Subject
+  onSuccess: (updatedSubject: Subject) => void
 }
 
-export function EditSubjectDialog({ open, onOpenChange, subject, onSuccess }: EditSubjectDialogProps) {
+interface EditSubjectFormProps {
+  subject: Subject
+  onCancel: () => void
+  onSuccess: (updatedSubject: Subject) => void
+}
+
+function EditSubjectForm({ subject, onCancel, onSuccess }: EditSubjectFormProps) {
   const [name, setName] = useState(subject.name)
-  const [description, setDescription] = useState(subject.description || "")
+  const [description, setDescription] = useState(subject.description ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Reset form when subject changes or dialog opens
-  useEffect(() => {
-    if (open) {
-      setName(subject.name)
-      setDescription(subject.description || "")
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!name.trim()) {
+      setError(copy.editSubject.nameRequired)
+      return
     }
-  }, [open, subject])
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+    setSaving(true)
+    setError(null)
     try {
-      setSaving(true)
       const updated = await subjectService.updateSubject(subject.id, {
-        name,
-        description
+        name: name.trim(),
+        description: description.trim() || null,
       })
       onSuccess(updated)
-      onOpenChange(false)
-    } catch (error) {
-      console.error("Failed to update subject", error)
+      onCancel()
+    } catch (caught: unknown) {
+      setError(apiErrorMessage(caught, copy.editSubject.failed))
     } finally {
       setSaving(false)
     }
   }
 
   return (
+    <form onSubmit={(event) => void handleSave(event)}>
+      <DialogHeader>
+        <DialogTitle>{copy.editSubject.title}</DialogTitle>
+        <DialogDescription>{copy.editSubject.description}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-4">
+        <div className="grid gap-2">
+          <Label htmlFor="subject-name">{copy.editSubject.name}</Label>
+          <Input id="subject-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={255} required />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="subject-description">{copy.editSubject.descriptionLabel}</Label>
+          <Textarea
+            id="subject-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={copy.editSubject.optionalDescription}
+            maxLength={10_000}
+          />
+        </div>
+        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>{copy.common.cancel}</Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+          {saving ? copy.common.saving : copy.common.saveChanges}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+export function EditSubjectDialog({ open, onOpenChange, subject, onSuccess }: EditSubjectDialogProps) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
-        <form onSubmit={handleSave}>
-          <DialogHeader>
-            <DialogTitle>Edit Subject</DialogTitle>
-            <DialogDescription>
-              Update the subject details.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </form>
+        {open ? (
+          <EditSubjectForm
+            key={`${subject.id}:${subject.name}:${subject.description ?? ''}`}
+            subject={subject}
+            onCancel={() => onOpenChange(false)}
+            onSuccess={onSuccess}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )

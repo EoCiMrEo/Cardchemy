@@ -233,35 +233,35 @@ models.
 **Goal:** Make the web client build cleanly and behave predictably under errors,
 concurrency, and different roles.
 
-- [ ] **P0** Fix all TypeScript build errors and make the production build pass.
-- [ ] **P0** Resolve all ESLint errors; document any intentionally retained
+- [x] **P0** Fix all TypeScript build errors and make the production build pass.
+- [x] **P0** Resolve all ESLint errors; document any intentionally retained
   warning with a narrow rule exception.
-- [ ] **P0** Replace both hardcoded localhost API URLs with one validated
+- [x] **P0** Replace both hardcoded localhost API URLs with one validated
   `VITE_API_URL` configuration.
-- [ ] **P0** Implement a single-flight token refresh flow so simultaneous 401s do
+- [x] **P0** Implement a single-flight token refresh flow so simultaneous 401s do
   not trigger competing refresh calls.
-- [ ] **P0** Ensure failed refresh clears the session once and cannot enter an
+- [x] **P0** Ensure failed refresh clears the session once and cannot enter an
   interceptor loop.
-- [ ] **P0** Add role-aware route guards; students must not enter instructor edit
+- [x] **P0** Add role-aware route guards; students must not enter instructor edit
   views and instructors must not accidentally enter student study flows.
-- [ ] **P0** Fix `/join` without a token so it never navigates to
+- [x] **P0** Fix `/join` without a token so it never navigates to
   `/register?token=null`.
-- [ ] **P0** Make join attempts abortable/idempotent and safe under React Strict
+- [x] **P0** Make join attempts abortable/idempotent and safe under React Strict
   Mode's repeated effects.
-- [ ] **P1** Replace API `any` values with request/response types matching backend
+- [x] **P1** Replace API `any` values with request/response types matching backend
   schemas.
-- [ ] **P1** Use the existing query client consistently for caching, retries,
+- [x] **P1** Use the existing query client consistently for caching, retries,
   invalidation, cancellation, and loading/error state, or remove it.
-- [ ] **P1** Add useful error states and retry actions instead of blank screens or
+- [x] **P1** Add useful error states and retry actions instead of blank screens or
   console-only errors.
-- [ ] **P1** Add a not-found route and an application error boundary.
-- [ ] **P1** Make set editing support multiple-choice options, validate empty
+- [x] **P1** Add a not-found route and an application error boundary.
+- [x] **P1** Make set editing support multiple-choice options, validate empty
   fields, and stop edits from implicitly approving cards.
-- [ ] **P1** Keep unrelated card controls available while one card is being
+- [x] **P1** Keep unrelated card controls available while one card is being
   edited, or clearly scope the editing lock.
-- [ ] **P1** Align frontend progress calculations with the finalized backend
+- [x] **P1** Align frontend progress calculations with the finalized backend
   model.
-- [ ] **P2** Decide on localization support; centralize strings before adding
+- [x] **P2** Decide on localization support; centralize strings before adding
   another language.
 
 **Phase complete when:** typecheck, lint, and production build pass, and all role,

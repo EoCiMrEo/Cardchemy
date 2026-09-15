@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
-import { subjectService } from "@/services/subjects"
-import { flashcardService } from "@/services/flashcards"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Check, Loader2, Save, Trash2, Play } from "lucide-react"
-import { PreviewDialog } from "@/components/sets/PreviewDialog"
-import type { Flashcard } from "@/services/types"
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, ChevronLeft, Loader2, Play, Save, Trash2 } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+
+import { PageError } from '@/components/feedback/PageError'
+import { PreviewDialog } from '@/components/sets/PreviewDialog'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { copy } from '@/i18n/en'
+import { apiErrorMessage } from '@/services/errors'
+import { flashcardService } from '@/services/flashcards'
+import { subjectService } from '@/services/subjects'
+import type { Flashcard, FlashcardSet } from '@/services/types'
 
 interface EditValues {
   front: string
@@ -15,39 +20,50 @@ interface EditValues {
   correctOptionIndex: number
 }
 
-interface SetDetails {
-  id: string
-  title: string
+const EMPTY_EDIT: EditValues = {
+  front: '',
+  options: ['', '', '', ''],
+  correctOptionIndex: 0,
+}
+
+function validateEdit(values: EditValues): string | null {
+  if (!values.front.trim()) return copy.setReview.validationFront
+  const options = values.options.map((option) => option.trim())
+  if (options.some((option) => !option)) return copy.setReview.validationOptions
+  if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
+    return copy.setReview.validationUnique
+  }
+  return null
 }
 
 export default function SetView() {
   const { id } = useParams<{ id: string }>()
-  const [set, setSet] = useState<SetDetails | null>(null)
+  const [set, setSet] = useState<FlashcardSet | null>(null)
   const [cards, setCards] = useState<Flashcard[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValues, setEditValues] = useState<EditValues>({
-    front: "",
-    options: ["", "", "", ""],
-    correctOptionIndex: 0,
-  })
-  const [saving, setSaving] = useState(false)
+  const [editValues, setEditValues] = useState<EditValues>(EMPTY_EDIT)
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({})
+  const [busyCardIds, setBusyCardIds] = useState<ReadonlySet<string>>(new Set())
+  const busyCardIdsRef = useRef(new Set<string>())
+  const [approvingAll, setApprovingAll] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!id) return
+    setLoadError(null)
+    setLoading(true)
     try {
-      setLoading(true)
-      
       const [setData, cardsData] = await Promise.all([
         subjectService.getSet(id),
-        flashcardService.getCards(id)
+        flashcardService.getCards(id),
       ])
-      
       setSet(setData)
       setCards(cardsData)
-    } catch (e) {
-      console.error(e)
+    } catch (caught: unknown) {
+      setLoadError(apiErrorMessage(caught, copy.setReview.loadFailed))
     } finally {
       setLoading(false)
     }
@@ -56,190 +72,240 @@ export default function SetView() {
   useEffect(() => {
     void loadData()
   }, [loadData])
-  
+
+  const startCardAction = (cardId: string): boolean => {
+    if (busyCardIdsRef.current.has(cardId)) return false
+    busyCardIdsRef.current.add(cardId)
+    setBusyCardIds(new Set(busyCardIdsRef.current))
+    return true
+  }
+
+  const finishCardAction = (cardId: string) => {
+    busyCardIdsRef.current.delete(cardId)
+    setBusyCardIds(new Set(busyCardIdsRef.current))
+  }
+
+  const clearCardError = (cardId: string) => {
+    setCardErrors((current) => {
+      if (!(cardId in current)) return current
+      const next = { ...current }
+      delete next[cardId]
+      return next
+    })
+  }
+
+  const setCardError = (cardId: string, message: string) => {
+    setCardErrors((current) => ({ ...current, [cardId]: message }))
+  }
+
   const handleEdit = (card: Flashcard) => {
-      setEditingId(card.id)
-      const correctOptionIndex = card.options.findIndex(
-        option => option.trim().toLocaleLowerCase() === card.back_content.trim().toLocaleLowerCase()
-      )
-      setEditValues({
-        front: card.front_content,
-        options: [...card.options],
-        correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : 0,
-      })
+    const correctOptionIndex = card.options.findIndex((option) => option === card.back_content)
+    setEditingId(card.id)
+    clearCardError(card.id)
+    setEditValues({
+      front: card.front_content,
+      options: [...card.options],
+      correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : 0,
+    })
   }
-  
+
   const handleSave = async (cardId: string) => {
-      try {
-          setSaving(true)
-          await flashcardService.updateCard(cardId, {
-              front_content: editValues.front,
-              back_content: editValues.options[editValues.correctOptionIndex],
-              options: editValues.options,
-              is_approved: true // saving implies approval
-          })
-          setEditingId(null)
-          
-          // Update local state
-          setCards((currentCards) => currentCards.map(c =>
-              c.id === cardId ? {
-                ...c,
-                front_content: editValues.front.trim(),
-                back_content: editValues.options[editValues.correctOptionIndex].trim(),
-                options: editValues.options.map(option => option.trim()) as [string, string, string, string],
-                is_approved: true,
-              } : c
-          ))
-      } catch (e) {
-          console.error(e)
-      } finally {
-          setSaving(false)
-      }
-  }
+    const validationError = validateEdit(editValues)
+    if (validationError) {
+      setCardError(cardId, validationError)
+      return
+    }
+    if (!startCardAction(cardId)) return
 
-  const handleApproveAll = async () => {
-      if (!confirm("Approve all cards in this set?")) return
-      try {
-          setLoading(true)
-          await flashcardService.approveAll(id!)
-          const cardsData = await flashcardService.getCards(id!)
-          setCards(cardsData)
-      } catch (e) {
-          console.error(e)
-      } finally {
-          setLoading(false)
-      }
-  }
-
-  const handleDelete = async (cardId: string) => {
-    if (!confirm("Are you sure you want to delete this flashcard?")) return
+    const options = editValues.options.map((option) => option.trim()) as EditValues['options']
+    clearCardError(cardId)
     try {
-        await flashcardService.deleteCard(cardId)
-        setCards((currentCards) => currentCards.filter(c => c.id !== cardId))
-    } catch (e) {
-        console.error(e)
+      const updated = await flashcardService.updateCard(cardId, {
+        front_content: editValues.front.trim(),
+        back_content: options[editValues.correctOptionIndex],
+        options,
+      })
+      setCards((current) => current.map((card) => card.id === cardId ? updated : card))
+      setEditingId((current) => current === cardId ? null : current)
+    } catch (caught: unknown) {
+      setCardError(cardId, apiErrorMessage(caught, copy.setReview.saveFailed))
+    } finally {
+      finishCardAction(cardId)
     }
   }
 
-  if (loading) return <div className="p-8"><Loader2 className="animate-spin" /></div>
+  const handleApprove = async (card: Flashcard) => {
+    if (!startCardAction(card.id)) return
+    setActionError(null)
+    try {
+      const updated = await flashcardService.updateCard(card.id, { is_approved: true })
+      setCards((current) => current.map((item) => item.id === card.id ? updated : item))
+    } catch (caught: unknown) {
+      setActionError(apiErrorMessage(caught, copy.setReview.approveFailed))
+    } finally {
+      finishCardAction(card.id)
+    }
+  }
+
+  const handleApproveAll = async () => {
+    if (!id || busyCardIdsRef.current.size > 0 || !confirm(copy.setReview.confirmApproveAll)) return
+    setApprovingAll(true)
+    setActionError(null)
+    try {
+      await flashcardService.approveAll(id)
+      setCards(await flashcardService.getCards(id))
+    } catch (caught: unknown) {
+      setActionError(apiErrorMessage(caught, copy.setReview.approveAllFailed))
+    } finally {
+      setApprovingAll(false)
+    }
+  }
+
+  const handleDelete = async (card: Flashcard) => {
+    if (!confirm(copy.setReview.confirmDelete)) return
+    if (!startCardAction(card.id)) return
+    setActionError(null)
+    try {
+      await flashcardService.deleteCard(card.id)
+      setCards((current) => current.filter((item) => item.id !== card.id))
+      if (editingId === card.id) setEditingId(null)
+    } catch (caught: unknown) {
+      setActionError(apiErrorMessage(caught, copy.setReview.deleteFailed))
+    } finally {
+      finishCardAction(card.id)
+    }
+  }
+
+  if (loading) {
+    return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
+  }
+
+  if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-            <Link to="#" onClick={() => window.history.back()}>
-            <Button variant="ghost" size="icon">
-                <ChevronLeft className="h-5 w-5" />
-            </Button>
+          <Button asChild variant="ghost" size="icon">
+            <Link to={set ? `/subjects/${set.subject_id}` : '/dashboard'} aria-label={copy.common.backToDashboard}>
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
             </Link>
-            <h1 className="text-2xl font-bold">{set?.title || "Review Flashcards"}</h1>
+          </Button>
+          <h1 className="text-2xl font-bold">{set?.title || copy.setReview.defaultTitle}</h1>
         </div>
         <div className="flex gap-2">
-            <Button onClick={() => setPreviewOpen(true)} variant="outline">
-                <Play className="mr-2 h-4 w-4" /> Preview
-            </Button>
-            <Button onClick={handleApproveAll} variant="default">
-                Approve All
-            </Button>
+          <Button type="button" onClick={() => setPreviewOpen(true)} variant="outline" disabled={cards.length === 0}>
+            <Play className="mr-2 h-4 w-4" aria-hidden="true" /> {copy.setReview.preview}
+          </Button>
+          <Button type="button" onClick={() => void handleApproveAll()} disabled={approvingAll || busyCardIds.size > 0 || cards.length === 0}>
+            {approvingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            {copy.setReview.approveAll}
+          </Button>
         </div>
       </div>
 
+      {actionError ? <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{actionError}</p> : null}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {cards.map((card) => (
-          <Card key={card.id} className={card.is_approved ? "border-green-200 bg-green-50/30" : "border-yellow-200 bg-yellow-50/30"}>
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {card.is_approved ? <span className="text-green-600 flex items-center gap-1"><Check className="h-3 w-3"/> Approved</span> : "Needs Review"}
-              </CardTitle>
-              {!editingId && (
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => handleEdit(card)}>Edit</Button>
-                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(card.id)}>
-                        <Trash2 className="h-4 w-4" />
+        {cards.map((card) => {
+          const isEditing = editingId === card.id
+          const isBusy = busyCardIds.has(card.id)
+          return (
+            <Card key={card.id} className={card.is_approved ? 'border-green-200 bg-green-50/30' : 'border-yellow-200 bg-yellow-50/30'}>
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {card.is_approved ? (
+                    <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" aria-hidden="true" /> {copy.setReview.approved}</span>
+                  ) : copy.setReview.needsReview}
+                </CardTitle>
+                <div className="flex flex-wrap justify-end gap-1">
+                  {!card.is_approved ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void handleApprove(card)} disabled={isBusy || approvingAll} aria-label={copy.setReview.approveCard(card.front_content)}>
+                      {copy.setReview.approve}
                     </Button>
-                  </div>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4 mt-2">
-               {editingId === card.id ? (
-                   <>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="sm" onClick={() => handleEdit(card)} disabled={isBusy || approvingAll} aria-label={copy.setReview.editCard(card.front_content)}>
+                    {copy.common.edit}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:bg-red-50 hover:text-red-700" onClick={() => void handleDelete(card)} disabled={isBusy || approvingAll} aria-label={copy.setReview.deleteCard(card.front_content)}>
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="mt-2 space-y-4">
+                {isEditing ? (
+                  <>
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Front</label>
-                        <Textarea 
-                            value={editValues.front} 
-                            onChange={(e) => setEditValues({...editValues, front: e.target.value})}
-                        />
+                      <Label htmlFor={`front-${card.id}`} className="text-xs font-bold uppercase text-muted-foreground">{copy.setReview.front}</Label>
+                      <Textarea id={`front-${card.id}`} value={editValues.front} onChange={(event) => setEditValues((values) => ({ ...values, front: event.target.value }))} maxLength={10_000} />
                     </div>
-                    <div className="space-y-2">
-                        <div className="text-xs font-bold text-muted-foreground uppercase">Options and correct answer</div>
-                        {editValues.options.map((option, optionIndex) => (
-                          <label key={optionIndex} className="flex items-start gap-2">
-                            <input
-                              type="radio"
-                              name={`correct-${card.id}`}
-                              checked={editValues.correctOptionIndex === optionIndex}
-                              onChange={() => setEditValues({ ...editValues, correctOptionIndex: optionIndex })}
-                              className="mt-3"
-                            />
-                            <Textarea
-                              value={option}
-                              onChange={(event) => {
-                                const options = [...editValues.options] as [string, string, string, string]
-                                options[optionIndex] = event.target.value
-                                setEditValues({ ...editValues, options })
-                              }}
-                            />
-                          </label>
-                        ))}
-                    </div>
-                   </>
-               ) : (
-                   <>
+                    <fieldset className="space-y-2">
+                      <legend className="text-xs font-bold uppercase text-muted-foreground">{copy.setReview.optionsAndAnswer}</legend>
+                      {editValues.options.map((option, optionIndex) => (
+                        <div key={optionIndex} className="flex items-start gap-2">
+                          <input
+                            type="radio"
+                            name={`correct-${card.id}`}
+                            checked={editValues.correctOptionIndex === optionIndex}
+                            onChange={() => setEditValues((values) => ({ ...values, correctOptionIndex: optionIndex }))}
+                            className="mt-3"
+                            aria-label={copy.setReview.correctAnswer(optionIndex)}
+                          />
+                          <Label htmlFor={`option-${card.id}-${optionIndex}`} className="sr-only">{copy.setReview.optionLabel(optionIndex)}</Label>
+                          <Textarea
+                            id={`option-${card.id}-${optionIndex}`}
+                            value={option}
+                            onChange={(event) => setEditValues((values) => {
+                              const options = [...values.options] as EditValues['options']
+                              options[optionIndex] = event.target.value
+                              return { ...values, options }
+                            })}
+                            maxLength={10_000}
+                          />
+                        </div>
+                      ))}
+                    </fieldset>
+                    {cardErrors[card.id] ? <p className="text-sm text-destructive" role="alert">{cardErrors[card.id]}</p> : null}
+                  </>
+                ) : (
+                  <>
                     <div>
-                        <div className="text-xs font-bold text-muted-foreground uppercase mb-1">Front</div>
-                        <p className="text-sm font-medium">{card.front_content}</p>
+                      <div className="mb-1 text-xs font-bold uppercase text-muted-foreground">{copy.setReview.front}</div>
+                      <p className="text-sm font-medium">{card.front_content}</p>
                     </div>
                     <div>
-                        <div className="text-xs font-bold text-muted-foreground uppercase mb-1">Back</div>
-                         <p className="text-sm text-gray-700">{card.back_content}</p>
+                      <div className="mb-1 text-xs font-bold uppercase text-muted-foreground">{copy.setReview.answer}</div>
+                      <p className="text-sm text-gray-700">{card.back_content}</p>
                     </div>
-                   </>
-               )}
-               
-               {card.source_snippet ? (
-                   <figure className="border-t pt-2 mt-2 text-xs text-muted-foreground">
-                       <figcaption className="font-medium not-italic">
-                         Verified source{card.source_page ? ` · Page ${card.source_page}` : ''}
-                         {card.source_section ? ` · ${card.source_section}` : ''}
-                       </figcaption>
-                       <blockquote className="mt-1 border-l-2 pl-2 italic">
-                         “{card.source_snippet}”
-                       </blockquote>
-                   </figure>
-               ) : (
-                 <p className="border-t pt-2 mt-2 text-xs text-muted-foreground">
-                   Manual card; no generated source reference.
-                 </p>
-               )}
-            </CardContent>
-            {editingId === card.id && (
+                  </>
+                )}
+
+                {card.source_snippet ? (
+                  <figure className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+                    <figcaption className="font-medium not-italic">
+                      {copy.setReview.verifiedSource}
+                      {card.source_page ? ` · ${copy.setReview.sourcePage(card.source_page)}` : ''}
+                      {card.source_section ? ` · ${card.source_section}` : ''}
+                    </figcaption>
+                    <blockquote className="mt-1 border-l-2 pl-2 italic">“{card.source_snippet}”</blockquote>
+                  </figure>
+                ) : <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">{copy.setReview.manualCard}</p>}
+              </CardContent>
+              {isEditing ? (
                 <CardFooter className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
-                    <Button size="sm" onClick={() => handleSave(card.id)} disabled={saving}>
-                        {saving ? <Loader2 className="h-3 w-3 animate-spin"/> : <><Save className="h-3 w-3 mr-1"/> Save</>}
-                    </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)} disabled={isBusy}>{copy.common.cancel}</Button>
+                  <Button type="button" size="sm" onClick={() => void handleSave(card.id)} disabled={isBusy || approvingAll}>
+                    {isBusy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Save className="mr-1 h-3 w-3" aria-hidden="true" />} {copy.setReview.save}
+                  </Button>
                 </CardFooter>
-            )}
-          </Card>
-        ))}
+              ) : null}
+            </Card>
+          )
+        })}
       </div>
 
-      <PreviewDialog 
-        open={previewOpen} 
-        onOpenChange={setPreviewOpen} 
-        cards={cards} 
-        title={set?.title || "Flashcards"} 
-      />
+      {cards.length === 0 ? <p className="py-12 text-center text-muted-foreground">{copy.setReview.noCards}</p> : null}
+      {previewOpen ? <PreviewDialog open cards={cards} title={set?.title || copy.setReview.defaultTitle} onOpenChange={setPreviewOpen} /> : null}
     </div>
   )
 }

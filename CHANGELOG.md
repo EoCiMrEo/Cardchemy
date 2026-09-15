@@ -18,6 +18,12 @@ and the Keep a Changelog structure.
 
 ### Added
 
+- Added role-aware frontend routing, recoverable page and mutation error states,
+  a wildcard not-found page, and an application error boundary.
+- Added a typed English UI catalog with a documented English-only v1
+  localization policy.
+- Added a Playwright Chromium acceptance suite for authentication races, role
+  routing, invitation joins, error recovery, card editing, and progress display.
 - Added PostgreSQL-backed generation jobs with leases, bounded workers,
   cancellation, retries with jitter, idempotency keys, quotas, and cleanup.
 - Added reload-safe job polling, progress, cancellation, retry, and completed-set
@@ -33,6 +39,12 @@ and the Keep a Changelog structure.
 
 ### Changed
 
+- Replaced untyped frontend API payloads with backend-aligned request and
+  response contracts and a validated `VITE_API_URL` client configuration.
+- Made refresh, logout, and invitation acceptance safe under concurrent requests
+  and React Strict Mode, including existing-student invite sign-in continuity.
+- Expanded multiple-choice editing with complete validation, explicit approval,
+  and per-card concurrent action state; progress now renders server-owned metrics.
 - Added hashed Python lockfiles and documented supported runtime versions.
 - Removed unused PWA, query-client, vector, document, and migration dependencies.
 - Replaced synchronous request-bound PDF generation with a two-step upload and

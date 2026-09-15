@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { isAxiosError } from 'axios'
 
 import { authService } from '@/services/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { apiErrorMessage } from '@/services/errors'
+import { copy } from '@/i18n/en'
 
 
 export default function Register() {
@@ -17,20 +18,21 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const inviteToken = searchParams.get('token')
+  const inviteToken = searchParams.get('token')?.trim() || null
+  const loginPath = inviteToken ? `/login?token=${encodeURIComponent(inviteToken)}` : '/login'
 
   if (!inviteToken) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader>
-            <CardTitle className="text-2xl text-center">Invitation Required</CardTitle>
+            <CardTitle className="text-2xl text-center">{copy.auth.invitationRequired}</CardTitle>
             <CardDescription className="text-center">
-              Student registration requires a single-use instructor invitation. Instructor accounts are created by the deployment operator.
+              {copy.auth.invitationRequiredDescription}
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button asChild className="w-full"><Link to="/login">Return to sign in</Link></Button>
+            <Button asChild className="w-full"><Link to="/login">{copy.auth.returnToSignIn}</Link></Button>
           </CardFooter>
         </Card>
       </div>
@@ -50,11 +52,7 @@ export default function Register() {
       })
       navigate('/login', { replace: true })
     } catch (caught: unknown) {
-      setError(
-        isAxiosError<{ detail?: string }>(caught) && caught.response?.data.detail
-          ? caught.response.data.detail
-          : 'Registration failed',
-      )
+      setError(apiErrorMessage(caught, copy.auth.registrationFailed))
     } finally {
       setLoading(false)
     }
@@ -64,32 +62,32 @@ export default function Register() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl text-center">Join Course</CardTitle>
-          <CardDescription className="text-center">Create a student account using your invitation.</CardDescription>
+          <CardTitle className="text-2xl text-center">{copy.auth.joinCourse}</CardTitle>
+          <CardDescription className="text-center">{copy.auth.registrationDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-md">{error}</div>}
+            {error && <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-md" role="alert">{error}</div>}
             <div className="space-y-2">
-              <label htmlFor="full-name" className="text-sm font-medium">Full Name</label>
+              <label htmlFor="full-name" className="text-sm font-medium">{copy.auth.fullName}</label>
               <Input id="full-name" value={fullName} onChange={(event) => setFullName(event.target.value)} maxLength={255} />
             </div>
             <div className="space-y-2">
-              <label htmlFor="registration-email" className="text-sm font-medium">Email</label>
+              <label htmlFor="registration-email" className="text-sm font-medium">{copy.auth.email}</label>
               <Input id="registration-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </div>
             <div className="space-y-2">
-              <label htmlFor="registration-password" className="text-sm font-medium">Password</label>
+              <label htmlFor="registration-password" className="text-sm font-medium">{copy.auth.password}</label>
               <Input id="registration-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Student Account
+              {loading ? copy.auth.creatingAccount : copy.auth.createStudentAccount}
             </Button>
           </form>
         </CardContent>
         <CardFooter className="flex justify-center text-sm text-muted-foreground">
-          Already registered? <Link to="/login" className="ml-1 text-primary hover:underline font-medium">Sign in</Link>
+          {copy.auth.alreadyRegistered} <Link to={loginPath} className="ml-1 text-primary hover:underline font-medium">{copy.auth.signInLink}</Link>
         </CardFooter>
       </Card>
     </div>

@@ -54,14 +54,19 @@ class SubjectResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class FlashcardSetCreate(BaseModel):
+class FlashcardSetCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
-    subject_id: UUID
     title: BoundedName
     description: BoundedDescription | None = None
 
     _normalize_description = field_validator("description", mode="before")(_blank_to_none)
+
+
+class FlashcardSetCreate(FlashcardSetCreateRequest):
+    """Internal create contract after the route supplies its subject ID."""
+
+    subject_id: UUID
 
 
 class FlashcardSetUpdate(BaseModel):

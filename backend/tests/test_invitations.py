@@ -2,13 +2,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.flashcard import Enrollment
 from app.models.subject import Subject
 from app.models.user import InviteLink, User, UserRole
 from app.routers.auth import register
-from app.schemas.user import UserRegister
+from app.routers.subjects import join_course_with_token
+from app.schemas.user import InvitationAccept, InvitationAcceptResponse, UserRegister
 from app.services.auth import AuthService
 
 
@@ -64,6 +65,18 @@ async def test_invitation_is_typed_single_use_and_enrolls_student(db):
         select(Enrollment).where(Enrollment.student_id == student.id, Enrollment.subject_id == subject.id)
     )
     assert enrollment is not None
+
+    replay = await join_course_with_token(InvitationAccept(token=token), student, db)
+    assert isinstance(replay, InvitationAcceptResponse)
+    assert replay.message == "Successfully joined course"
+    assert replay.subject_name == subject.name
+    enrollment_count = await db.scalar(
+        select(func.count(Enrollment.id)).where(
+            Enrollment.student_id == student.id,
+            Enrollment.subject_id == subject.id,
+        )
+    )
+    assert enrollment_count == 1
 
     with pytest.raises(HTTPException) as exc:
         await AuthService.consume_invitation(db, token, other)

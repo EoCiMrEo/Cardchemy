@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
-import { isAxiosError } from 'axios'
 
 import { useAuth } from '@/context/AuthContext'
 import { subjectService } from '@/services/subjects'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { apiErrorMessage } from '@/services/errors'
+import { copy } from '@/i18n/en'
 
 
 export default function JoinCourse() {
   const [searchParams] = useSearchParams()
-  const token = searchParams.get('token')
+  const token = searchParams.get('token')?.trim() || null
   const navigate = useNavigate()
   const { user, isLoading: authLoading } = useAuth()
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [message, setMessage] = useState('')
   const [courseName, setCourseName] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (authLoading) return
@@ -27,34 +29,35 @@ export default function JoinCourse() {
     }
     if (user.role !== 'student') return
 
-    let active = true
-    void subjectService.joinCourse(token).then(
+    const controller = new AbortController()
+    void subjectService.joinCourse(token, controller.signal).then(
       (result) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         setStatus('success')
         setCourseName(result.subject_name)
         setMessage(result.message)
       },
       (caught: unknown) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         setStatus('error')
-        setMessage(
-          isAxiosError<{ detail?: string }>(caught) && caught.response?.data.detail
-            ? caught.response.data.detail
-            : 'Failed to join course',
-        )
+        setMessage(apiErrorMessage(caught, copy.join.failed))
       },
     )
-    return () => { active = false }
-  }, [authLoading, navigate, token, user])
+    return () => controller.abort()
+  }, [attempt, authLoading, navigate, token, user])
 
   const blockedMessage = !token
-    ? 'No invitation token was provided'
+    ? copy.join.missingToken
     : user?.role === 'instructor'
-      ? 'Only student accounts can accept course invitations'
+      ? copy.join.instructorBlocked
       : ''
   const displayStatus = blockedMessage ? 'error' : status
   const displayMessage = blockedMessage || message
+  const retryJoin = () => {
+    setStatus('loading')
+    setMessage('')
+    setAttempt((value) => value + 1)
+  }
 
   if (authLoading || (!user && token) || displayStatus === 'loading') {
     return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin" /></div>
@@ -65,12 +68,17 @@ export default function JoinCourse() {
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
           {displayStatus === 'success' ? <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" /> : <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />}
-          <CardTitle className="text-2xl">{displayStatus === 'success' ? 'Course Joined' : 'Join Failed'}</CardTitle>
+          <CardTitle className="text-2xl">{displayStatus === 'success' ? copy.join.joinedTitle : copy.join.failedTitle}</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
           {courseName && <p className="text-lg font-medium text-green-600">{courseName}</p>}
-          <p className={displayStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{displayMessage}</p>
-          <Button onClick={() => navigate('/dashboard', { replace: true })} className="w-full">Go to Dashboard</Button>
+          <p className={displayStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'} role={displayStatus === 'error' ? 'alert' : 'status'}>{displayMessage}</p>
+          {displayStatus === 'error' && token && user?.role === 'student' ? (
+            <Button type="button" variant="outline" onClick={retryJoin} className="w-full">
+              {copy.join.retry}
+            </Button>
+          ) : null}
+          <Button onClick={() => navigate('/dashboard', { replace: true })} className="w-full">{copy.join.goToDashboard}</Button>
         </CardContent>
       </Card>
     </div>

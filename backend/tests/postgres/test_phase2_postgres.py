@@ -19,6 +19,7 @@ from app.models.flashcard import Enrollment, Flashcard, StudyProgress
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, User, UserRole
 from app.schemas.flashcard import StudyProgressUpdate
+from app.services.auth import AuthService
 from app.services.flashcard import FlashcardService
 from app.time_utils import utcnow
 
@@ -109,6 +110,52 @@ async def assert_rejected(factory: async_sessionmaker[AsyncSession], instance: o
         with pytest.raises(IntegrityError):
             await session.commit()
         await session.rollback()
+
+
+async def test_concurrent_same_student_invitation_replay_is_idempotent(pg_session_factory):
+    nonce = uuid4().hex
+    owner = User(
+        email=f"invite-owner-{nonce}@example.test",
+        hashed_password="not-a-real-password-hash",
+        role=UserRole.INSTRUCTOR,
+    )
+    student = User(
+        email=f"invite-student-{nonce}@example.test",
+        hashed_password="not-a-real-password-hash",
+        role=UserRole.STUDENT,
+    )
+    subject = Subject(name="Invitation locking", instructor=owner)
+    async with pg_session_factory() as session:
+        async with session.begin():
+            session.add_all([owner, student, subject])
+            await session.flush()
+            _, token = await AuthService.create_invitation(
+                session,
+                owner.id,
+                subject.id,
+                24,
+            )
+            student_id = student.id
+            subject_id = subject.id
+
+    async def accept_once() -> UUID:
+        async with pg_session_factory() as session:
+            async with session.begin():
+                actor = await session.get(User, student_id)
+                assert actor is not None
+                invite = await AuthService.consume_invitation(session, token, actor)
+                return invite.id
+
+    first, second = await asyncio.gather(accept_once(), accept_once())
+    assert first == second
+    async with pg_session_factory() as session:
+        enrollment_count = await session.scalar(
+            select(func.count(Enrollment.id)).where(
+                Enrollment.student_id == student_id,
+                Enrollment.subject_id == subject_id,
+            )
+        )
+    assert enrollment_count == 1
 
 
 async def test_migration_installs_timestamptz_constraints_and_indexes(pg_session_factory):

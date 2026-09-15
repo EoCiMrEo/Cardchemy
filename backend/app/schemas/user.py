@@ -92,6 +92,11 @@ class InvitationAccept(BaseModel):
     token: str = Field(min_length=20, max_length=4096)
 
 
+class InvitationAcceptResponse(BaseModel):
+    message: str
+    subject_name: str
+
+
 class PasswordForgotRequest(BaseModel):
     email: EmailStr
 

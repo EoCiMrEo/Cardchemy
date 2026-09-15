@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { apiErrorMessage } from '@/services/errors'
 import type { GenerationJob } from '@/services/types'
+import { copy } from '@/i18n/en'
 
 interface GenerationJobCardProps {
   job: GenerationJob
@@ -19,11 +20,11 @@ function stageLabel(stage: string): string {
 }
 
 function formatTokens(value: number | null): string {
-  return value === null ? 'Unavailable' : new Intl.NumberFormat().format(value)
+  return value === null ? copy.generation.unavailable : new Intl.NumberFormat('en').format(value)
 }
 
 function formatCost(microusd: number | null): string {
-  return microusd === null ? 'Pricing not configured' : `$${(microusd / 1_000_000).toFixed(4)}`
+  return microusd === null ? copy.generation.pricingNotConfigured : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(microusd / 1_000_000)
 }
 
 export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardProps) {
@@ -37,7 +38,7 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
     try {
       await onCancel(job.id)
     } catch (error) {
-      setActionError(apiErrorMessage(error, 'The cancellation request failed.'))
+      setActionError(apiErrorMessage(error, copy.generation.cancellationFailed))
     } finally {
       setAction(null)
     }
@@ -51,7 +52,7 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
       await onRetry(job.id, retryKeyRef.current)
       retryKeyRef.current = null
     } catch (error) {
-      setActionError(apiErrorMessage(error, 'The retry request failed.'))
+      setActionError(apiErrorMessage(error, copy.generation.retryFailed))
     } finally {
       setAction(null)
     }
@@ -65,7 +66,7 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
         <CardTitle className="flex items-center justify-between gap-3 text-base">
           <span className="min-w-0 truncate">{job.source_pdf_name}</span>
           <span className="shrink-0 rounded-full bg-white px-2 py-1 text-xs capitalize text-slate-700">
-            {job.status.replace('_', ' ')}
+            {copy.generation.status(job.status)}
           </span>
         </CardTitle>
       </CardHeader>
@@ -76,19 +77,19 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
             <span>{stageLabel(job.stage)}</span>
             {job.attempt_count > 0 ? (
               <span className="text-xs text-slate-700">
-                Attempt {job.attempt_count}/{job.max_attempts}
+                {copy.generation.attempt(job.attempt_count, job.max_attempts)}
               </span>
             ) : null}
           </div>
           <Progress
             value={job.progress}
-            aria-label={`Generation progress for ${job.source_pdf_name}`}
-            aria-valuetext={`${job.progress} percent, ${stageLabel(job.stage)}`}
+            aria-label={copy.generation.progress(job.source_pdf_name)}
+            aria-valuetext={copy.generation.progressValue(job.progress, stageLabel(job.stage))}
           />
         </div>
 
         {job.cancellation_requested_at ? (
-          <p className="text-sm text-amber-700">Cancellation requested; waiting for the worker.</p>
+          <p className="text-sm text-amber-700">{copy.generation.cancellationPending}</p>
         ) : null}
         {job.error_message ? (
           <p className="rounded bg-red-50 p-2 text-sm text-red-700" role="alert">
@@ -103,34 +104,34 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700">
           <div>
-            <dt className="font-medium">Provider</dt>
+            <dt className="font-medium">{copy.generation.provider}</dt>
             <dd>{job.ai_provider} / {job.ai_model}</dd>
           </div>
           <div>
-            <dt className="font-medium">Validated cards</dt>
-            <dd>{job.accepted_card_count} accepted, {job.rejected_card_count} rejected</dd>
+            <dt className="font-medium">{copy.generation.validatedCards}</dt>
+            <dd>{copy.generation.validationCounts(job.accepted_card_count, job.rejected_card_count)}</dd>
           </div>
           <div>
-            <dt className="font-medium">Estimated tokens</dt>
+            <dt className="font-medium">{copy.generation.estimatedTokens}</dt>
             <dd>{formatTokens(job.estimated_input_tokens + job.estimated_output_tokens)}</dd>
           </div>
           <div>
-            <dt className="font-medium">Used tokens</dt>
+            <dt className="font-medium">{copy.generation.usedTokens}</dt>
             <dd>
               {formatTokens(
                 job.actual_input_tokens === null || job.actual_output_tokens === null
                   ? null
                   : job.actual_input_tokens + job.actual_output_tokens,
               )}
-              {job.usage_estimated ? ' (estimated)' : ''}
+              {job.usage_estimated ? copy.generation.estimatedUsage : ''}
             </dd>
           </div>
           <div>
-            <dt className="font-medium">Estimated cost</dt>
+            <dt className="font-medium">{copy.generation.estimatedCost}</dt>
             <dd>{formatCost(job.estimated_cost_microusd)}</dd>
           </div>
           <div>
-            <dt className="font-medium">Recorded cost</dt>
+            <dt className="font-medium">{copy.generation.recordedCost}</dt>
             <dd>{formatCost(job.actual_cost_microusd)}</dd>
           </div>
         </dl>
@@ -150,7 +151,7 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
               ) : (
                 <Square className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
-              Cancel
+              {copy.generation.cancel}
             </Button>
           ) : null}
           {job.can_retry ? (
@@ -166,14 +167,14 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
               ) : (
                 <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
-              Retry
+              {copy.generation.retry}
             </Button>
           ) : null}
           {job.status === 'completed' && job.flashcard_set_id ? (
             <Button asChild size="sm">
               <Link to={`/sets/${job.flashcard_set_id}`}>
                 <UploadCloud className="mr-2 h-4 w-4" aria-hidden="true" />
-                Review {job.generated_card_count ?? 0} cards
+                {copy.generation.reviewCards(job.generated_card_count ?? 0)}
               </Link>
             </Button>
           ) : null}

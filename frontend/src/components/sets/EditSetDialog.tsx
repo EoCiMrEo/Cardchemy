@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
+import { useState } from 'react'
+import { Loader2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -7,129 +9,133 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
-import { subjectService } from "@/services/subjects"
-import { Loader2 } from "lucide-react"
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { copy } from '@/i18n/en'
+import { apiErrorMessage } from '@/services/errors'
+import { subjectService } from '@/services/subjects'
+import type { FlashcardSet } from '@/services/types'
 
 interface EditSetDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   subjectId: string
-  set: {
-    id: string
-    title: string
-    description?: string
-    is_published: boolean
-    time_limit?: number | null
-  }
+  set: FlashcardSet
   onSuccess: () => void
 }
 
-export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }: EditSetDialogProps) {
+interface EditSetFormProps extends Pick<EditSetDialogProps, 'subjectId' | 'set' | 'onSuccess'> {
+  onCancel: () => void
+}
+
+function EditSetForm({ subjectId, set, onSuccess, onCancel }: EditSetFormProps) {
   const [title, setTitle] = useState(set.title)
-  const [description, setDescription] = useState(set.description || "")
+  const [description, setDescription] = useState(set.description ?? '')
   const [isPublished, setIsPublished] = useState(set.is_published)
-  const [timeLimit, setTimeLimit] = useState<number | string>(set.time_limit || "")
+  const [timeLimit, setTimeLimit] = useState<number | string>(set.time_limit ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (open) {
-      setTitle(set.title)
-      setDescription(set.description || "")
-      setIsPublished(set.is_published)
-      setTimeLimit(set.time_limit || "")
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const parsedTimeLimit = timeLimit === '' ? null : Number(timeLimit)
+    if (!title.trim()) {
+      setError(copy.editSet.titleRequired)
+      return
     }
-  }, [open, set])
+    if (parsedTimeLimit !== null && (!Number.isInteger(parsedTimeLimit) || parsedTimeLimit < 5 || parsedTimeLimit > 3600)) {
+      setError(copy.editSet.timeLimitInvalid)
+      return
+    }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+    setSaving(true)
+    setError(null)
     try {
-      setSaving(true)
       await subjectService.updateSet(subjectId, set.id, {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim() || null,
         is_published: isPublished,
-        time_limit: timeLimit ? Number(timeLimit) : null
+        time_limit: parsedTimeLimit,
       })
       onSuccess()
-      onOpenChange(false)
-    } catch (error) {
-      console.error("Failed to update set", error)
+      onCancel()
+    } catch (caught: unknown) {
+      setError(apiErrorMessage(caught, copy.editSet.failed))
     } finally {
       setSaving(false)
     }
   }
 
   return (
+    <form onSubmit={(event) => void handleSave(event)}>
+      <DialogHeader>
+        <DialogTitle>{copy.editSet.title}</DialogTitle>
+        <DialogDescription>{copy.editSet.description}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-4">
+        <div className="grid gap-2">
+          <Label htmlFor="set-title">{copy.editSet.titleLabel}</Label>
+          <Input id="set-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={255} required />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="set-description">{copy.editSet.descriptionLabel}</Label>
+          <Textarea
+            id="set-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={copy.editSet.optionalDescription}
+            maxLength={10_000}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="set-time-limit">{copy.editSet.timeLimit}</Label>
+          <Input
+            id="set-time-limit"
+            type="number"
+            min={5}
+            max={3600}
+            value={timeLimit}
+            onChange={(event) => setTimeLimit(event.target.value)}
+            placeholder={copy.editSet.optionalTimeLimit}
+          />
+          <p className="text-xs text-muted-foreground">{copy.editSet.noTimeLimit}</p>
+        </div>
+        <div className="flex items-center justify-between space-x-2 rounded-md border p-3">
+          <Label htmlFor="set-published" className="flex flex-col space-y-1">
+            <span>{copy.editSet.published}</span>
+            <span className="text-xs font-normal text-muted-foreground">{copy.editSet.visibleToStudents}</span>
+          </Label>
+          <Switch id="set-published" checked={isPublished} onCheckedChange={setIsPublished} />
+        </div>
+        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>{copy.common.cancel}</Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+          {saving ? copy.common.saving : copy.common.saveChanges}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+export function EditSetDialog({ open, onOpenChange, subjectId, set, onSuccess }: EditSetDialogProps) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
-        <form onSubmit={handleSave}>
-          <DialogHeader>
-            <DialogTitle>Edit Flashcard Set</DialogTitle>
-            <DialogDescription>
-              Update the set details and visibility.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="timeLimit">Time Limit (seconds)</Label>
-              <Input
-                id="timeLimit"
-                type="number"
-                    min="5"
-                    max="3600"
-                value={timeLimit}
-                onChange={(e) => setTimeLimit(e.target.value)}
-                placeholder="Optional (e.g. 10)"
-              />
-              <p className="text-xs text-muted-foreground">Leave empty for no limit.</p>
-            </div>
-            <div className="flex items-center justify-between space-x-2 border p-3 rounded-md">
-                <Label htmlFor="published" className="flex flex-col space-y-1">
-                    <span>Published</span>
-                    <span className="font-normal text-xs text-muted-foreground">
-                        Visible to students
-                    </span>
-                </Label>
-                <Switch 
-                    id="published" 
-                    checked={isPublished}
-                    onCheckedChange={setIsPublished}
-                />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </form>
+        {open ? (
+          <EditSetForm
+            key={`${set.id}:${set.created_at}`}
+            subjectId={subjectId}
+            set={set}
+            onSuccess={onSuccess}
+            onCancel={() => onOpenChange(false)}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )

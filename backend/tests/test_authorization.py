@@ -8,9 +8,11 @@ from app.models.flashcard import Enrollment, Flashcard, StudyProgress
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_instructor, get_current_student
-from app.routers.flashcards import get_flashcard
+from app.routers.flashcards import create_flashcard, get_flashcard
 from app.routers.study import update_study_progress
-from app.schemas.flashcard import StudyProgressUpdate
+from app.routers.subjects import create_flashcard_set
+from app.schemas.flashcard import FlashcardCreateRequest, StudyProgressUpdate
+from app.schemas.subject import FlashcardSetCreateRequest
 from app.services.auth import AuthService
 from app.services.subject import SubjectService
 
@@ -55,6 +57,34 @@ async def test_cross_subject_access_is_denied(db):
     db.add(Enrollment(student_id=student.id, subject_id=subject.id))
     await db.commit()
     assert await SubjectService.check_subject_access(db, subject.id, student) == subject
+
+
+async def test_path_scoped_create_routes_supply_parent_ids(db):
+    owner = user("path-owner@example.com", UserRole.INSTRUCTOR)
+    subject = Subject(id=uuid4(), name="Path contracts", instructor_id=owner.id)
+    db.add_all([owner, subject])
+    await db.commit()
+
+    flashcard_set = await create_flashcard_set(
+        subject.id,
+        FlashcardSetCreateRequest(title="Route-owned subject"),
+        owner,
+        db,
+    )
+    assert flashcard_set.subject_id == subject.id
+
+    flashcard = await create_flashcard(
+        flashcard_set.id,
+        FlashcardCreateRequest(
+            front_content="Which ID belongs in the request path?",
+            back_content="The parent ID",
+            options=["The parent ID", "A child ID", "No ID", "Every ID"],
+        ),
+        owner,
+        db,
+    )
+    assert flashcard.set_id == flashcard_set.id
+    assert flashcard.back_content == "The parent ID"
 
 
 async def test_progress_requires_enrollment_publication_and_approval(db):

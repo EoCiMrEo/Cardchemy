@@ -1,9 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import { clearAccessToken, refreshAccessToken, setAccessToken } from '../services/api'
 import { authService } from '../services/auth'
 import type { User } from '../services/types'
-
 
 interface AuthContextType {
   user: User | null
@@ -18,51 +17,79 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const authOperation = useRef(0)
 
-  const clearSession = useCallback(() => {
+  const clearSessionState = useCallback(() => {
     clearAccessToken()
     setUser(null)
   }, [])
 
+  const clearSession = useCallback(() => {
+    authOperation.current += 1
+    clearSessionState()
+    setIsLoading(false)
+  }, [clearSessionState])
+
+  const handleSessionEnded = useCallback(() => {
+    // The API layer has already cleared its in-memory token exactly once.
+    authOperation.current += 1
+    setUser(null)
+    setIsLoading(false)
+  }, [])
+
   const login = useCallback(async (accessToken: string) => {
+    const operation = ++authOperation.current
+    setIsLoading(true)
     setAccessToken(accessToken)
     try {
       const profile = await authService.getProfile()
-      setUser(profile)
+      if (authOperation.current === operation) {
+        setUser(profile)
+        setIsLoading(false)
+      }
     } catch (error) {
-      clearSession()
+      if (authOperation.current === operation) clearSession()
       throw error
     }
   }, [clearSession])
 
   const logout = useCallback(async () => {
+    const operation = ++authOperation.current
     try {
       await authService.logout()
-    } finally {
-      clearSession()
+      if (authOperation.current === operation) clearSession()
+    } catch (error) {
+      if (authOperation.current === operation) setIsLoading(false)
+      throw error
     }
   }, [clearSession])
 
   const checkAuth = useCallback(async () => {
+    const operation = ++authOperation.current
     setIsLoading(true)
     try {
       await refreshAccessToken()
-      setUser(await authService.getProfile())
+      if (authOperation.current !== operation) return
+      const profile = await authService.getProfile()
+      if (authOperation.current === operation) setUser(profile)
     } catch {
-      clearSession()
+      if (authOperation.current === operation) clearSessionState()
     } finally {
-      setIsLoading(false)
+      if (authOperation.current === operation) setIsLoading(false)
     }
-  }, [clearSession])
+  }, [clearSessionState])
 
   useEffect(() => {
     void checkAuth()
+    return () => {
+      authOperation.current += 1
+    }
   }, [checkAuth])
 
   useEffect(() => {
-    window.addEventListener('auth:session-ended', clearSession)
-    return () => window.removeEventListener('auth:session-ended', clearSession)
-  }, [clearSession])
+    window.addEventListener('auth:session-ended', handleSessionEnded)
+    return () => window.removeEventListener('auth:session-ended', handleSessionEnded)
+  }, [handleSessionEnded])
 
   const value = useMemo(
     () => ({ user, isLoading, login, logout, checkAuth }),

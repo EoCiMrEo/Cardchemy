@@ -40,17 +40,16 @@ def normalize_multiple_choice(
     return front, normalized_options[matches[0]], normalized_options
 
 
-class FlashcardCreate(BaseModel):
+class FlashcardCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
-    set_id: UUID
     front_content: CardText
     back_content: CardText
     options: list[CardText] = Field(min_length=4, max_length=4)
     card_type: CardType = "multiple_choice"
 
     @model_validator(mode="after")
-    def validate_card(self) -> "FlashcardCreate":
+    def validate_card(self) -> "FlashcardCreateRequest":
         front, back, options = normalize_multiple_choice(
             self.front_content,
             self.back_content,
@@ -60,6 +59,12 @@ class FlashcardCreate(BaseModel):
         self.back_content = back
         self.options = options
         return self
+
+
+class FlashcardCreate(FlashcardCreateRequest):
+    """Internal create contract after the route supplies its set ID."""
+
+    set_id: UUID
 
 
 class FlashcardUpdate(BaseModel):

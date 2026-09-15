@@ -10,8 +10,13 @@
   },
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc -b --pretty false",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit --pretty false",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:e2e": "node ./e2e/support/run.mjs",
+    "test:e2e:headed": "node ./e2e/support/run.mjs --headed",
+    "check": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run build && npm run test:e2e",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -36,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^24.10.9",

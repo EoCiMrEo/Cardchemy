@@ -1,5 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
+import type { AccessTokenResponse } from './types'
+
 const rawApiUrl = import.meta.env.VITE_API_URL
 if (!rawApiUrl) {
   throw new Error('VITE_API_URL is required')
@@ -17,16 +19,26 @@ try {
 }
 
 let accessToken: string | null = null
-let refreshPromise: Promise<string> | null = null
-let authFailureNotified = false
+let sessionRevision = 0
 
-export const getAccessToken = () => accessToken
-export const setAccessToken = (token: string) => {
-  accessToken = token
-  authFailureNotified = false
+interface RefreshAttempt {
+  controller: AbortController
+  promise: Promise<string>
+  sessionRevision: number
 }
-export const clearAccessToken = () => {
+
+let activeRefresh: RefreshAttempt | null = null
+
+export const getAccessToken = (): string | null => accessToken
+
+export const setAccessToken = (token: string): void => {
+  accessToken = token
+  sessionRevision += 1
+}
+
+export const clearAccessToken = (): void => {
   accessToken = null
+  sessionRevision += 1
 }
 
 const publicApi = axios.create({
@@ -35,19 +47,56 @@ const publicApi = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-export async function refreshAccessToken(): Promise<string> {
-  if (!refreshPromise) {
-    refreshPromise = publicApi
-      .post<{ access_token: string }>('/auth/refresh')
+function getOrCreateRefreshAttempt(): RefreshAttempt {
+  if (activeRefresh) return activeRefresh
+
+  const refreshRevision = sessionRevision
+  const controller = new AbortController()
+  const attempt: RefreshAttempt = {
+    controller,
+    sessionRevision: refreshRevision,
+    promise: publicApi
+      .post<AccessTokenResponse>('/auth/refresh', undefined, { signal: controller.signal })
       .then(({ data }) => {
+        if (sessionRevision !== refreshRevision) {
+          if (accessToken) return accessToken
+          throw new axios.CanceledError('A newer authentication operation replaced this refresh.')
+        }
         setAccessToken(data.access_token)
         return data.access_token
       })
       .finally(() => {
-        refreshPromise = null
-      })
+        if (activeRefresh === attempt) activeRefresh = null
+      }),
   }
-  return refreshPromise
+  activeRefresh = attempt
+  return attempt
+}
+
+export function refreshAccessToken(): Promise<string> {
+  return getOrCreateRefreshAttempt().promise
+}
+
+export async function supersedeActiveRefresh(): Promise<void> {
+  const attempt = activeRefresh
+  if (!attempt) return
+  attempt.controller.abort()
+  try {
+    await attempt.promise
+  } catch {
+    // Cancellation is expected; waiting prevents a stale cookie response from
+    // landing after the explicit authentication request that follows.
+  }
+}
+
+export async function settleActiveRefresh(): Promise<void> {
+  const attempt = activeRefresh
+  if (!attempt) return
+  try {
+    await attempt.promise
+  } catch {
+    // The caller will perform its own explicit authentication operation next.
+  }
 }
 
 const api = axios.create({
@@ -66,6 +115,13 @@ api.interceptors.request.use((config) => {
 
 type RetryableRequest = InternalAxiosRequestConfig & { _retry?: boolean }
 
+function endSessionOnce(refreshRevision: number): void {
+  if (sessionRevision !== refreshRevision) return
+  accessToken = null
+  sessionRevision += 1
+  window.dispatchEvent(new Event('auth:session-ended'))
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -80,16 +136,19 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && request && !request._retry && !isPublicAuthRequest) {
       request._retry = true
+      const currentToken = getAccessToken()
+      const sentAuthorization = request.headers.Authorization
+      if (currentToken && sentAuthorization !== `Bearer ${currentToken}`) {
+        request.headers.Authorization = `Bearer ${currentToken}`
+        return api(request)
+      }
+      const refreshAttempt = getOrCreateRefreshAttempt()
       try {
-        const token = await refreshAccessToken()
+        const token = await refreshAttempt.promise
         request.headers.Authorization = `Bearer ${token}`
         return api(request)
-      } catch {
-        clearAccessToken()
-        if (!authFailureNotified) {
-          authFailureNotified = true
-          window.dispatchEvent(new Event('auth:session-ended'))
-        }
+      } catch (refreshError: unknown) {
+        if (!axios.isCancel(refreshError)) endSessionOnce(refreshAttempt.sessionRevision)
       }
     }
     return Promise.reject(error)

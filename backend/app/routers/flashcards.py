@@ -23,6 +23,7 @@ from app.models.user import User, UserRole
 from app.routers.auth import get_current_user, get_current_instructor
 from app.schemas.flashcard import (
     FlashcardCreate,
+    FlashcardCreateRequest,
     FlashcardUpdate,
     FlashcardResponse,
 )
@@ -75,7 +76,7 @@ async def list_flashcards(
 @router.post("/sets/{set_id}/cards", response_model=FlashcardResponse, status_code=status.HTTP_201_CREATED)
 async def create_flashcard(
     set_id: UUID,
-    data: FlashcardCreate,
+    data: FlashcardCreateRequest,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db)
 ):
@@ -95,12 +96,11 @@ async def create_flashcard(
     
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
-    # Override set_id from path
-    data = data.model_copy(update={"set_id": set_id})
+    create_data = FlashcardCreate(set_id=set_id, **data.model_dump())
     
     # Manual instructor creation is an explicit approval action.
     flashcard = await FlashcardService.create_flashcard(
-        db, data, quality_score=1.0, is_approved=True
+        db, create_data, quality_score=1.0, is_approved=True
     )
     await db.commit()
     return flashcard

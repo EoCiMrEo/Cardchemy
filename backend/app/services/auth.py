@@ -367,6 +367,15 @@ class AuthService:
         if not invite or invite.subject_id != claims.subject_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invitation")
         if invite.used_by or invite.used_at:
+            if invite.used_by == student.id and invite.used_at is not None:
+                enrollment = await db.scalar(
+                    select(Enrollment.id).where(
+                        Enrollment.student_id == student.id,
+                        Enrollment.subject_id == invite.subject_id,
+                    )
+                )
+                if enrollment is not None:
+                    return invite
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation has already been used")
         if not invite.expires_at or as_utc(invite.expires_at) <= now:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invitation has expired")

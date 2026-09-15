@@ -13,6 +13,9 @@ Phase 0 removed these unused or premature dependencies at that time:
 
 `@reduxjs/toolkit` and `react-redux` remain because study-session state uses
 them. Radix packages remain because the shared UI components import them.
+`@playwright/test` is a development-only dependency for the Phase 5 browser
+acceptance suite; install its pinned Chromium runtime with
+`npx playwright install chromium` before running `npm run test:e2e`.
 
 Phase 2 introduced Alembic as the required schema owner. Phase 3 directly pins
 `cryptography` because temporary PDF sources use AES-256-GCM authenticated

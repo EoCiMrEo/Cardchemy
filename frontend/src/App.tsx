@@ -10,12 +10,15 @@ import StudentSubjectDetails from './pages/student/StudentSubjectDetails';
 import StudyMode from './pages/student/StudyMode';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import NotFound from './pages/NotFound';
+import { AppErrorBoundary } from './components/feedback/AppErrorBoundary';
+import { copy } from './i18n/en';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center">Loading...</div>;
+    return <div className="flex h-screen items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
   }
 
   if (!user) {
@@ -27,7 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function RoleRoute({ children, role }: { children: React.ReactNode; role: 'instructor' | 'student' }) {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  if (isLoading) return <div className="flex h-screen items-center justify-center" role="status">{copy.routing.loadingAccount}</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== role) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
@@ -45,7 +48,8 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <Routes>
+        <AppErrorBoundary>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/join" element={<JoinCourse />} />
@@ -98,7 +102,9 @@ function App() {
           
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/dashboard" />} />
-        </Routes>
+          <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AppErrorBoundary>
       </AuthProvider>
     </Router>
   );
