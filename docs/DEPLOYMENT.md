@@ -8,7 +8,9 @@ mode, debug mode, public API port, or public database port.
 
 ## Clean-clone quick start
 
-Prerequisites are listed in [Supported runtimes](RUNTIMES.md). From the
+Prerequisites are listed in [Supported runtimes](RUNTIMES.md). Use
+[Configuration](CONFIGURATION.md) for the single root environment file,
+native-development routing, setting ranges, and update/rebuild rules. From the
 repository root:
 
 ```text
@@ -162,17 +164,17 @@ from its non-root runtime. OCR binaries are runtime-only and opt-in. The
 frontend copies static build output into an unprivileged server image; Node,
 npm, source, tests, and build caches are absent from runtime.
 
-The 2026-09-15 Linux/amd64 reference build produced these uncompressed OCI image
+The 2026-09-16 Linux/amd64 Phase 9 reference build produced these uncompressed OCI image
 sizes:
 
 | Image | Bytes | Approximate decimal size | Runtime user |
 |---|---:|---:|---|
-| Default backend | 390,255,035 | 390.3 MB | `app` (UID/GID 10001) |
-| OCR backend | 531,672,448 | 531.7 MB | `app` (UID/GID 10001) |
-| Frontend | 21,560,780 | 21.6 MB | UID/GID 101 |
+| Default backend | 253,771,016 | 253.8 MB | `app` (UID/GID 10001) |
+| OCR backend | 362,744,449 | 362.7 MB | `app` (UID/GID 10001) |
+| Frontend | 33,806,859 | 33.8 MB | UID/GID 101 |
 
-The comparable Phase 7 single-stage backend image was 627 MB, so the default
-multi-stage runtime is about 38% smaller. Treat these as reference values, not
+The previous single-stage backend image was 627 MB, so the measured default
+multi-stage runtime is about 60% smaller. Treat these as reference values, not
 hard limits: upstream base-image rebuilds can change byte counts without a
 Dockerfile change. Re-record exact sizes and verify runtime contents for every
 release:
@@ -184,6 +186,5 @@ docker history flashcard-generator-backend:0.1.0
 docker run --rm flashcard-generator-backend:0.1.0 sh -c "! command -v gcc && ! command -v node"
 ```
 
-The Phase 8 acceptance target is a smaller default backend than the former
-single-stage build, no build toolchain or test material in either runtime, and
-separate size evidence for the deliberately larger OCR build.
+The release image check should confirm that neither runtime contains build
+toolchains or test material, and record the optional OCR image size separately.

@@ -32,11 +32,25 @@ def make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **values)
 
 
-def test_static_generation_routes_precede_dynamic_flashcard_route():
-    paths = [route.path for route in app.routes]
-    dynamic_index = paths.index("/flashcards/{flashcard_id}")
-    assert paths.index("/flashcards/generation-limits") < dynamic_index
-    assert paths.index("/flashcards/generation-jobs") < dynamic_index
+async def test_static_generation_routes_precede_dynamic_flashcard_route(db):
+    from httpx import ASGITransport, AsyncClient
+    from app.database import get_db
+    from app.routers.auth import get_current_instructor
+
+    owner, subject = await seed_owner_subject(db)
+    async def test_db():
+        yield db
+    previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = test_db
+    app.dependency_overrides[get_current_instructor] = lambda: owner
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for path in ["/flashcards/generation-limits", "/flashcards/generation-jobs"]:
+                response = await client.get(path, params={"subject_id": str(subject.id)})
+                assert response.status_code == 200, response.text
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
 
 
 def test_generation_worker_owns_one_shared_provider_rate_governor():

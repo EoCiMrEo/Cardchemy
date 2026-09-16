@@ -119,3 +119,17 @@ def test_subprocess_boundary_preserves_safe_pdf_errors():
             memory_limit_mb=1_024,
         )
     assert error.value.code == "image_only_pdf"
+
+
+def test_high_page_count_accepts_boundary_and_rejects_before_extraction(monkeypatch):
+    document = PDFProcessor.extract_text_from_bytes(
+        pdf_bytes(pages=100, text="Bounded fact"), max_pages=100, max_extracted_chars=10_000
+    )
+    assert len(document.pages) == 100
+    assert document.pages[-1].page_number == 100
+    def extraction_must_not_run(*args, **kwargs):
+        pytest.fail("over-limit PDF must be rejected before page text extraction")
+    monkeypatch.setattr("pypdf._page.PageObject.extract_text", extraction_must_not_run)
+    assert_pdf_error("page_limit_exceeded", lambda: PDFProcessor.extract_text_from_bytes(
+        pdf_bytes(pages=101, text="Bounded fact"), max_pages=100, max_extracted_chars=10_000
+    ))

@@ -25,15 +25,15 @@ reload, and exposes cancellation, retry, and the completed set link.
 ## Bounds, backpressure, and cost controls
 
 Defaults are intentionally conservative and are configurable through the
-variables in `backend/.env.example`:
+variables in the repository-root `.env.example`:
 
 - Upload: 10 MiB; page count: 100; extracted text: 500,000 characters.
 - Requested cards: 1-100; active jobs per user: 2.
 - Deployment: 20 active jobs and 100 pending upload/queued jobs.
-- Daily per user: 10 accepted jobs, 500 requested cards, and 100 MiB uploaded.
+- Daily per user: 20 accepted jobs, 500 requested cards, and 100 MiB uploaded.
 - Daily deployment: 1,000 jobs, 50,000 cards, and 10 GiB uploaded.
 - Retained encrypted source: 50 MiB per user and 1 GiB per deployment.
-- Worker concurrency: 2; provider-call concurrency per job: 3.
+- Worker concurrency: 2; provider-call concurrency shared across the worker: 3.
 - Overall job timeout: 600 seconds; provider timeout: 90 seconds; extraction
   timeout: 60 seconds and 512 MiB on production Linux workers.
 
@@ -43,10 +43,12 @@ for the lifetime of the user and are charged only after the source is accepted.
 The limits endpoint reports the current per-user remainder and UTC reset time.
 
 Workers claim rows with `FOR UPDATE SKIP LOCKED`, a unique claim token, and a
-renewed lease. A stale worker cannot persist results. Transient failures use
-bounded exponential backoff with full jitter; permanent PDF/output failures do
-not retry. Every persistence step—set, cards, source deletion, and terminal job
-state—commits in one transaction, so no empty set is left behind.
+renewed lease. A stale worker cannot persist results. Retryable infrastructure
+failures use bounded exponential backoff with full jitter; provider failures
+stop without automatic whole-job replay and retain the source for a manual retry.
+Permanent PDF/output failures do not retry. Every persistence step—set, cards,
+source deletion, and terminal job state—commits in one transaction, so no empty
+set is left behind.
 
 ## PDF validation and public errors
 

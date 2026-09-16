@@ -25,20 +25,19 @@ For a clean clone, `python scripts/bootstrap_env.py` creates those three values
 independently, without displaying them, and refuses to overwrite an existing
 `.env`.
 
-## Fresh local database
+## Fresh installation
 
-Phase 2 intentionally resets local data. To recreate the named Compose volume
-and apply the baseline:
+On a new installation, create the root `.env` with the non-overwriting bootstrap
+script, then start the stack. The migration service applies the complete Alembic
+chain before the API and workers start:
 
 ```powershell
-docker compose down --volumes
-docker compose up -d db
-docker compose run --rm migrate
-docker compose up -d backend worker email-worker
+python scripts/bootstrap_env.py
+docker compose up -d --build --wait
 ```
 
-Starting the complete stack with `docker compose up` also runs the one-shot
-`migrate` service before the backend and generation worker start.
+Never remove a populated Compose volume as part of an upgrade; follow the backup
+and migration steps below instead.
 
 ## Upgrade and verify
 
@@ -94,12 +93,8 @@ For an actual restore, stop application writers, create a fresh empty target
 database, restore the archive, run `alembic upgrade head`, verify the revision
 and counts, and only then point the application at the restored database.
 
-The Phase 8 reference rehearsal copied a checksummed custom archive out of the
-database container, restored it into a fresh database, matched the source and
-restore at Alembic `20260915_0005` with representative user/session counts, and
-then completed a `20260915_0005 -> 20260915_0004 -> 20260915_0005` migration
-cycle on the restored copy. Repeat this rehearsal with release-specific data;
-the historical result is not a substitute for testing a new backup.
+Repeat this rehearsal with release-specific data and record the result in the
+release evidence. Prior development rehearsals are recorded in `.agent/logs/`.
 
 ## Downgrade and rollback
 

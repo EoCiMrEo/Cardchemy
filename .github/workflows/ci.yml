@@ -1,0 +1,289 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  ENVIRONMENT: test
+  VITE_API_URL: /api
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  backend-offline:
+    name: backend-offline (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --require-hashes -r backend/requirements-dev.txt
+      - name: Validate workflow syntax and mandatory security contracts
+        run: python scripts/check_ci.py
+      - name: Offline contracts and branch coverage
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m "not postgres and not mailpit and not ai_live"
+          --cov=app --cov-config=.coveragerc --cov-report=term-missing
+          --cov-report=xml:coverage.xml --cov-report=json:coverage.json
+          --junitxml=test-results.xml
+      - name: Coverage budgets
+        run: python scripts/check_coverage.py backend/coverage.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: backend-offline-${{ matrix.python }}
+          path: |
+            backend/coverage.xml
+            backend/coverage.json
+            backend/test-results.xml
+          retention-days: 14
+
+  postgres-migrations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --require-hashes -r backend/requirements-dev.txt
+      - name: PostgreSQL integrity, migration heads, drift and full reversal
+        run: python scripts/test_services.py postgres
+
+  mailpit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --require-hashes -r backend/requirements-dev.txt
+      - name: Disposable SMTP delivery, retry and invitation contracts
+        run: python scripts/test_services.py mailpit
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24.7.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --global npm@11.19.1
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Types, lint, unit/component coverage, production build and browser contracts
+        run: npm run check
+      - name: Emitted production JavaScript budgets
+        run: node ../scripts/check_bundle.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: frontend-reports
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            frontend/coverage
+            frontend/bundle-report.json
+          retention-days: 14
+
+  dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24.7.0"
+      - run: npm install --global npm@11.19.1
+      - run: python -m pip install --require-hashes -r backend/requirements-dev.txt
+      - name: Fresh audit of the complete hashed Python dependency graph
+        run: >-
+          python -m pip_audit --require-hashes -r backend/requirements-dev.txt
+          --strict --format=json --output=python-audit.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Fresh audit of shipped npm dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=low --json > npm-audit.json
+      - name: Mandatory dependency review fallback for every npm scope
+        working-directory: frontend
+        run: npm audit --audit-level=low --json > npm-full-audit.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: dependency-audits
+          path: |
+            python-audit.json
+            frontend/npm-audit.json
+            frontend/npm-full-audit.json
+          retention-days: 14
+
+  journey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24.7.0"
+      - run: python -m pip install --require-hashes -r backend/requirements-dev.txt
+      - run: npm install --global npm@11.19.1
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Real instructor-to-student journey on throwaway services
+        run: python scripts/test_journey.py
+      # This journey handles generated tokens/SMTP data; do not upload traces.
+
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Redacted full Git history scan
+        run: >-
+          docker run --rm --network none -v "$PWD:/repo:ro"
+          ghcr.io/gitleaks/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
+          git /repo --redact --exit-code=1 --config=/repo/.gitleaks.toml
+          --gitleaks-ignore-path=/repo/.gitleaksignore
+      - name: Current worktree secret scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: "1"
+          cache: "false"
+          skip-dirs: .git,backend/venv,frontend/node_modules,frontend/coverage,frontend/playwright-report,frontend/test-results
+          skip-files: .env,backend/.env,frontend/.env,backend/coverage.json,backend/coverage.xml,backend/test-results.xml,frontend/bundle-report.json
+
+  containers:
+    name: containers (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: backend
+            build-arguments: --build-arg INSTALL_OCR=false
+          - image: backend-ocr
+            context: backend
+            build-arguments: --build-arg INSTALL_OCR=true
+          - image: frontend
+            context: frontend
+            build-arguments: --build-arg VITE_API_URL=/api
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Build the final Linux runtime image
+        env:
+          IMAGE: ${{ matrix.image }}
+          CONTEXT: ${{ matrix.context }}
+          BUILD_ARGUMENTS: ${{ matrix.build-arguments }}
+        run: docker build --platform linux/amd64 --target runtime $BUILD_ARGUMENTS -t "cardchemy-$IMAGE:ci" "$CONTEXT"
+      - name: Exercise the final runtime, including native libraries and OCR
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: python3 scripts/check_images.py "$IMAGE" --image "cardchemy-$IMAGE:ci"
+      - name: Fail on high or critical runtime and OS vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: cardchemy-${{ matrix.image }}:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "false"
+          exit-code: "1"
+          format: json
+          output: container-audit.json
+          cache: "false"
+      - name: Generate CycloneDX SBOM from the actual final image
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: cardchemy-${{ matrix.image }}:ci
+          format: cyclonedx
+          output: runtime.sbom.json
+          skip-setup-trivy: true
+          cache: "false"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: container-${{ matrix.image }}-${{ github.sha }}
+          path: |
+            container-audit.json
+            runtime.sbom.json
+          retention-days: 30
+          if-no-files-found: error
+
+  ci-required:
+    if: always()
+    needs: [backend-offline, postgres-migrations, mailpit, frontend, journey, dependency-audit, secret-scan, containers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every mandatory gate, including every matrix member
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          results = json.loads(os.environ["RESULTS"])
+          failures = [name for name, job in results.items() if job["result"] != "success"]
+          if failures:
+              sys.exit("Mandatory CI jobs did not succeed: " + ", ".join(failures))
+          print("All mandatory CI jobs succeeded.")
+          PY

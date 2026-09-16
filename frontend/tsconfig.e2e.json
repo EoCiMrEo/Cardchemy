@@ -5,5 +5,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "@playwright/test"]
   },
-  "include": ["playwright.config.ts", "e2e/**/*.ts"]
+  "include": ["playwright.config.ts", "playwright.journey.config.ts", "e2e/**/*.ts", "journey/**/*.ts"]
 }

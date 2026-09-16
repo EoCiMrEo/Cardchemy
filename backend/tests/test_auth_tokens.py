@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from jose import jwt
+import jwt
 
 from app.config import get_settings
 from app.models.user import User, UserRole
@@ -159,3 +159,30 @@ def test_issuer_and_audience_are_validated(claim: str, value: str):
     with pytest.raises(HTTPException) as exc:
         AuthService.verify_access_token(token)
     assert exc.value.status_code == 401
+
+
+@pytest.mark.parametrize("missing", ["exp", "iat", "nbf", "sub", "jti", "iss", "aud"])
+def test_required_claims_cannot_be_omitted(missing):
+    settings = get_settings()
+    now = utcnow()
+    payload = {"iss": settings.jwt_issuer, "aud": settings.jwt_audience,
+        "sub": str(uuid4()), "jti": str(uuid4()), "sid": str(uuid4()), "type": "access",
+        "iat": now, "nbf": now, "exp": now + timedelta(minutes=5)}
+    del payload[missing]
+    token = jwt.encode(payload, settings.secret_key_value, algorithm="HS256")
+    with pytest.raises(HTTPException) as error:
+        AuthService.verify_access_token(token)
+    assert error.value.status_code == 401
+
+
+@pytest.mark.parametrize("algorithm", ["HS384", "none"])
+def test_other_algorithms_are_rejected(algorithm):
+    settings = get_settings()
+    now = utcnow()
+    payload = {"iss": settings.jwt_issuer, "aud": settings.jwt_audience,
+        "sub": str(uuid4()), "jti": str(uuid4()), "sid": str(uuid4()), "type": "access",
+        "iat": now, "nbf": now, "exp": now + timedelta(minutes=5)}
+    token = jwt.encode(payload, settings.secret_key_value if algorithm != "none" else None, algorithm=algorithm)
+    with pytest.raises(HTTPException) as error:
+        AuthService.verify_access_token(token)
+    assert error.value.status_code == 401

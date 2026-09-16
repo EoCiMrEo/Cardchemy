@@ -10,7 +10,8 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
@@ -112,14 +113,8 @@ class AuthService:
                 algorithms=[settings.algorithm],
                 audience=settings.jwt_audience,
                 issuer=settings.jwt_issuer,
-                options={
-                    "require_exp": True,
-                    "require_iat": True,
-                    "require_nbf": True,
-                    "require_sub": True,
-                    "require_jti": True,
-                    "leeway": settings.jwt_clock_skew_seconds,
-                },
+                leeway=settings.jwt_clock_skew_seconds,
+                options={"require": ["exp", "iat", "nbf", "sub", "jti", "iss", "aud"]},
             )
             if payload.get("type") != expected_type:
                 raise ValueError("wrong token type")
@@ -147,7 +142,7 @@ class AuthService:
                 if data.role != UserRole.STUDENT.value or data.subject_id != data.sub:
                     raise ValueError("invalid invitation claims")
             return data
-        except (JWTError, KeyError, TypeError, ValueError, ValidationError):
+        except (InvalidTokenError, KeyError, TypeError, ValueError, ValidationError):
             detail = "Invalid or expired token"
             if invalid_status == status.HTTP_401_UNAUTHORIZED:
                 raise _unauthorized(detail) from None

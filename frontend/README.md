@@ -1,73 +1,40 @@
-# React + TypeScript + Vite
+# Frontend development
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This React and TypeScript client supports instructor review and publication of
+AI-generated flashcards, invitations, and student study. The FastAPI backend owns
+authentication, generation jobs, card data, and progress; the browser consumes
+its API through `src/services/`.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Use the supported Node.js and npm versions in
+[docs/RUNTIMES.md](../docs/RUNTIMES.md). Configure the application from the one
+repository-root `.env` using [docs/CONFIGURATION.md](../docs/CONFIGURATION.md). The
+public `VITE_API_URL` setting controls the browser API base. `/api` is the
+same-origin path used by the Compose frontend; the local development route is
+configured in `vite.config.ts`.
 
-## React Compiler
+From `frontend/`:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The backend must be running for real application flows. The Compose deployment
+builds and serves the frontend separately; see the deployment guide for the
+complete stack and its development override.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Validate changes
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+npm run check
 ```
+
+This checks application and browser-test types, lint, unit tests, the production
+build, and Playwright Chromium acceptance tests. Install the pinned Chromium
+runtime with `npx playwright install chromium` if needed. Browser tests start
+their own local Vite server on port 4175 and use controlled API fixtures; the
+live Mailpit password-reset test is gated separately by disposable credentials.
+See [docs/ACCESSIBILITY.md](../docs/ACCESSIBILITY.md) for manual accessibility
+checks and [docs/AI_EVALUATION.md](../docs/AI_EVALUATION.md) for AI quality gates.

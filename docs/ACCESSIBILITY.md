@@ -6,7 +6,7 @@ conformance on their own.
 
 ## Automated gate
 
-`npm run check` includes the Playwright suite. Phase 6 coverage must:
+`npm run check` includes the Playwright suite. Its accessibility coverage must:
 
 - run axe against authentication, dashboard, subject, set, dialog, preview,
   study-question, study-feedback, save-error, and completion states;
@@ -49,9 +49,9 @@ Do not use a mouse during this pass.
    and only the visible card face is exposed.
 
 Record the browser, assistive technology/version, viewport, date, tester, and
-any findings in the release evidence. The Phase 6 implementation pass also
-manually inspects the browser accessibility tree for these same semantics; a
-release owner should repeat spoken-output verification on the packaged target.
+any findings in the release evidence. Repeat spoken-output verification on the
+packaged release candidate; automated checks and accessibility-tree inspection
+alone do not establish how assistive technology announces the interface.
 
 ## Product boundary
 

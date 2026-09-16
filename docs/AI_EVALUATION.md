@@ -1,6 +1,6 @@
 # AI generation evaluation
 
-Phase 4 uses a fixed, authored evaluation corpus under
+The generation pipeline uses a fixed, authored evaluation corpus under
 `backend/tests/fixtures/ai_eval/`. Normal CI is deterministic, offline, and
 never needs provider credentials.
 
@@ -50,8 +50,21 @@ Run a deliberately opt-in live smoke test only after configuring the provider:
 
 ```powershell
 $env:RUN_LIVE_AI_TESTS='1'
-pytest -m ai_live tests/integration/test_live_graph.py -q
+pytest -m ai_live tests/integration/test_live_ai_pipeline.py -q
 ```
+
+The live evaluation requires process-injected `AI_PROVIDER_ENABLED=true`,
+the official OpenAI endpoint and pinned non-reasoning GPT-4o Mini snapshot,
+provider credentials, and reviewed nonzero
+`AI_INPUT_COST_PER_MILLION_USD` and `AI_OUTPUT_COST_PER_MILLION_USD` prices.
+Tests never load the operator's root `.env`. It requests two grounded cards,
+permits one physical provider request, disables provider retries and refill
+rounds, and caps input at 8,192 tokens, output at 2,048 tokens, estimated cost
+at USD 0.02, and the request timeout at 30 seconds. An offline budget probe
+proves that extra requests or token/cost overruns are refused before a call.
+See [maintained test commands](TESTING.md) for the supported model, exact
+configuration, price floors, and full-envelope admission rules. Other providers
+and models need a separate bound for their complete billable token usage.
 
 Captured or offline results validate application invariants and provider
 contract parity. A release owner should run the live corpus against every model

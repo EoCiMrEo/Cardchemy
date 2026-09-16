@@ -8,5 +8,5 @@ The project uses [Semantic Versioning](https://semver.org/):
 
 Until 1.0, a minor release may contain breaking changes. Every release updates
 the root changelog, frontend package version, API version, and Git tag together.
-The current product version is **0.1.0**; Phase 0 and Phase 1 changes remain in
+The current product version is **0.1.0**. Changes awaiting a release remain in
 the Unreleased section until a release is intentionally cut.

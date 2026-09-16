@@ -17,10 +17,6 @@ local_prompts.mda
 /coverage
 /.playwright-cli/
 
-# next.js
-/.next/
-/out/
-
 # production
 /build
 
@@ -43,8 +39,24 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 .shared
 
 .vscode/
 sites_data/
+
+# Private backups and generated verification reports
+/backups/
+**/.coverage*
+**/coverage.xml
+**/htmlcov/
+
+**/__pycache__/
+**/coverage/
+
+**/coverage.json
+**/test-results.xml
+/frontend/bundle-report.json
+/artifacts/
+
+!backend/.coveragerc
+/.agent/.verification/

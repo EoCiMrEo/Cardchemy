@@ -1,13 +1,16 @@
 from pathlib import Path
+import re
+import secrets
 
 import pytest
 from pydantic import ValidationError
 
-from app.config import BACKEND_DIR, Settings
+from app.config import ROOT_DIR, Settings
 
 
 def test_required_secrets_fail_fast(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SECRET_KEY", raising=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
@@ -57,10 +60,99 @@ def test_production_security_settings_are_required():
         )
 
 
-def test_environment_file_path_is_absolute_and_backend_relative():
+def test_environment_file_path_is_absolute_and_root_relative():
     configured_path = Path(Settings.model_config["env_file"])
     assert configured_path.is_absolute()
-    assert configured_path == BACKEND_DIR / ".env"
+    assert configured_path == ROOT_DIR / ".env"
+
+
+def test_root_loader_is_cwd_independent_and_process_environment_wins(tmp_path, monkeypatch):
+    test_secret = secrets.token_urlsafe(48)
+    root_env = tmp_path / ".env"
+    root_env.write_text(
+        "POSTGRES_DB=sample_db\n"
+        "POSTGRES_USER=sample_user\n"
+        "POSTGRES_PASSWORD=a:p@ssword\n"
+        "APP_NAME=From root file\n"
+        f"SECRET_KEY={test_secret}\n"
+        "GENERATION_SOURCE_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(Settings.model_config, "env_file", root_env)
+    for key in (
+        "DATABASE_URL",
+        "POSTGRES_PASSWORD",
+        "APP_NAME",
+        "SECRET_KEY",
+        "GENERATION_SOURCE_ENCRYPTION_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path / "..")
+    from_root_parent = Settings()
+    monkeypatch.chdir(tmp_path)
+    from_root = Settings()
+    assert from_root.database_url == from_root_parent.database_url
+    assert from_root.database_url == (
+        "postgresql+asyncpg://sample_user:a%3Ap%40ssword@127.0.0.1:5432/sample_db"
+    )
+    assert from_root.app_name == "From root file"
+
+    monkeypatch.setenv("APP_NAME", "From process")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@127.0.0.1/override")
+    overridden = Settings()
+    assert overridden.app_name == "From process"
+    assert overridden.database_url.endswith("/override")
+
+    monkeypatch.delenv("APP_NAME")
+    isolated = Settings(
+        _env_file=None,
+        secret_key=test_secret,
+        generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    )
+    assert isolated.app_name == "Flashcard Generator"
+
+
+def test_root_example_covers_application_and_compose_settings():
+    example = (ROOT_DIR / ".env.example").read_text(encoding="utf-8")
+    names = re.findall(r"(?m)^([A-Z][A-Z0-9_]*)=", example)
+    assert len(names) == len(set(names))
+    application_names = {name.upper() for name in Settings.model_fields}
+    compose_text = "\n".join(
+        (ROOT_DIR / name).read_text(encoding="utf-8")
+        for name in (
+            "docker-compose.yml",
+            "docker-compose.dev.yml",
+            "docker-compose.prod.yml",
+        )
+    )
+    compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", compose_text))
+    assert application_names | compose_names <= set(names)
+    assert "SMTP_PORT=1025" in example
+    assert "GENERATION_DAILY_JOBS_PER_USER=20" in example
+    assert "VITE_API_URL=/api" in example
+
+
+def test_bootstrap_template_validates_without_operator_environment_and_never_overwrites(tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("bootstrap_env", ROOT_DIR / "scripts/bootstrap_env.py")
+    bootstrap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bootstrap)
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+    rendered = bootstrap.render_environment((ROOT_DIR / ".env.example").read_text(encoding="utf-8"))
+    temporary_env = tmp_path / ".env"
+    temporary_env.write_text(rendered, encoding="utf-8")
+    loaded = Settings(_env_file=temporary_env)
+    assert loaded.generation_daily_jobs_per_user == 20
+    assert loaded.smtp_port == 1025
+    assert loaded.smtp_security == "none"
+    assert loaded.database_url.startswith("postgresql+asyncpg://admin:")
+    assert "@127.0.0.1:5432/flashcard_gen" in loaded.database_url
+    monkeypatch.setattr(bootstrap, "OUTPUT", temporary_env)
+    before = temporary_env.read_bytes()
+    with pytest.raises(SystemExit, match="Refusing to overwrite"):
+        bootstrap.main()
+    assert temporary_env.read_bytes() == before
 
 
 def test_removed_email_verification_switch_cannot_create_a_partial_workflow():

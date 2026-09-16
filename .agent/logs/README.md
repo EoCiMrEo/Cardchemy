@@ -10,6 +10,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-16 | `2026-09-16-phase-9-remediation.md` | Root configuration, cleanup, consolidated tests and real journey, secure locks, runtime/OCR probes, CI coverage/bundle gates and remote merge protection. |
 | 2026-09-16 | `2026-09-16-ai-request-efficiency-remediation.md` | Evidence packing, direct-generation fast path, multi-card batches, worker-wide RPM/TPM safety governor, durable request/cache telemetry, JSONB migrations, and end-to-end verification. |
 | 2026-09-15 | `2026-09-15-ai-provider-retry-and-error-remediation.md` | Gemini schema compatibility, precise provider/model errors, three fixed-delay retries, stage canaries, fail-fast cancellation, and worker-wide request concurrency. |
 | 2026-09-15 | `2026-09-15-ai-provider-enablement-fix.md` | Non-secret AI enablement shared by API and worker, worker-only provider credentials, fail-fast validation, no-claim kill switch, and runtime verification. |
