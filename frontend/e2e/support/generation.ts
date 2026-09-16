@@ -35,4 +35,3 @@ export function generationResponse(call: ApiCall): MockResponse | undefined {
   }
   return undefined
 }
-

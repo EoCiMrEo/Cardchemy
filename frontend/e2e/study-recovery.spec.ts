@@ -79,4 +79,3 @@ test('study mode retries one failed load and preserves the answer for a failed s
     { flashcard_id: fixtures.cards[0].id, selected_option: fixtures.cards[0].back_content },
   ])
 })
-

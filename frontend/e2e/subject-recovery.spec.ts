@@ -153,4 +153,3 @@ test('student dashboard recovers its load and retries a failed join without dupl
     { token: 'dashboard-invite' },
   ])
 })
-

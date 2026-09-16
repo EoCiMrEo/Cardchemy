@@ -117,5 +117,3 @@ async def test_answer_idempotency_keys_are_scoped_to_each_student(db):
 
     assert await db.scalar(select(func.count(StudyAnswerSubmission.id))) == 2
     assert await db.scalar(select(func.count(StudyProgress.id))) == 2
-
-

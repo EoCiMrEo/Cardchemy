@@ -44,4 +44,3 @@ test('renders durable provider request telemetry for a completed generation job'
   await expect(jobs.getByText('12.5 s')).toBeVisible()
   await expect(jobs.getByText('8,192')).toBeVisible()
 })
-

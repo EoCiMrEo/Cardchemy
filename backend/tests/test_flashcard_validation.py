@@ -54,5 +54,3 @@ def test_bounds_and_nullable_time_limit_contract():
             FlashcardSetUpdate(time_limit=invalid)
     with pytest.raises(ValidationError):
         SubjectCreate(name=" ")
-
-
