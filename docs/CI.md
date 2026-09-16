@@ -78,6 +78,19 @@ Git internals, installed dependencies and generated reports; `.env.example`
 and application/test source remain scanned. Run local scans with those same
 exclusions to avoid reading the operator's secrets.
 
+For isolated local secret/container evidence, build the default backend, OCR
+backend and frontend with the tags `cardchemy-backend:phase9-ci`,
+`cardchemy-backend-ocr:phase9-ci` and `cardchemy-frontend:phase9-ci`, then run
+`python scripts/test_security.py` from the root. This exports only Git-visible
+source/history/current changes and immutable image archives, excludes operator
+`.env` and ignored data, downloads public advisory data before private mounts,
+and disables scan networking. Reports, CycloneDX SBOMs, source/snapshot/image
+identities and SHA256 checksums stay in ignored `artifacts/security`; private
+scanner exports are cleaned. `source_has_local_changes` records the actual Git
+state, and `snapshot_commit` identifies the exact exported tree. Run
+`python scripts/check_images.py VARIANT --image IMAGE` for the separate final
+runtime probe, with VARIANT equal to backend, backend-ocr or frontend.
+
 GitHub's native `dependency-review` job checks new pull-request dependencies
 at severity LOW or higher across runtime, development and unknown scopes.
 For this private repository it requires GitHub Advanced Security and the
@@ -121,7 +134,9 @@ the Phase 9 protection payload was applied to `main` using the existing
 authenticated account. The controlled first run on review PR #1 passed all
 mandatory suites but deliberately failed its authentication coverage threshold;
 `ci-required` failed and GitHub reported the non-draft PR blocked. The final
-threshold is restored to 88%; the repaired head must pass every mandatory gate.
+threshold is restored to 88%; repaired hosted run
+[35129468986](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35129468986)
+passed every mandatory gate and GitHub reported the PR clean.
 Local workflow files and the payload alone cannot prevent merges. Main
 protection is active for this private repository; native dependency review
 requires its separate Advanced Security entitlement, with full locked registry

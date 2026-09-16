@@ -12,19 +12,32 @@ Priority labels:
 
 ## Verified baseline and next work (2026-09-16)
 
-- Phases 0-8 are recorded complete. Remaining work is repository cleanup,
-  consolidated testing/CI, operational hardening, and open-source release.
-- The application now includes durable PDF-generation and email workers,
-  versioned migrations, source-grounded AI generation, provider quota controls,
-  request telemetry, and a production-shaped full-stack Compose deployment.
-- Cleanup-review verification: 169 offline backend tests passed; frontend
-  typechecks, lint, two unit tests, and production build passed with
-  `VITE_API_URL=/api` supplied explicitly.
-- PostgreSQL, Mailpit, browser, and live-provider suites were not rerun during
-  that review. Reverify them after cleanup in isolated environments.
-- The frontend build still reports stale Browserslist data and a roughly 631 KB
-  JavaScript bundle. Security-advisory counts must be refreshed in Phase 9C;
-  original audit results are historical, not the current baseline.
+- Phases 0-9 are recorded complete. Remaining work is operational hardening
+  and open-source release in Phases 10-11.
+- The application includes durable PDF-generation and email workers, versioned
+  migrations, source-grounded AI generation, provider quota controls, request
+  telemetry, and a production-shaped Compose deployment. Root `.env` is the
+  sole supported user-managed configuration file.
+- Phase 9 verification: 203 offline backend cases pass on hosted Python 3.11
+  and 3.13; 21 PostgreSQL contracts plus full migration downgrade/re-upgrade,
+  three Mailpit cases, and the real instructor/student journey pass.
+- Frontend `npm run check` passes all typechecks/lint, four Node units,
+  26 component contracts/coverage, production build and 47 Chromium cases.
+  The separate live password-reset case and paid-provider evaluation remain
+  explicitly opt-in; no paid AI call was made during Phase 9.
+- Fresh full Python/npm dependency audits and Git/history/worktree secret scans
+  report no findings. All three final runtime images pass native/auth/PDF/OCR
+  probes and HIGH/CRITICAL OS/application scans, including unfixed advisories;
+  CycloneDX SBOMs and checksums are retained.
+- Browser-compatibility data is current. Emitted JavaScript measures 120,400
+  bytes initial gzip, 360,202 bytes largest raw asset and 222,704 bytes total
+  gzip, below enforced 130,000/400,000/240,000-byte budgets.
+- GitHub main protection requires current-base `ci-required` from Actions app
+  15368, including administrators. A controlled coverage failure blocked PR #1;
+  repaired hosted run 35129468986 passed every mandatory gate. Full locked
+  audits remain mandatory where private-repository native dependency review
+  requires an additional GitHub entitlement. Evidence is recorded in
+  `.agent/logs/2026-09-16-phase-9-remediation.md`.
 - Preserve existing user changes and the real root `.env`. Updating this plan
   does not authorize deleting local environments, data, credentials, or volumes.
 
@@ -494,19 +507,19 @@ opportunity to remove useful regression coverage.
   `PHASE7_*` live-test variables consistently. Preserve explicit opt-in,
   disposable-account/database restrictions, and no-secret logging.
 
-| Current test/helper | Recommended domain name or split |
+| Original test/helper | Maintained domain name or split |
 | --- | --- |
 | `backend/tests/test_phase2_integrity.py` | `test_flashcard_validation.py` and `test_study_progress.py` |
-| `backend/tests/test_phase6_study.py` | `test_study_sessions.py` / `test_study_idempotency.py` |
+| `backend/tests/test_phase6_study.py` | `test_study_sessions.py` and `test_study_idempotency.py` |
 | `backend/tests/test_phase7_email.py` | `test_email_delivery.py`; split outbox/worker coverage if useful |
 | `backend/tests/test_phase8_runtime.py` | `test_runtime.py`; split security, health, and shutdown if useful |
 | `backend/tests/postgres/test_phase2_postgres.py` | `test_database_integrity.py`; split concurrency by domain |
-| `backend/tests/postgres/test_phase3_generation_jobs.py` | `test_generation_jobs.py` |
+| `backend/tests/postgres/test_phase3_generation_jobs.py` | `test_generation_job_persistence.py` (avoids the unit-module name collision) |
 | `backend/tests/postgres/test_phase4_ai_quality.py` | `test_ai_schema.py` |
 | `backend/tests/postgres/test_phase7_email_outbox.py` | `test_email_outbox.py` |
 | `backend/tests/integration/test_live_graph.py` | `test_live_ai_pipeline.py` after facade migration |
 | `backend/tests/support/phase7_browser_user.py` | `password_reset_browser_user.py` |
-| `frontend/e2e/phase5-coverage.spec.ts` | Split auth recovery, subject mutations, study recovery, and generation telemetry |
+| `frontend/e2e/phase5-coverage.spec.ts` | Split auth recovery, subject mutations/recovery, study recovery, and generation telemetry |
 | `frontend/e2e/phase6-accessibility.spec.ts` | `accessibility.spec.ts` |
 | `frontend/e2e/phase6-responsive.spec.ts` | `responsive.spec.ts` |
 | `frontend/e2e/phase6-study-reliability.spec.ts` | `study-reliability.spec.ts` |
@@ -690,7 +703,7 @@ documentation.
 Do not publish v1.0 until all of the following are true:
 
 - [ ] All P0 items are complete.
-- [ ] Phase 9A repository cleanup is verified with no lost regression coverage,
+- [x] Phase 9A repository cleanup is verified with no lost regression coverage,
   and root `.env` is the sole documented file-based configuration source.
 - [ ] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.

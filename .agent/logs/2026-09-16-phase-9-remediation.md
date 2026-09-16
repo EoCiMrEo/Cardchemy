@@ -250,3 +250,38 @@ lint, four Node units, all 26 component contracts/coverage, production build
 and four focused authentication browser cases. Its 48 ordinary browser cases
 are unchanged; hosted CI will run the entire browser suite on the repaired head.
 Workflow contracts and restored backend coverage budgets pass locally.
+
+## Phase 9 closure
+
+Repaired hosted run
+https://github.com/EoCiMrEo/Cardchemy/actions/runs/35129468986 at
+bd6580bd54874a3c4edbec5cd607cf0c44fc2281 completed successfully: all 12
+mandatory jobs including every matrix member and ci-required passed. Frontend
+logs prove four Node units, 26 components and 47 Chromium passes/one intentionally
+gated reset case, with the same measured bundle budgets; no browser retries or
+flaky cases were reported. The real journey passed separately. GitHub reports
+PR #1 clean, non-draft, unmerged and conflict-free, with successful ci-required
+from app 15368 and unchanged enforced main protection. The initial negative
+run and this repaired run establish actual protected-merge behavior.
+
+All 40 Phase 9 tasks are marked done: 24 in 9A, eight in 9B, eight in 9C. The
+duplicate v1.0 Phase 9A cleanup/root-configuration criterion is also done; other
+release criteria and Phases 10-11 retain their scope/status. The roadmap baseline
+now reflects current tests, audits, image probes, bundle measurements and hosted
+enforcement instead of the older cleanup-review numbers.
+
+Local scan provenance now records the actual Git dirty state and exported
+snapshot commit instead of a constant flag. Its complete final scan is recorded
+below once finished. This final evidence/documentation commit will receive a
+new full hosted CI run before handoff. Changes remain on the review branch;
+main has not been merged and original application services/data/root .env are
+preserved. Optional paid AI and the separately gated live reset are not claimed
+as executed.
+
+Final approved isolated scan after the provenance correction returned exit 0:
+zero history/current-source secret findings and zero HIGH/CRITICAL findings
+in every final image, including unfixed advisories. All three CycloneDX SBOMs
+parse and every retained SHA256 checksum verifies. Source head is bd6580bd and
+exported snapshot 05968b0e804d212ece600a8303dde6465839a051 identifies the scanned
+Git-visible tree; dirty state is true for the pending closure changes. The
+private scanner workspace is confirmed removed.

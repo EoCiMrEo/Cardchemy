@@ -109,7 +109,13 @@ def scan_workspace() -> int:
         metadata = {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "source_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
-            "source_has_local_changes": True, "image_ids": identities,
+            "source_has_local_changes": bool(subprocess.check_output(
+                ["git", "status", "--porcelain"], cwd=ROOT, env=system_environment(),
+            ).strip()),
+            "snapshot_commit": subprocess.check_output(
+                [*exported_git, "rev-parse", "HEAD"], cwd=ROOT, env=system_environment(),
+            ).decode().strip(),
+            "image_ids": identities,
             "scanners": {"gitleaks": GITLEAKS, "trivy": TRIVY}, "failed_gates": failures,
         }
         (reports / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
