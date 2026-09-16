@@ -1,26 +1,13 @@
-"""
-main.py - FastAPI Application Entry Point
-
-This is the main file that creates and configures the FastAPI application.
-It:
-- Creates the FastAPI app with metadata
-- Sets up CORS (Cross-Origin Resource Sharing) for frontend
-- Registers all routers
-- Provides startup/shutdown event handlers
-- Verifies that Alembic migrations were applied before startup
-
-To run the application:
-    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-The --reload flag enables hot reloading during development.
-"""
+"""FastAPI application and production-aware runtime lifecycle."""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
-from app.database import verify_database_revision
+from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import Settings, get_settings
+from app.database import check_database_readiness, close_database, verify_database_revision
 from app.routers import (
     auth_router,
     flashcards_router,
@@ -29,114 +16,115 @@ from app.routers import (
     subjects_router,
 )
 
-settings = get_settings()
+
+CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+CORS_ALLOWED_HEADERS = ["Accept", "Authorization", "Content-Type", "Idempotency-Key"]
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Lifespan context manager for startup/shutdown events.
-    
-    Startup:
-    - Verify the database is at the current Alembic revision
-    - Any other setup (e.g., connecting to external services)
-    
-    Shutdown:
-    - Clean up resources
-    """
-    # Startup
+async def lifespan(_: FastAPI):
+    """Verify migrations on startup and close pooled connections on exit."""
+
     print("🚀 Starting Flashcard Generator API...")
-    await verify_database_revision()
-    print("✅ Database migration revision verified")
-    
-    yield  # Application runs here
-    
-    # Shutdown
-    print("👋 Shutting down...")
+    try:
+        await verify_database_revision()
+        print("✅ Database migration revision verified")
+        yield
+    finally:
+        await close_database()
+        print("👋 Shutting down...")
 
 
-# Create FastAPI application
-app = FastAPI(
-    title=settings.app_name,
-    description="""
-    ## AI-Powered Flashcard Generator
-    
-    A platform for instructors to create and manage flashcard sets from PDFs,
-    and for students to study using spaced repetition.
-    
-    ### Features
-    - 📄 Upload PDFs and generate flashcards using AI
-    - 👥 Invite students via unique links
-    - 📚 Organize content by subjects and sets
-    - 🧠 Spaced repetition for optimal learning
-    - 📱 Responsive browser-based study experience
-    
-    ### Authentication
-    Use the `/auth/login` endpoint to get a JWT token, then click
-    "Authorize" above and enter: `Bearer <your_token>`
-    """,
-    version=settings.app_version,
-    lifespan=lifespan,
-    docs_url="/docs",      # Swagger UI at /docs
-    redoc_url="/redoc",    # ReDoc at /redoc
-)
+def create_app(app_settings: Settings | None = None) -> FastAPI:
+    """Build an application using validated runtime settings."""
+
+    configured = app_settings or get_settings()
+    docs_enabled = configured.api_docs_are_enabled
+    application = FastAPI(
+        title=configured.app_name,
+        description="""
+        ## AI-Powered Flashcard Generator
+
+        A platform for instructors to create and manage flashcard sets from PDFs,
+        and for students to study using spaced repetition.
+
+        ### Features
+        - 📄 Upload PDFs and generate flashcards using AI
+        - 👥 Invite students via unique links
+        - 📚 Organize content by subjects and sets
+        - 🧠 Spaced repetition for optimal learning
+        - 📱 Responsive browser-based study experience
+
+        ### Authentication
+        Use the `/auth/login` endpoint to get a JWT token, then click
+        "Authorize" above and enter: `Bearer <your_token>`
+        """,
+        version=configured.app_version,
+        lifespan=lifespan,
+        root_path=configured.api_root_path,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=configured.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=CORS_ALLOWED_METHODS,
+        allow_headers=CORS_ALLOWED_HEADERS,
+    )
+
+    application.include_router(auth_router)
+    application.include_router(subjects_router)
+    # Static generation routes must precede ``/flashcards/{flashcard_id}`` or
+    # FastAPI will try to parse static route names as UUIDs.
+    application.include_router(generation_router)
+    application.include_router(flashcards_router)
+    application.include_router(study_router)
+
+    @application.get("/", tags=["Health"])
+    async def root() -> dict[str, str]:
+        response = {
+            "name": configured.app_name,
+            "version": configured.app_version,
+            "status": "running",
+        }
+        if docs_enabled:
+            response["docs"] = f"{configured.api_root_path}/docs"
+        return response
+
+    @application.get("/health/live", tags=["Health"])
+    async def liveness_check() -> dict[str, str]:
+        return {"status": "healthy"}
+
+    async def readiness_check() -> JSONResponse:
+        try:
+            await check_database_readiness()
+        except Exception:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "unhealthy"},
+            )
+        return JSONResponse(content={"status": "healthy"})
+
+    application.add_api_route(
+        "/health/ready",
+        readiness_check,
+        methods=["GET"],
+        tags=["Health"],
+    )
+    # Preserve the original container-health URL while upgrading its semantics
+    # from process-only liveness to database-aware readiness.
+    application.add_api_route(
+        "/health",
+        readiness_check,
+        methods=["GET"],
+        tags=["Health"],
+    )
+
+    return application
 
 
-# ============================================
-# CORS Configuration
-# ============================================
-# CORS allows the frontend (running on a different port/domain)
-# to make requests to this API.
-
-app.add_middleware(
-    CORSMiddleware,
-    # In development, allow requests from the frontend dev server
-    # In production, replace with your actual frontend domain
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,  # Allow cookies/auth headers
-    allow_methods=["*"],     # Allow all HTTP methods
-    allow_headers=["*"],     # Allow all headers
-)
-
-
-# ============================================
-# Register Routers
-# ============================================
-# Each router handles a group of related endpoints
-
-app.include_router(auth_router)       # /auth/*
-app.include_router(subjects_router)   # /subjects/*
-# Static generation routes must precede ``/flashcards/{flashcard_id}`` or
-# FastAPI will try to parse "generation-limits" and "generation-jobs" as UUIDs.
-app.include_router(generation_router) # /flashcards/generation-*
-app.include_router(flashcards_router) # /flashcards/*
-app.include_router(study_router)      # /study/*
-
-
-# ============================================
-# Root Endpoint
-# ============================================
-
-@app.get("/", tags=["Health"])
-async def root():
-    """
-    Root endpoint - basic health check.
-    
-    Returns API info and status.
-    """
-    return {
-        "name": settings.app_name,
-        "version": settings.app_version,
-        "status": "running",
-        "docs": "/docs",
-    }
-
-
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """
-    Health check endpoint.
-    
-    Used by Docker/Kubernetes to verify the container is healthy.
-    """
-    return {"status": "healthy"}
+settings = get_settings()
+app = create_app(settings)

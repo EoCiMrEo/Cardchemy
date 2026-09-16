@@ -1,0 +1,53 @@
+# Production profile: TLS terminates at an operator-managed reverse proxy that
+# forwards only to the loopback-bound frontend port. The database and API stay
+# private to the Compose network.
+
+x-production-environment: &production-environment
+  ENVIRONMENT: production
+  DEBUG: "false"
+  REFRESH_COOKIE_SECURE: "true"
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:?Set the public HTTPS FRONTEND_BASE_URL}
+  CORS_ORIGINS: ${CORS_ORIGINS:?Set the allowed HTTPS CORS_ORIGINS}
+  API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+  API_ROOT_PATH: /api
+
+services:
+  db:
+    profiles: ["production"]
+
+  migrate:
+    profiles: ["production"]
+    environment:
+      <<: *production-environment
+
+  backend:
+    profiles: ["production"]
+    environment:
+      <<: *production-environment
+
+  worker:
+    profiles: ["production"]
+    environment:
+      <<: *production-environment
+
+  email-worker:
+    profiles: ["production"]
+    environment:
+      <<: *production-environment
+      SMTP_HOST: ${SMTP_HOST:?Set the production SMTP host}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:?Set the production sender address}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+      SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:?Set true or false explicitly}
+      SMTP_IMPLICIT_TLS: ${SMTP_IMPLICIT_TLS:?Set true or false explicitly}
+
+  # Mailpit is deliberately excluded from the production profile. It can run
+  # only if an operator explicitly activates this non-production profile too.
+  mailpit:
+    profiles: ["local-only"]
+
+  frontend:
+    profiles: ["production"]

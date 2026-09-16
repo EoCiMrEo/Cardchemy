@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 
 const appOrigin = 'http://127.0.0.1:4175'
-const apiOrigin = `${appOrigin}/api`
+const apiBaseUrl = '/api'
 const frontendRoot = fileURLToPath(new URL('../..', import.meta.url))
 const viteCli = join(frontendRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const playwrightCli = join(frontendRoot, 'node_modules', '@playwright', 'test', 'cli.js')
@@ -49,7 +49,7 @@ const server = spawn(
   [viteCli, '--host', '127.0.0.1', '--port', '4175', '--strictPort'],
   {
     cwd: frontendRoot,
-    env: { ...process.env, VITE_API_URL: apiOrigin },
+    env: { ...process.env, VITE_API_URL: apiBaseUrl },
     stdio: 'inherit',
   },
 )

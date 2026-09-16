@@ -126,6 +126,20 @@ async def test_phase3_migration_installs_queue_and_retention_indexes(phase3_pg_f
         assert "source_payload" not in payload_columns
 
 
+async def test_generation_cleanup_locks_only_jobs_across_nullable_source_join(
+    phase3_pg_factory,
+):
+    """A clean PostgreSQL worker must not lock the nullable outer-join side."""
+
+    worker = GenerationWorker(
+        settings=phase3_settings(),
+        session_factory=phase3_pg_factory,
+        worker_id="phase8-cleanup-regression",
+    )
+
+    await worker.recover_and_cleanup()
+
+
 async def test_concurrent_idempotent_reservations_create_one_row(phase3_pg_factory):
     user_id, subject_id = await seed_owner(phase3_pg_factory)
     service = GenerationJobService(phase3_settings())

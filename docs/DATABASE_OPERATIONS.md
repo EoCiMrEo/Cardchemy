@@ -17,6 +17,10 @@ application keys independently. Compose intentionally refuses to start when a
 required value is missing; do not place real values in source-controlled
 examples.
 
+For a clean clone, `python scripts/bootstrap_env.py` creates those three values
+independently, without displaying them, and refuses to overwrite an existing
+`.env`.
+
 ## Fresh local database
 
 Phase 2 intentionally resets local data. To recreate the named Compose volume
@@ -85,6 +89,13 @@ docker compose exec -T db dropdb -U admin flashcard_gen_restore_test
 For an actual restore, stop application writers, create a fresh empty target
 database, restore the archive, run `alembic upgrade head`, verify the revision
 and counts, and only then point the application at the restored database.
+
+The Phase 8 reference rehearsal copied a checksummed custom archive out of the
+database container, restored it into a fresh database, matched the source and
+restore at Alembic `20260915_0005` with representative user/session counts, and
+then completed a `20260915_0005 -> 20260915_0004 -> 20260915_0005` migration
+cycle on the restored copy. Repeat this rehearsal with release-specific data;
+the historical result is not a substitute for testing a new backup.
 
 ## Downgrade and rollback
 

@@ -1,26 +1,50 @@
-# ===========================================
-# Docker Compose for Flashcard Generator
-# ===========================================
-# This file defines all services needed to run the application locally.
+# Production-shaped local self-hosting stack.
 #
-# Usage:
-#   Start development:      docker compose --profile dev up -d --build --wait
-#   Start test services:    docker compose --profile test up -d --build --wait
-#   View logs:              docker compose logs -f
-#   Stop all services:      docker compose down
+# First run:
+#   python scripts/bootstrap_env.py
+#   docker compose up -d --build --wait
+#
+# Development and production overrides are documented in docs/DEPLOYMENT.md.
 
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
+  target: runtime
   args:
     INSTALL_OCR: ${PDF_OCR_ENABLED:-false}
 
+x-core-environment: &core-environment
+  APP_NAME: ${APP_NAME:-Flashcard Generator}
+  APP_VERSION: ${APP_VERSION:-0.1.0}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}@db:5432/${POSTGRES_DB:-flashcard_gen}
+  SECRET_KEY: ${SECRET_KEY:?Run python scripts/bootstrap_env.py}
+  GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Run python scripts/bootstrap_env.py}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DEBUG: ${DEBUG:-false}
+  ALGORITHM: ${ALGORITHM:-HS256}
+  JWT_ISSUER: ${JWT_ISSUER:-flashcard-generator-api}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-flashcard-generator-web}
+  JWT_CLOCK_SKEW_SECONDS: ${JWT_CLOCK_SKEW_SECONDS:-30}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+  REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+  REFRESH_SESSION_EXPIRE_DAYS: ${REFRESH_SESSION_EXPIRE_DAYS:-30}
+  REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-flashcard_refresh}
+  REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+  REFRESH_COOKIE_SAMESITE: ${REFRESH_COOKIE_SAMESITE:-lax}
+  REFRESH_COOKIE_DOMAIN: ${REFRESH_COOKIE_DOMAIN:-}
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:8080}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+  API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
+  API_ROOT_PATH: ${API_ROOT_PATH:-/api}
+  FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
+  INVITATION_MIN_HOURS: ${INVITATION_MIN_HOURS:-1}
+  INVITATION_MAX_HOURS: ${INVITATION_MAX_HOURS:-720}
+  PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
+  WORKER_SHUTDOWN_GRACE_SECONDS: ${WORKER_SHUTDOWN_GRACE_SECONDS:-30}
+
 x-generation-environment: &generation-environment
-  GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Set GENERATION_SOURCE_ENCRYPTION_KEY in the root .env file}
   AI_PROVIDER: ${AI_PROVIDER:-gemini}
   AI_MODEL: ${AI_MODEL:-gemini-3.8-flash}
-  AI_API_KEY: ${AI_API_KEY:-}
-  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   AI_BASE_URL: ${AI_BASE_URL:-}
   AI_ALLOW_UNSTABLE_MODEL: ${AI_ALLOW_UNSTABLE_MODEL:-false}
   AI_TEMPERATURE: ${AI_TEMPERATURE:-0.2}
@@ -76,16 +100,122 @@ x-generation-environment: &generation-environment
   PDF_OCR_DPI: ${PDF_OCR_DPI:-200}
   PDF_OCR_PAGE_TIMEOUT_SECONDS: ${PDF_OCR_PAGE_TIMEOUT_SECONDS:-30}
 
+x-email-environment: &email-environment
+  SMTP_HOST: ${SMTP_HOST:-mailpit}
+  SMTP_PORT: ${SMTP_PORT:-1025}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@example.com}
+  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+  SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+  SMTP_IMPLICIT_TLS: ${SMTP_IMPLICIT_TLS:-false}
+  SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-15}
+  EMAIL_WORKER_CONCURRENCY: ${EMAIL_WORKER_CONCURRENCY:-4}
+  EMAIL_WORKER_POLL_SECONDS: ${EMAIL_WORKER_POLL_SECONDS:-1}
+  EMAIL_LEASE_SECONDS: ${EMAIL_LEASE_SECONDS:-240}
+  EMAIL_MAX_ATTEMPTS: ${EMAIL_MAX_ATTEMPTS:-5}
+  EMAIL_RETRY_BASE_SECONDS: ${EMAIL_RETRY_BASE_SECONDS:-5}
+  EMAIL_RETRY_MAX_SECONDS: ${EMAIL_RETRY_MAX_SECONDS:-300}
+  EMAIL_CLEANUP_INTERVAL_SECONDS: ${EMAIL_CLEANUP_INTERVAL_SECONDS:-3600}
+  EMAIL_SENT_RETENTION_DAYS: ${EMAIL_SENT_RETENTION_DAYS:-7}
+  EMAIL_FAILED_RETENTION_DAYS: ${EMAIL_FAILED_RETENTION_DAYS:-30}
+  EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS: ${EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS:-24}
+
 services:
-  # ===========================================
-  # Development/test SMTP capture
-  # ===========================================
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flashcard_gen}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 1m
+
+  migrate:
+    image: flashcard-generator-backend:${APP_VERSION:-local}
+    build: *backend-build
+    environment:
+      <<: *core-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  backend:
+    image: flashcard-generator-backend:${APP_VERSION:-local}
+    build: *backend-build
+    environment:
+      <<: [*core-environment, *generation-environment]
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck", "--url", "http://localhost:8000/health/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 45s
+
+  worker:
+    image: flashcard-generator-backend:${APP_VERSION:-local}
+    build: *backend-build
+    environment:
+      <<: [*core-environment, *generation-environment]
+      AI_API_KEY: ${AI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 45s
+
+  email-worker:
+    image: flashcard-generator-backend:${APP_VERSION:-local}
+    build: *backend-build
+    environment:
+      <<: [*core-environment, *email-environment]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.email_worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 45s
+
   mailpit:
     image: axllent/mailpit:v1.31.1
-    container_name: flashcard_mailpit
-    profiles: ["dev", "test"]
     ports:
-      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
     expose:
       - "1025"
     environment:
@@ -110,168 +240,27 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # ===========================================
-  # PostgreSQL Database
-  # ===========================================
-  db:
-    image: postgres:16
-    container_name: flashcard_db
+  frontend:
+    image: flashcard-generator-frontend:${APP_VERSION:-local}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
     ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: flashcard_gen
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d flashcard_gen"]
-      interval: 5s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 20s
       timeout: 5s
       retries: 5
-
-  # ===========================================
-  # One-shot schema migration
-  # ===========================================
-  migrate:
-    build: *backend-build
-    environment:
-      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      DEBUG: "false"
-      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      <<: *generation-environment
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: alembic upgrade head
-    restart: "no"
-
-  # ===========================================
-  # FastAPI Backend
-  # ===========================================
-  backend:
-    build: *backend-build
-    container_name: flashcard_backend
-    ports:
-      - "8000:8000"
-    environment:
-      # Override DATABASE_URL to use Docker network hostname
-      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      DEBUG: ${DEBUG:-false}
-      <<: *generation-environment
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    volumes:
-      # Mount source code for hot reloading in development
-      - ./backend:/app
-    # Override CMD for development (with --reload)
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
       start_period: 10s
-
-  # ===========================================
-  # Durable PDF/AI generation worker
-  # ===========================================
-  worker:
-    build: *backend-build
-    container_name: flashcard_worker
-    environment:
-      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      <<: *generation-environment
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    volumes:
-      - ./backend:/app
-    command: python -m app.worker
     restart: unless-stopped
-
-  # ===========================================
-  # Durable transactional-email worker
-  # ===========================================
-  email-worker:
-    build: *backend-build
-    container_name: flashcard_email_worker
-    environment:
-      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}@db:5432/flashcard_gen
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
-      GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Set GENERATION_SOURCE_ENCRYPTION_KEY in the root .env file}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      DEBUG: "false"
-      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      APP_NAME: ${APP_NAME:-Flashcard Generator}
-      SMTP_HOST: ${SMTP_HOST:-mailpit}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@example.com}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
-      SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
-      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
-      SMTP_IMPLICIT_TLS: ${SMTP_IMPLICIT_TLS:-false}
-      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-15}
-      EMAIL_WORKER_CONCURRENCY: ${EMAIL_WORKER_CONCURRENCY:-4}
-      EMAIL_WORKER_POLL_SECONDS: ${EMAIL_WORKER_POLL_SECONDS:-1}
-      EMAIL_LEASE_SECONDS: ${EMAIL_LEASE_SECONDS:-240}
-      EMAIL_MAX_ATTEMPTS: ${EMAIL_MAX_ATTEMPTS:-5}
-      EMAIL_RETRY_BASE_SECONDS: ${EMAIL_RETRY_BASE_SECONDS:-5}
-      EMAIL_RETRY_MAX_SECONDS: ${EMAIL_RETRY_MAX_SECONDS:-300}
-      EMAIL_CLEANUP_INTERVAL_SECONDS: ${EMAIL_CLEANUP_INTERVAL_SECONDS:-3600}
-      EMAIL_SENT_RETENTION_DAYS: ${EMAIL_SENT_RETENTION_DAYS:-7}
-      EMAIL_FAILED_RETENTION_DAYS: ${EMAIL_FAILED_RETENTION_DAYS:-30}
-      EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS: ${EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS:-24}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    volumes:
-      - ./backend:/app
-    command: python -m app.email_worker
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
-  # ===========================================
-  # Frontend (React + Vite) - Will be added later
-  # ===========================================
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: flashcard_frontend
-  #   ports:
-  #     - "5173:5173"
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   depends_on:
-  #     - backend
+    stop_grace_period: 30s
 
 volumes:
   postgres_data:

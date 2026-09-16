@@ -10,6 +10,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-15 | `2026-09-15-phase-8-remediation.md` | Production-shaped self-hosting, generated secrets, multi-stage images, secure SPA edge, readiness/draining, backup/restore rehearsal, and platform evidence. |
 | 2026-09-15 | `2026-09-15-phase-7-remediation.md` | Transactional email outbox, bounded SMTP worker, Mailpit capture/fault tests, reset and invitation delivery, guarded recovery, and live browser verification. |
 | 2026-09-15 | `2026-09-15-phase-6-remediation.md` | Durable study-answer idempotency, valid review-all sessions, keyboard/screen-reader semantics, reduced motion, responsive/touch-safe UI, axe coverage, and 44 browser checks. |
 | 2026-09-15 | `2026-09-15-phase-5-remediation.md` | Typed frontend API architecture, race-safe authentication, guarded routing, resilient join/edit/progress flows, centralized English copy, and 31 browser checks. |

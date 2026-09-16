@@ -14,9 +14,10 @@
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit --pretty false",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:unit": "node --test ./tests/*.test.mjs",
     "test:e2e": "node ./e2e/support/run.mjs",
     "test:e2e:headed": "node ./e2e/support/run.mjs --headed",
-    "check": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run build && npm run test:e2e",
+    "check": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run test:unit && npm run build && npm run test:e2e",
     "preview": "vite preview"
   },
   "dependencies": {

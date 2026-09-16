@@ -15,6 +15,7 @@ local_prompts.mda
 ./local_prompts.md
 # testing
 /coverage
+/.playwright-cli/
 
 # next.js
 /.next/

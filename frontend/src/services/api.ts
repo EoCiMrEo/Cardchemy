@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
+import { normalizeApiBaseUrl } from './apiUrl'
 import type { AccessTokenResponse } from './types'
 
 const rawApiUrl = import.meta.env.VITE_API_URL
@@ -9,13 +10,9 @@ if (!rawApiUrl) {
 
 let apiBaseUrl: string
 try {
-  const parsed = new URL(rawApiUrl)
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('unsupported protocol')
-  }
-  apiBaseUrl = parsed.toString().replace(/\/$/, '')
+  apiBaseUrl = normalizeApiBaseUrl(rawApiUrl)
 } catch {
-  throw new Error('VITE_API_URL must be an absolute HTTP(S) URL')
+  throw new Error('VITE_API_URL must be an absolute HTTP(S) URL or a root-relative path such as /api')
 }
 
 let accessToken: string | null = null

@@ -1,63 +1,56 @@
-# ===========================================
-# Dockerfile for Flashcard Generator Backend
-# ===========================================
-# This creates a production-ready container for the FastAPI backend.
-#
-# Build: docker build -t flashcard-backend .
-# Run:   docker run -p 8000:8000 flashcard-backend
+# syntax=docker/dockerfile:1.7
 
-# Use Python 3.11 slim image (smaller than full image)
-FROM python:3.11-slim
+# Build native wheels and the virtual environment away from the runtime image.
+FROM python:3.11-slim-bookworm AS dependency-builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt ./
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --require-hashes --no-cache-dir -r requirements.txt
+
+# The final image contains runtime libraries and application code only. OCR is
+# opt-in and is intentionally installed here because its executables are needed
+# while jobs run, not while Python dependencies build.
+FROM python:3.11-slim-bookworm AS runtime
 
 ARG INSTALL_OCR=false
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PATH=/opt/venv/bin:$PATH \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-# - gcc: Required for some Python packages
-# - libpq-dev: Required for psycopg2/asyncpg
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && if [ "$INSTALL_OCR" = "true" ]; then \
+         apt-get install -y --no-install-recommends poppler-utils tesseract-ocr; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
-# OCR remains opt-in because Poppler and Tesseract increase image size and CPU
-# requirements. Build with --build-arg INSTALL_OCR=true when PDF_OCR_ENABLED is
-# enabled for the worker.
-RUN if [ "$INSTALL_OCR" = "true" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr && \
-      rm -rf /var/lib/apt/lists/*; \
-    fi
+RUN addgroup --system --gid 10001 app \
+    && adduser --system --uid 10001 --ingroup app --home /nonexistent --no-create-home app
 
-# Copy requirements first (for Docker layer caching)
-COPY requirements.txt .
+COPY --from=dependency-builder /opt/venv /opt/venv
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
+COPY --chown=app:app alembic.ini ./
+COPY --chown=app:app alembic ./alembic
+COPY --chown=app:app app ./app
 
-# Copy application code
-COPY . .
-
-# Create non-root user for security
-RUN adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app
-USER appuser
-
-# Expose port
+USER app
 EXPOSE 8000
+STOPSIGNAL SIGTERM
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=5 \
+    CMD python -m app.healthcheck || exit 1
 
-# Run the application
-# --host 0.0.0.0: Listen on all interfaces (required for Docker)
-# --port 8000: Port to listen on
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

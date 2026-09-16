@@ -1,0 +1,42 @@
+# Development profile: opt in to host database/API ports and backend hot reload.
+# Use with docker-compose.yml; never combine with docker-compose.prod.yml.
+
+services:
+  db:
+    profiles: ["development"]
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+  migrate:
+    profiles: ["development"]
+    volumes:
+      - ./backend:/app
+
+  backend:
+    profiles: ["development"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      API_ROOT_PATH: ""
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173}
+    volumes:
+      - ./backend:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    profiles: ["development"]
+    volumes:
+      - ./backend:/app
+
+  email-worker:
+    profiles: ["development"]
+    volumes:
+      - ./backend:/app
+
+  mailpit:
+    profiles: ["development"]
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+
+  frontend:
+    profiles: ["development"]

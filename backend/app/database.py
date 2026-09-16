@@ -11,14 +11,16 @@ Key concepts:
 - `get_db`: Dependency injection function for FastAPI routes
 """
 
+import asyncio
 from pathlib import Path
-from sqlalchemy.orm import declarative_base
 from typing import AsyncGenerator
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 from app.config import get_settings
 
@@ -100,3 +102,17 @@ async def verify_database_revision() -> None:
             f"Database schema is {current}; expected {expected}. "
             "Run 'alembic upgrade head' before starting the API."
         )
+
+
+async def check_database_readiness(timeout_seconds: float = 5.0) -> None:
+    """Fail unless PostgreSQL accepts a bounded round-trip query."""
+
+    async with asyncio.timeout(timeout_seconds):
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
+
+async def close_database() -> None:
+    """Release every pooled connection owned by this process."""
+
+    await engine.dispose()

@@ -397,29 +397,29 @@ connect a standard production SMTP provider using configuration only.
 **Goal:** Let a new user clone the repository and run a safe, production-like
 deployment without editing source code.
 
-- [ ] **P0** Add `.dockerignore` files so local virtual environments, node
+- [x] **P0** Add `.dockerignore` files so local virtual environments, node
   modules, caches, secrets, tests, and build output are not copied into images.
-- [ ] **P0** Add a production frontend image/server with SPA fallback routing.
-- [ ] **P0** Add the frontend service to Compose and connect it through documented
+- [x] **P0** Add a production frontend image/server with SPA fallback routing.
+- [x] **P0** Add the frontend service to Compose and connect it through documented
   internal/public URLs.
-- [ ] **P0** Separate development and production Compose profiles.
-- [ ] **P0** Disable reload/debug mode and public database ports by default in the
+- [x] **P0** Separate development and production Compose profiles.
+- [x] **P0** Disable reload/debug mode and public database ports by default in the
   production profile.
-- [ ] **P0** Remove default database passwords and require generated secrets.
-- [ ] **P0** Make CORS origins environment-driven; avoid permissive methods and
+- [x] **P0** Remove default database passwords and require generated secrets.
+- [x] **P0** Make CORS origins environment-driven; avoid permissive methods and
   headers combined with credentials unless required.
-- [ ] **P1** Use multi-stage backend/frontend builds and remove compilers/dev
+- [x] **P1** Use multi-stage backend/frontend builds and remove compilers/dev
   packages from runtime images.
-- [ ] **P1** Add container health checks that verify database readiness, not only
+- [x] **P1** Add container health checks that verify database readiness, not only
   that the HTTP process responds.
-- [ ] **P1** Decide whether API docs are public in production and make the setting
+- [x] **P1** Decide whether API docs are public in production and make the setting
   configurable.
-- [ ] **P1** Add reverse-proxy/TLS guidance and security headers, including CSP,
+- [x] **P1** Add reverse-proxy/TLS guidance and security headers, including CSP,
   frame protection, MIME sniffing protection, and a referrer policy.
-- [ ] **P1** Add graceful shutdown and worker/job-draining behavior.
-- [ ] **P1** Document data volumes, database backup, restore, upgrade, and disaster
+- [x] **P1** Add graceful shutdown and worker/job-draining behavior.
+- [x] **P1** Document data volumes, database backup, restore, upgrade, and disaster
   recovery.
-- [ ] **P2** Target a smaller image and publish supported architecture/platform
+- [x] **P2** Target a smaller image and publish supported architecture/platform
   information.
 
 **Phase complete when:** `docker compose up` from a fresh clone starts the full

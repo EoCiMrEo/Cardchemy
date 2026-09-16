@@ -26,6 +26,7 @@ from app.services.email import (
     SmtpTransport,
 )
 from app.time_utils import as_utc, utcnow
+from app.workers.shutdown import drain_active_tasks
 
 
 logger = logging.getLogger(__name__)
@@ -93,10 +94,14 @@ class EmailWorker:
                     except TimeoutError:
                         pass
         finally:
-            for task in tasks:
-                task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            forced_cancellations = await drain_active_tasks(
+                tasks, self.settings.worker_shutdown_grace_seconds
+            )
+            if forced_cancellations:
+                logger.warning(
+                    "Email worker shutdown grace expired; cancelled active_messages=%s",
+                    forced_cancellations,
+                )
 
     async def claim_next(self) -> tuple[UUID, str] | None:
         async with self.session_factory() as db:

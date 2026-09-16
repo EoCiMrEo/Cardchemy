@@ -5,6 +5,18 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+### Phase 8 - deployment and self-hosting
+
+- Added a generated-secret clean-clone bootstrap, production-shaped Compose
+  stack, explicit development/production profiles, private database/API
+  networking, and a separately built SPA frontend edge.
+- Added multi-stage non-root backend/frontend images, database-aware readiness,
+  bounded worker draining, production-closed API docs, strict credentialed CORS,
+  dynamic proxy service discovery, and browser security headers.
+- Added TLS/reverse-proxy, volume, backup/restore, upgrade, disaster-recovery,
+  platform, and image-size guidance with clean-stack, outage, restore, and
+  PostgreSQL/Mailpit verification.
+
 ### Phase 7 - transactional email delivery
 
 - Replaced request-bound password-reset SMTP with a PostgreSQL transactional

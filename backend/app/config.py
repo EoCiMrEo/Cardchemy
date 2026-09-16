@@ -13,6 +13,7 @@ import ipaddress
 from pathlib import Path
 import re
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,6 +29,52 @@ INSECURE_SECRET_VALUES = {
 }
 UNSTABLE_MODEL_PATTERN = re.compile(r"(?:^|[-_.])(preview|latest|experimental|exp)(?:$|[-_.])", re.I)
 DNS_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+API_ROOT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
+FORBIDDEN_CORS_ORIGINS = {"*", "null"}
+
+
+def normalize_http_origin(origin: str) -> str:
+    """Validate and normalize one exact HTTP(S) origin."""
+
+    if not origin or origin.casefold() in FORBIDDEN_CORS_ORIGINS:
+        raise ValueError("CORS_ORIGINS cannot contain wildcard or null origins")
+    if any(character.isspace() or ord(character) < 32 for character in origin):
+        raise ValueError("CORS_ORIGINS entries cannot contain whitespace or controls")
+
+    parsed = urlsplit(origin)
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("CORS_ORIGINS entries must be absolute HTTP(S) origins")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("CORS_ORIGINS entries cannot contain credentials")
+    if parsed.path or parsed.query or parsed.fragment:
+        raise ValueError("CORS_ORIGINS entries cannot contain a path, query, or fragment")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("CORS_ORIGINS entries must include a hostname")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("CORS_ORIGINS entries must use a valid port") from exc
+
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        try:
+            normalized_host = hostname.rstrip(".").encode("idna").decode("ascii").lower()
+        except UnicodeError as exc:
+            raise ValueError("CORS_ORIGINS entries must use a valid hostname") from exc
+        if not normalized_host or len(normalized_host) > 253 or any(
+            not DNS_LABEL_PATTERN.fullmatch(label) for label in normalized_host.split(".")
+        ):
+            raise ValueError("CORS_ORIGINS entries must use a valid hostname")
+    else:
+        normalized_host = f"[{address}]" if address.version == 6 else str(address)
+
+    scheme = parsed.scheme.casefold()
+    default_port = 80 if scheme == "http" else 443
+    port_suffix = "" if port is None or port == default_port else f":{port}"
+    return f"{scheme}://{normalized_host}{port_suffix}"
 
 
 class Settings(BaseSettings):
@@ -45,6 +92,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
+    api_docs_enabled: bool | None = None
+    api_root_path: str = ""
+    worker_shutdown_grace_seconds: float = Field(default=30, ge=0, le=7_200)
 
     database_url: str
 
@@ -186,6 +236,14 @@ class Settings(BaseSettings):
         return self.secret_key.get_secret_value()
 
     @property
+    def api_docs_are_enabled(self) -> bool:
+        """Keep local documentation convenient while defaulting production closed."""
+
+        if self.api_docs_enabled is not None:
+            return self.api_docs_enabled
+        return self.environment != "production"
+
+    @property
     def smtp_security(self) -> Literal["none", "starttls", "implicit_tls"]:
         if self.smtp_implicit_tls:
             return "implicit_tls"
@@ -253,6 +311,28 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: str) -> str:
+        origins = [entry.strip() for entry in value.split(",") if entry.strip()]
+        if not origins:
+            raise ValueError("CORS_ORIGINS must contain at least one exact origin")
+        normalized = [normalize_http_origin(origin) for origin in origins]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("CORS_ORIGINS cannot contain duplicate origins")
+        return ",".join(normalized)
+
+    @field_validator("api_root_path")
+    @classmethod
+    def validate_api_root_path(cls, value: str) -> str:
+        if value == "":
+            return value
+        if not API_ROOT_PATH_PATTERN.fullmatch(value):
+            raise ValueError(
+                "API_ROOT_PATH must be empty or an absolute URL path without a trailing slash"
+            )
+        return value
 
     @field_validator("app_name", "smtp_from_name")
     @classmethod
@@ -418,8 +498,19 @@ class Settings(BaseSettings):
                 raise ValueError("REFRESH_COOKIE_SECURE must be true in production")
             if self.frontend_base_url.scheme != "https":
                 raise ValueError("FRONTEND_BASE_URL must use HTTPS in production")
-            if any("localhost" in origin or "127.0.0.1" in origin for origin in self.cors_origin_list):
-                raise ValueError("Production CORS_ORIGINS cannot contain localhost origins")
+            for origin in self.cors_origin_list:
+                parsed_origin = urlsplit(origin)
+                if parsed_origin.scheme != "https":
+                    raise ValueError("Production CORS_ORIGINS must use HTTPS")
+                hostname = parsed_origin.hostname
+                if hostname == "localhost":
+                    raise ValueError("Production CORS_ORIGINS cannot contain localhost origins")
+                try:
+                    address = ipaddress.ip_address(hostname) if hostname else None
+                except ValueError:
+                    address = None
+                if address and address.is_loopback:
+                    raise ValueError("Production CORS_ORIGINS cannot contain loopback origins")
 
         return self
 

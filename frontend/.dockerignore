@@ -1,0 +1,39 @@
+.git
+.gitignore
+.dockerignore
+
+# Environment files and common local secret material must never enter the build
+# context. The public API base is supplied through the Docker build argument.
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+.npmrc
+
+# Dependencies, generated output, and tool caches.
+node_modules/
+dist/
+dist-ssr/
+.cache/
+.npm/
+.vite/
+*.tsbuildinfo
+
+# Test source and generated browser/coverage output are not runtime inputs.
+e2e/
+tests/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+**/*.spec.*
+**/*.test.*
+
+# Local editor and operating-system files.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log

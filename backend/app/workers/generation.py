@@ -28,6 +28,7 @@ from app.services.pdf_processor import PDFProcessingError, PDFProcessor
 from app.services.source_storage import SourceStorage, SourceStorageError
 from app.services.subject import SubjectService
 from app.time_utils import as_utc, utcnow
+from app.workers.shutdown import drain_active_tasks
 
 
 logger = logging.getLogger(__name__)
@@ -107,10 +108,14 @@ class GenerationWorker:
                     except TimeoutError:
                         pass
         finally:
-            for task in tasks:
-                task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            forced_cancellations = await drain_active_tasks(
+                tasks, self.settings.worker_shutdown_grace_seconds
+            )
+            if forced_cancellations:
+                logger.warning(
+                    "Generation worker shutdown grace expired; cancelled active_jobs=%s",
+                    forced_cancellations,
+                )
 
     async def claim_next(self) -> tuple[UUID, str] | None:
         async with self.session_factory() as db:
@@ -674,22 +679,29 @@ class GenerationWorker:
                         job.updated_at = now
                     await db.delete(source)
 
+                missing_source_query = (
+                    select(GenerationJob)
+                    .outerjoin(
+                        GenerationJobSource,
+                        GenerationJobSource.job_id == GenerationJob.id,
+                    )
+                    .where(
+                        GenerationJob.status == GenerationJobStatus.QUEUED.value,
+                        GenerationJobSource.job_id.is_(None),
+                    )
+                    .limit(100)
+                )
+                if db.get_bind().dialect.name == "postgresql":
+                    # PostgreSQL rejects an unqualified FOR UPDATE across a
+                    # LEFT JOIN because the nullable source side cannot be
+                    # locked. Only the generation job is mutated here.
+                    missing_source_query = missing_source_query.with_for_update(
+                        of=GenerationJob, skip_locked=True
+                    )
+                else:
+                    missing_source_query = missing_source_query.with_for_update()
                 missing_source_jobs = list(
-                    (
-                        await db.scalars(
-                            select(GenerationJob)
-                            .outerjoin(
-                                GenerationJobSource,
-                                GenerationJobSource.job_id == GenerationJob.id,
-                            )
-                            .where(
-                                GenerationJob.status == GenerationJobStatus.QUEUED.value,
-                                GenerationJobSource.job_id.is_(None),
-                            )
-                            .with_for_update()
-                            .limit(100)
-                        )
-                    ).all()
+                    (await db.scalars(missing_source_query)).all()
                 )
                 for job in missing_source_jobs:
                     job.status = GenerationJobStatus.FAILED.value
