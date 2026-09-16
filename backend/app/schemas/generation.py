@@ -77,6 +77,12 @@ class GenerationJobResponse(BaseModel):
     ai_model: str
     estimated_input_tokens: int = Field(ge=0)
     estimated_output_tokens: int = Field(ge=0)
+    estimated_request_count: int = Field(ge=0)
+    provider_request_count: int = Field(ge=0)
+    provider_retry_count: int = Field(ge=0)
+    provider_rate_limit_wait_milliseconds: int = Field(ge=0)
+    cached_input_tokens: int = Field(ge=0)
+    provider_request_counts_by_stage: dict[str, Annotated[int, Field(ge=0)]]
     actual_input_tokens: int | None = Field(default=None, ge=0)
     actual_output_tokens: int | None = Field(default=None, ge=0)
     estimated_cost_microusd: int | None = Field(default=None, ge=0)

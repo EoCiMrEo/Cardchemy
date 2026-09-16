@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
 import math
 import re
@@ -18,6 +20,7 @@ from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from app.ai.rate_limit import ProviderRateGovernor, ProviderRateLimitExceeded
 from app.config import Settings
 
 
@@ -45,11 +48,19 @@ class ProviderResponse(Generic[T]):
 class AIProviderError(RuntimeError):
     """A bounded provider failure safe to persist or return to a client."""
 
-    def __init__(self, code: str, safe_message: str, *, retryable: bool) -> None:
+    def __init__(
+        self,
+        code: str,
+        safe_message: str,
+        *,
+        retryable: bool,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         super().__init__(safe_message)
         self.code = code
         self.safe_message = safe_message
         self.retryable = retryable
+        self.retry_after_seconds = retry_after_seconds
 
 
 class AIProviderConfigurationError(AIProviderError):
@@ -175,6 +186,61 @@ def _read_usage(
     )
 
 
+def _parse_retry_after(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return max(0.0, float(value))
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    try:
+        return max(0.0, float(stripped))
+    except ValueError:
+        pass
+    duration = re.fullmatch(r"(\d+(?:\.\d+)?)s", stripped, re.IGNORECASE)
+    if duration:
+        return max(0.0, float(duration.group(1)))
+    try:
+        parsed = parsedate_to_datetime(stripped)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (parsed - datetime.now(timezone.utc)).total_seconds())
+
+
+def _retry_hint_from_details(value: Any) -> float | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = re.sub(r"[^a-z]", "", str(key).casefold())
+            if normalized_key in {"retryafter", "retrydelay"}:
+                parsed = _parse_retry_after(child)
+                if parsed is not None:
+                    return parsed
+        for child in value.values():
+            parsed = _retry_hint_from_details(child)
+            if parsed is not None:
+                return parsed
+    elif isinstance(value, list):
+        for child in value:
+            parsed = _retry_hint_from_details(child)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _provider_retry_after(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        try:
+            parsed = _parse_retry_after(headers.get("Retry-After"))
+        except (AttributeError, TypeError):
+            parsed = None
+        if parsed is not None:
+            return parsed
+    return _retry_hint_from_details(getattr(exc, "details", None))
+
+
 def _normalize_provider_error(exc: Exception) -> AIProviderError:
     if isinstance(exc, AIProviderError):
         return exc
@@ -228,6 +294,7 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
             "ai_provider_rate_limited",
             "The AI provider rate limit was reached. Wait before retrying the job.",
             retryable=True,
+            retry_after_seconds=_provider_retry_after(exc),
         )
     if status_code is not None:
         retryable = status_code in {408, 409, 425} or status_code >= 500
@@ -239,6 +306,7 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
                 else "The AI provider rejected the generation request."
             ),
             retryable=retryable,
+            retry_after_seconds=_provider_retry_after(exc) if retryable else None,
         )
 
     return AIProviderError(
@@ -249,29 +317,67 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
 
 
 class _RetryingProvider:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        rate_governor: ProviderRateGovernor | None = None,
+    ) -> None:
         self.settings = settings
+        self.rate_governor = rate_governor or ProviderRateGovernor.from_settings(settings)
 
-    async def _run_with_retries(self, call: Any) -> ProviderResponse[Any]:
+    async def _run_with_retries(
+        self,
+        call: Any,
+        *,
+        estimated_input_tokens: int,
+        operation: str,
+    ) -> ProviderResponse[Any]:
         for attempt in range(self.settings.ai_provider_max_retries + 1):
             try:
+                reservation = await self.rate_governor.reserve(
+                    estimated_input_tokens,
+                    operation=operation,
+                    attempt=attempt,
+                )
                 async with asyncio.timeout(self.settings.ai_provider_timeout_seconds):
-                    return await call()
+                    response = await call()
+                await reservation.commit(response.usage.input_tokens)
+                return response
+            except asyncio.CancelledError:
+                raise
+            except ProviderRateLimitExceeded as exc:
+                raise AIProviderError(
+                    "ai_provider_request_token_limit",
+                    "One AI request exceeds the configured safe input-token rate budget.",
+                    retryable=False,
+                ) from exc
             except Exception as exc:
                 normalized = _normalize_provider_error(exc)
                 if not normalized.retryable or attempt >= self.settings.ai_provider_max_retries:
                     raise normalized from exc
-                delay = min(
-                    self.settings.ai_retry_max_seconds,
+                delay = max(
                     self.settings.ai_retry_base_seconds,
+                    normalized.retry_after_seconds or 0,
                 )
+                if delay > self.settings.ai_retry_max_seconds:
+                    # Never retry before a provider's explicit hint. If that
+                    # hint exceeds our bounded wait, retain the retryable error
+                    # for a later manual job retry instead.
+                    raise normalized from exc
                 await asyncio.sleep(delay)
         raise AssertionError("provider retry loop exhausted unexpectedly")
 
 
 class GeminiProvider(_RetryingProvider):
-    def __init__(self, settings: Settings, *, client: Any | None = None) -> None:
-        super().__init__(settings)
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        client: Any | None = None,
+        rate_governor: ProviderRateGovernor | None = None,
+    ) -> None:
+        super().__init__(settings, rate_governor=rate_governor)
         api_key = settings.ai_api_key_value
         if client is None:
             if not api_key:
@@ -300,7 +406,6 @@ class GeminiProvider(_RetryingProvider):
         max_output_tokens: int,
         operation: str,
     ) -> ProviderResponse[T]:
-        del operation  # Used for accounting by the caller; Gemini needs no request label.
         output_limit = min(max_output_tokens, self.settings.ai_max_output_tokens)
         if output_limit < 1:
             raise AIProviderConfigurationError("The AI output-token limit must be positive.")
@@ -331,12 +436,22 @@ class GeminiProvider(_RetryingProvider):
             )
             return ProviderResponse(data=parsed, usage=usage)
 
-        return await self._run_with_retries(call)
+        return await self._run_with_retries(
+            call,
+            estimated_input_tokens=_estimate_tokens(f"{system_prompt}\n{user_prompt}"),
+            operation=operation,
+        )
 
 
 class OpenAICompatibleProvider(_RetryingProvider):
-    def __init__(self, settings: Settings, *, client: httpx.AsyncClient | None = None) -> None:
-        super().__init__(settings)
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        client: httpx.AsyncClient | None = None,
+        rate_governor: ProviderRateGovernor | None = None,
+    ) -> None:
+        super().__init__(settings, rate_governor=rate_governor)
         if settings.ai_base_url is None:
             raise AIProviderConfigurationError(
                 "AI_BASE_URL is required for the OpenAI-compatible provider."
@@ -413,14 +528,22 @@ class OpenAICompatibleProvider(_RetryingProvider):
             async with httpx.AsyncClient(follow_redirects=False) as client:
                 return await call_with(client)
 
-        return await self._run_with_retries(call)
+        return await self._run_with_retries(
+            call,
+            estimated_input_tokens=_estimate_tokens(f"{system_prompt}\n{user_prompt}"),
+            operation=operation,
+        )
 
 
-def get_ai_provider(settings: Settings) -> AIProvider:
+def get_ai_provider(
+    settings: Settings,
+    *,
+    rate_governor: ProviderRateGovernor | None = None,
+) -> AIProvider:
     if settings.ai_provider == "gemini":
-        return GeminiProvider(settings)
+        return GeminiProvider(settings, rate_governor=rate_governor)
     if settings.ai_provider == "openai_compatible":
-        return OpenAICompatibleProvider(settings)
+        return OpenAICompatibleProvider(settings, rate_governor=rate_governor)
     raise AIProviderConfigurationError("The configured AI provider is not supported.")
 
 

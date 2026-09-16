@@ -24,6 +24,8 @@ def settings(**overrides) -> Settings:
         "ai_summary_output_tokens": 64,
         "ai_max_output_tokens": 256,
         "ai_max_job_output_tokens": 100_000,
+        "ai_request_input_target_tokens": 4_096,
+        "ai_cards_per_request": 10,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -59,27 +61,37 @@ class DeterministicProvider:
             )
         else:
             payload = json.loads(kwargs["user_prompt"])
-            requested = int(re.search(r"up to (\d+)", payload["task"]).group(1))
-            source = payload["untrusted_document"]
-            facts = [part.strip() for part in source.split(".") if part.strip()]
+            requested_by_chunk = payload["requested_cards_by_source_chunk_id"]
+            documents = {
+                item["source_chunk_id"]: item["text"]
+                for item in payload["untrusted_documents"]
+            }
             cards = []
-            for index in range(requested):
-                serial = 0 if self.duplicate_only else len(self.calls) * 100 + index
-                quote = facts[index % len(facts)] if facts else source.strip()
-                quote = f"{quote}." if not quote.endswith(".") else quote
-                answer = re.search(r"[\wÀ-ž]+", quote).group(0)
-                fingerprint = hashlib.sha256(str(serial).encode()).hexdigest()[:16]
-                cards.append(
-                    {
-                        "front": (
-                            f"Which fact identifies {answer} for evidence marker {fingerprint}?"
-                        ),
-                        "back": answer,
-                        "options": [answer, f"Wrong {serial} A", f"Wrong {serial} B", f"Wrong {serial} C"],
-                        "source_chunk_id": payload["required_source_chunk_id"],
-                        "source_quote": quote,
-                    }
-                )
+            for source_chunk_id, requested in requested_by_chunk.items():
+                source = documents[source_chunk_id]
+                facts = [part.strip() for part in source.split(".") if part.strip()]
+                for index in range(requested):
+                    serial = 0 if self.duplicate_only else len(self.calls) * 100 + len(cards)
+                    quote = facts[index % len(facts)] if facts else source.strip()
+                    quote = f"{quote}." if not quote.endswith(".") else quote
+                    answer = re.search(r"[\wÀ-ž]+", quote).group(0)
+                    fingerprint = hashlib.sha256(str(serial).encode()).hexdigest()[:16]
+                    cards.append(
+                        {
+                            "front": (
+                                f"Which fact identifies {answer} for evidence marker {fingerprint}?"
+                            ),
+                            "back": answer,
+                            "options": [
+                                answer,
+                                f"Wrong {serial} A",
+                                f"Wrong {serial} B",
+                                f"Wrong {serial} C",
+                            ],
+                            "source_chunk_id": source_chunk_id,
+                            "source_quote": quote,
+                        }
+                    )
             data = CandidateBatch(cards=cards)
         return ProviderResponse(data=data, usage=ProviderUsage(20, 10, False))
 
@@ -161,10 +173,12 @@ async def test_prompt_injection_corpus_remains_data_and_cannot_change_contract()
 async def test_summary_failure_is_visible_and_recoverable():
     provider = DeterministicProvider(fail_summary=True)
     document = ExtractedDocument(
-        pages=[ExtractedPage(page_number=1, text="Alpha is the first letter.")]
+        pages=[ExtractedPage(page_number=1, text="Alpha is the first letter. " * 1_000)]
     )
     with pytest.raises(PipelineError) as error:
-        await FlashcardGenerationPipeline(settings(), provider).run(document, 1)
+        await FlashcardGenerationPipeline(
+            settings(ai_request_input_target_tokens=2_048), provider
+        ).run(document, 1)
     assert error.value.code == "ai_provider_timeout"
     assert error.value.retryable is True
 
@@ -189,7 +203,9 @@ async def test_permanent_summary_error_stops_after_single_canary_call():
     )
 
     with pytest.raises(PipelineError) as error:
-        await FlashcardGenerationPipeline(settings(), provider).run(document, 1)
+        await FlashcardGenerationPipeline(
+            settings(ai_request_input_target_tokens=2_048), provider
+        ).run(document, 1)
 
     assert error.value.code == "ai_provider_invalid_request"
     assert error.value.retryable is False
@@ -255,7 +271,7 @@ async def test_duplicate_exhaustion_fails_atomically_with_reason():
 
 
 @pytest.mark.asyncio
-async def test_long_document_maps_every_chunk_beyond_former_character_cutoff():
+async def test_long_document_packs_every_chunk_beyond_former_character_cutoff():
     provider = DeterministicProvider()
     document = ExtractedDocument(
         pages=[
@@ -277,7 +293,10 @@ async def test_long_document_maps_every_chunk_beyond_former_character_cutoff():
         ]
     )
     assert len(document.text) > 30_000
-    configured = settings(ai_chunk_input_tokens=512)
+    configured = settings(
+        ai_chunk_input_tokens=512,
+        ai_request_input_target_tokens=2_048,
+    )
     expected_chunks = chunk_document(document, max_tokens=512, overlap_tokens=0)
 
     result = await FlashcardGenerationPipeline(configured, provider).run(document, 3)
@@ -287,9 +306,17 @@ async def test_long_document_maps_every_chunk_beyond_former_character_cutoff():
         for call in provider.calls
         if call["operation"] == "summary_map"
     ]
-    mapped_text = "\n".join(payload["untrusted_document"] for payload in map_payloads)
+    mapped_items = [
+        item
+        for payload in map_payloads
+        for item in payload["untrusted_documents"]
+    ]
+    mapped_text = "\n".join(item["text"] for item in mapped_items)
     assert len(result["final_cards"]) == 3
-    assert len(map_payloads) == len(expected_chunks)
+    assert len(map_payloads) < len(expected_chunks)
+    assert [item["source_chunk_id"] for item in mapped_items] == [
+        chunk.chunk_id for chunk in expected_chunks
+    ]
     assert "BEGINNING_SENTINEL" in mapped_text
     assert "MIDDLE_SENTINEL" in mapped_text
     assert "FINAL_PAGE_SENTINEL" in mapped_text
@@ -299,17 +326,78 @@ async def test_long_document_maps_every_chunk_beyond_former_character_cutoff():
 async def test_context_window_refusal_happens_before_provider_call():
     provider = DeterministicProvider(long_summary=True)
     document = ExtractedDocument(
-        pages=[ExtractedPage(page_number=1, text="Alpha is evidence.")]
+        pages=[ExtractedPage(page_number=1, text="Alpha is evidence. " * 1_000)]
     )
     configured = settings(
-        ai_context_window_tokens=2_048,
-        ai_max_output_tokens=768,
+        ai_context_window_tokens=4_608,
+        ai_max_output_tokens=2_048,
         ai_summary_output_tokens=512,
-        ai_chunk_input_tokens=128,
+        ai_chunk_input_tokens=2_048,
+        ai_request_input_target_tokens=2_048,
+        ai_cards_per_request=1,
     )
 
     with pytest.raises(PipelineError) as error:
         await FlashcardGenerationPipeline(configured, provider).run(document, 1)
 
     assert error.value.code == "ai_context_window_limit"
-    assert [call["operation"] for call in provider.calls] == ["summary_map"]
+    assert all(
+        not call["operation"].startswith("card_generation_")
+        for call in provider.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_one_pack_fast_path_skips_summaries_and_batches_cards():
+    provider = DeterministicProvider()
+    document = ExtractedDocument(
+        pages=[
+            ExtractedPage(
+                page_number=1,
+                text=(
+                    "Alpha is the first letter. Beta is the second letter. "
+                    "Gamma is the third letter. Delta is the fourth letter."
+                ),
+            )
+        ]
+    )
+
+    result = await FlashcardGenerationPipeline(
+        settings(ai_cards_per_request=2), provider
+    ).run(document, 5)
+
+    operations = [call["operation"] for call in provider.calls]
+    generation_payloads = [
+        json.loads(call["user_prompt"])
+        for call in provider.calls
+        if call["operation"].startswith("card_generation_")
+    ]
+    assert len(result["final_cards"]) == 5
+    assert all(not operation.startswith("summary_") for operation in operations)
+    assert len(generation_payloads) == 3
+    assert all(
+        sum(payload["requested_cards_by_source_chunk_id"].values()) <= 2
+        for payload in generation_payloads
+    )
+
+
+@pytest.mark.asyncio
+async def test_generation_batch_accepts_multiple_logical_source_chunks():
+    provider = DeterministicProvider()
+    document = ExtractedDocument(
+        pages=[
+            ExtractedPage(page_number=1, text="Alpha is the first letter."),
+            ExtractedPage(page_number=2, text="Omega is the final letter."),
+        ]
+    )
+
+    result = await FlashcardGenerationPipeline(settings(), provider).run(document, 2)
+
+    generation_calls = [
+        call for call in provider.calls if call["operation"].startswith("card_generation_")
+    ]
+    payload = json.loads(generation_calls[0]["user_prompt"])
+    assert len(generation_calls) == 1
+    assert len(payload["untrusted_documents"]) == 2
+    assert set(payload["requested_cards_by_source_chunk_id"].values()) == {1}
+    assert {card["source_page"] for card in result["final_cards"]} == {1, 2}

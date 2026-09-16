@@ -288,6 +288,13 @@ const en = {
     estimatedTokens: 'Estimated tokens',
     usedTokens: 'Used tokens',
     estimatedUsage: ' (estimated)',
+    providerRequests: 'Provider requests',
+    providerRequestCounts: (actual: number, estimated: number, retries: number) =>
+      `${actual} actual, ${estimated} estimated, ${retries} ${retries === 1 ? 'retry' : 'retries'}`,
+    requestStages: 'Requests by stage',
+    noRequestStages: 'No provider requests',
+    rateLimitWait: 'Rate-limit wait',
+    cachedInputTokens: 'Cached input tokens',
     estimatedCost: 'Estimated cost',
     recordedCost: 'Recorded cost',
     cancel: 'Cancel',

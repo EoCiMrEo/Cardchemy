@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     LargeBinary,
     String,
     Text,
@@ -98,6 +99,16 @@ class GenerationJob(Base):
     )
     estimated_input_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
     estimated_output_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    estimated_request_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    provider_request_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    provider_retry_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    provider_rate_limit_wait_milliseconds = Column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    cached_input_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    provider_request_counts_by_stage = Column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
     actual_input_tokens = Column(Integer, nullable=True)
     actual_output_tokens = Column(Integer, nullable=True)
     estimated_cost_microusd = Column(BigInteger, nullable=True)
@@ -167,6 +178,12 @@ class GenerationJob(Base):
         CheckConstraint(
             "estimated_input_tokens >= 0 AND estimated_output_tokens >= 0",
             name="ck_generation_jobs_estimated_tokens",
+        ),
+        CheckConstraint(
+            "estimated_request_count >= 0 AND provider_request_count >= 0 AND "
+            "provider_retry_count >= 0 AND provider_retry_count <= provider_request_count AND "
+            "provider_rate_limit_wait_milliseconds >= 0 AND cached_input_tokens >= 0",
+            name="ck_generation_jobs_request_telemetry",
         ),
         CheckConstraint(
             "(actual_input_tokens IS NULL OR actual_input_tokens >= 0) AND "

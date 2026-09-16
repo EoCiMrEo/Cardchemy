@@ -151,15 +151,22 @@ class Settings(BaseSettings):
     ai_base_url: AnyHttpUrl | None = None
     ai_allow_unstable_model: bool = False
     ai_temperature: float = Field(default=0.2, ge=0, le=2)
-    ai_max_output_tokens: int = Field(default=4_096, ge=64, le=131_072)
+    ai_max_output_tokens: int = Field(default=8_192, ge=64, le=131_072)
     ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
     ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
     ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
     ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
     ai_retry_max_seconds: float = Field(default=30, ge=3, le=600)
     ai_concurrency: int = Field(default=3, ge=1, le=32)
+    ai_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
+    ai_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
+    ai_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
     ai_chunk_input_tokens: int = Field(default=1_200, ge=128, le=131_072)
     ai_chunk_overlap_tokens: int = Field(default=120, ge=0, le=32_768)
+    ai_request_input_target_tokens: int = Field(
+        default=40_000, ge=2_048, le=4_000_000
+    )
+    ai_cards_per_request: int = Field(default=10, ge=1, le=100)
     ai_summary_output_tokens: int = Field(default=1_024, ge=64, le=32_768)
     ai_max_job_input_tokens: int = Field(default=200_000, ge=1_024, le=20_000_000)
     ai_max_job_output_tokens: int = Field(default=262_144, ge=64, le=5_000_000)
@@ -466,10 +473,30 @@ class Settings(BaseSettings):
             raise ValueError("AI_RETRY_BASE_SECONDS cannot exceed AI_RETRY_MAX_SECONDS")
         if self.ai_chunk_overlap_tokens >= self.ai_chunk_input_tokens:
             raise ValueError("AI_CHUNK_OVERLAP_TOKENS must be lower than AI_CHUNK_INPUT_TOKENS")
+        if self.ai_chunk_input_tokens > self.ai_request_input_target_tokens:
+            raise ValueError(
+                "AI_CHUNK_INPUT_TOKENS cannot exceed AI_REQUEST_INPUT_TARGET_TOKENS"
+            )
         if self.ai_summary_output_tokens > self.ai_max_output_tokens:
             raise ValueError("AI_SUMMARY_OUTPUT_TOKENS cannot exceed AI_MAX_OUTPUT_TOKENS")
         if self.ai_max_output_tokens >= self.ai_context_window_tokens:
             raise ValueError("AI_MAX_OUTPUT_TOKENS must be lower than AI_CONTEXT_WINDOW_TOKENS")
+        if (
+            self.ai_request_input_target_tokens + self.ai_max_output_tokens
+            > self.ai_context_window_tokens
+        ):
+            raise ValueError(
+                "AI request input and output token budgets exceed "
+                "AI_CONTEXT_WINDOW_TOKENS"
+            )
+        effective_input_tpm = (
+            self.ai_input_tokens_per_minute * self.ai_rate_limit_safety_percent // 100
+        )
+        if self.ai_request_input_target_tokens > effective_input_tpm:
+            raise ValueError(
+                "AI_REQUEST_INPUT_TARGET_TOKENS cannot exceed the safety-adjusted "
+                "AI_INPUT_TOKENS_PER_MINUTE budget"
+            )
         if (
             self.ai_chunk_input_tokens
             + self.ai_summary_output_tokens

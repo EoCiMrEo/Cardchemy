@@ -27,6 +27,19 @@ function formatCost(microusd: number | null): string {
   return microusd === null ? copy.generation.pricingNotConfigured : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(microusd / 1_000_000)
 }
 
+function formatRateLimitWait(milliseconds: number): string {
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(milliseconds / 1000)} s`
+}
+
+function formatRequestStages(counts: Record<string, number>): string {
+  const entries = Object.entries(counts).filter(([, count]) => count > 0)
+  if (entries.length === 0) return copy.generation.noRequestStages
+  return entries
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([stage, count]) => `${stageLabel(stage)}: ${count}`)
+    .join(', ')
+}
+
 export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardProps) {
   const [action, setAction] = useState<'cancel' | 'retry' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -125,6 +138,26 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
               )}
               {job.usage_estimated ? copy.generation.estimatedUsage : ''}
             </dd>
+          </div>
+          <div>
+            <dt className="font-medium">{copy.generation.providerRequests}</dt>
+            <dd>{copy.generation.providerRequestCounts(
+              job.provider_request_count,
+              job.estimated_request_count,
+              job.provider_retry_count,
+            )}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">{copy.generation.rateLimitWait}</dt>
+            <dd>{formatRateLimitWait(job.provider_rate_limit_wait_milliseconds)}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">{copy.generation.cachedInputTokens}</dt>
+            <dd>{formatTokens(job.cached_input_tokens)}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">{copy.generation.requestStages}</dt>
+            <dd>{formatRequestStages(job.provider_request_counts_by_stage)}</dd>
           </div>
           <div>
             <dt className="font-medium">{copy.generation.estimatedCost}</dt>

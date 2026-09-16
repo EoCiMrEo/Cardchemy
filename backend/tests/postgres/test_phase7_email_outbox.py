@@ -31,7 +31,7 @@ async def phase7_pg_factory():
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260915_0005":
+        if revision != "20260916_0006":
             pytest.fail(f"PostgreSQL test database is at Alembic revision {revision!r}")
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:

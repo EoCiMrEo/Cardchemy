@@ -16,6 +16,19 @@ and the Keep a Changelog structure.
   failures to three retries with three-second waits, stage canaries,
   fail-fast sibling cancellation, and worker-wide provider concurrency.
 
+### Changed
+
+- Kept page/section-grounded logical chunks while packing them into larger
+  provider requests, added a one-pack direct-generation fast path, and generated
+  up to ten cards per request to reduce RPM pressure without weakening source
+  provenance.
+- Added a shared worker-wide RPM/input-TPM safety governor that accounts for
+  every physical attempt, reconciles successful token usage, and keeps retries
+  inside the same quota and delay policy.
+- Persisted estimated and actual provider requests, retries, wait time, cached
+  input tokens, and per-stage request counts on durable generation jobs and
+  exposed compact request telemetry in the instructor UI.
+
 ### Phase 8 - deployment and self-hosting
 
 - Added a generated-secret clean-clone bootstrap, production-shaped Compose

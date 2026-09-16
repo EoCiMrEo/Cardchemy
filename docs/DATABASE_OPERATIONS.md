@@ -4,8 +4,10 @@ The database schema is owned by Alembic. The API never creates or alters tables
 at startup; it refuses to start when the database revision is not at the current
 head. The initial revision, `20260914_0001`, is a clean baseline and is not an
 adoption migration for older development databases. The current head,
-`20260915_0005`, adds the transactional email outbox and optional recipient
-binding for emailed invitations. Revision `20260915_0004` adds durable
+`20260916_0006`, adds durable AI provider request, retry, quota-wait, cache, and
+per-stage telemetry. Revision `20260915_0005` adds the transactional email
+outbox and optional recipient binding for emailed invitations. Revision
+`20260915_0004` adds durable
 study-answer idempotency receipts. Revision `20260914_0003` adds AI
 provider/model snapshots, bounded usage/cost telemetry, and verified flashcard
 page/section provenance; `20260914_0002` adds durable generation jobs,
@@ -108,7 +110,9 @@ docker compose run --rm backend alembic downgrade -1
 docker compose run --rm backend alembic current
 ```
 
-Downgrading `20260915_0005` removes every email outbox row and emailed-invitation
+Downgrading `20260916_0006` removes AI request-efficiency telemetry but leaves
+generation jobs and their earlier token/cost telemetry intact. Downgrading
+`20260915_0005` removes every email outbox row and emailed-invitation
 recipient binding. Stop the email worker and drain, inspect, or intentionally
 discard all pending and failed email before that downgrade. Downgrading
 `20260915_0004` removes study-answer idempotency receipts. Downgrading

@@ -12,26 +12,31 @@ settings, output structure, or source metadata.
 3. The worker builds a complete token and configured-cost estimate before the
    first provider request. Jobs that cannot fit the configured context, job, or
    cost budget fail without calling a provider.
-4. Map summaries cover every chunk. Longer documents are reduced in bounded
-   levels until one global summary remains; no first-page or first-character
-   shortcut is used.
-5. A largest-remainder allocation assigns a global card quota to chunks. The
+4. Logical chunks are greedily packed into provider requests using the rendered
+   prompt size. A document that fits one evidence pack skips summarization and
+   goes directly to card generation. Multi-pack documents receive one summary
+   per pack and are reduced in bounded levels until one global summary remains;
+   no first-page or first-character shortcut is used.
+5. A largest-remainder allocation assigns a global card quota to logical chunks. The
    quotas sum to the requested card count, including when there are more chunks
    than cards.
-6. Provider-native JSON Schema output is parsed again by strict server-side
+6. Allocated chunks are packed into multi-card requests, normally ten cards per
+   request. Every requested quota remains associated with its original logical
+   chunk, so fewer provider calls do not weaken page, section, or quote provenance.
+7. Provider-native JSON Schema output is parsed again by strict server-side
    Pydantic contracts. Unknown fields, coercions, missing options, or malformed
    values are rejected.
-7. Candidates name a server-issued chunk and provide an exact source quote.
+8. Candidates name a server-issued chunk and provide an exact source quote.
    The server derives page and section metadata from the trusted chunk, verifies
    the normalized quote and answer against that content, and applies the
    canonical four-option card rules.
-8. A deterministic second pass scores clarity and grounding, rejects near
+9. A deterministic second pass scores clarity and grounding, rejects near
    duplicates using normalized token and character similarity, and performs
    bounded refill calls when candidates are rejected.
-9. A successful job persists exactly the requested count. If the provider
+10. A successful job persists exactly the requested count. If the provider
    cannot supply enough distinct grounded cards within the refill and budget
    limits, the job fails atomically with no partial set.
-10. Every generated card starts in `Needs review`. Model output never approves
+11. Every generated card starts in `Needs review`. Model output never approves
     a card; only an explicit instructor action can do that.
 
 ## Prompt-injection boundary
@@ -68,3 +73,9 @@ per-million-token rates; the application does not embed a pricing table that
 can silently become stale. A zero/unconfigured rate still enforces token
 budgets, but its monetary estimate is labelled unavailable.
 
+Each durable generation job also records its estimated request count, actual
+provider attempts, retries, safety-governor/retry wait time, cached input tokens,
+and a bounded per-stage request breakdown. Counts are cumulative across manual
+retries. They are finalized with the job result; a process crash between a
+provider attempt and job finalization can conservatively leave that attempt out
+of telemetry.

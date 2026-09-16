@@ -116,8 +116,32 @@ async def test_gemini_adapter_uses_minimal_inline_schema():
 
 
 class ProviderHttpError(Exception):
-    def __init__(self, status_code: int):
+    def __init__(self, status_code: int, *, retry_after=None, details=None):
         self.status_code = status_code
+        self.response = (
+            SimpleNamespace(headers={"Retry-After": str(retry_after)})
+            if retry_after is not None
+            else None
+        )
+        self.details = details
+
+
+class RecordingReservation:
+    def __init__(self, governor):
+        self.governor = governor
+
+    async def commit(self, actual_input_tokens):
+        self.governor.commits.append(actual_input_tokens)
+
+
+class RecordingGovernor:
+    def __init__(self):
+        self.admissions = []
+        self.commits = []
+
+    async def reserve(self, input_tokens, *, operation, attempt):
+        self.admissions.append((input_tokens, operation, attempt))
+        return RecordingReservation(self)
 
 
 @pytest.mark.asyncio
@@ -164,6 +188,7 @@ async def test_invalid_request_is_classified_as_model_compatibility_failure():
 async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
     models = GeminiModels(errors=[ProviderHttpError(429)] * 4)
     client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    governor = RecordingGovernor()
     delays = []
 
     async def record_sleep(delay):
@@ -171,7 +196,9 @@ async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
 
     monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
     with pytest.raises(AIProviderError) as error:
-        await GeminiProvider(settings(), client=client).generate_structured(
+        await GeminiProvider(
+            settings(), client=client, rate_governor=governor
+        ).generate_structured(
             response_model=Output,
             system_prompt="system",
             user_prompt="data",
@@ -183,6 +210,68 @@ async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
     assert error.value.retryable is True
     assert len(models.requests) == 4
     assert delays == [3, 3, 3]
+    assert [attempt for _, _, attempt in governor.admissions] == [0, 1, 2, 3]
+    assert {operation for _, operation, _ in governor.admissions} == {"rate limited"}
+    assert governor.commits == []
+
+
+@pytest.mark.asyncio
+async def test_retry_after_is_honored_and_success_reconciles_actual_usage(monkeypatch):
+    models = GeminiModels(errors=[ProviderHttpError(429, retry_after=9)])
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    governor = RecordingGovernor()
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
+    response = await GeminiProvider(
+        settings(), client=client, rate_governor=governor
+    ).generate_structured(
+        response_model=Output,
+        system_prompt="system boundary",
+        user_prompt="untrusted document",
+        max_output_tokens=100,
+        operation="summary_map",
+    )
+
+    assert response.usage.input_tokens == 11
+    assert delays == [9]
+    assert [attempt for _, _, attempt in governor.admissions] == [0, 1]
+    assert all(tokens > 0 for tokens, _, _ in governor.admissions)
+    assert governor.commits == [11]
+
+
+@pytest.mark.asyncio
+async def test_retry_after_beyond_configured_max_stops_without_early_retry(monkeypatch):
+    models = GeminiModels(errors=[ProviderHttpError(429, retry_after=31)])
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    governor = RecordingGovernor()
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
+    with pytest.raises(AIProviderError) as error:
+        await GeminiProvider(
+            settings(ai_retry_max_seconds=30),
+            client=client,
+            rate_governor=governor,
+        ).generate_structured(
+            response_model=Output,
+            system_prompt="system",
+            user_prompt="data",
+            max_output_tokens=100,
+            operation="rate limited",
+        )
+
+    assert error.value.code == "ai_provider_rate_limited"
+    assert error.value.retryable is True
+    assert len(models.requests) == 1
+    assert len(governor.admissions) == 1
+    assert delays == []
 
 
 @pytest.mark.asyncio

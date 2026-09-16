@@ -39,6 +39,36 @@ function generationResponse(call: ApiCall): MockResponse | undefined {
   return undefined
 }
 
+test('renders durable provider request telemetry for a completed generation job', async ({ page }) => {
+  await installMockApi(page, {
+    auth: 'instructor',
+    resolver: (call) => {
+      if (call.method === 'GET' && call.path === '/subjects/subject-1') {
+        return { json: fixtures.subject }
+      }
+      if (call.method === 'GET' && call.path === '/subjects/subject-1/sets') {
+        return { json: [fixtures.set] }
+      }
+      if (call.method === 'GET' && call.path === '/flashcards/generation-jobs') {
+        return { json: { jobs: [fixtures.generationJob] } }
+      }
+      if (call.method === 'GET' && call.path === '/flashcards/generation-limits') {
+        return { json: generationLimits }
+      }
+      return undefined
+    },
+  })
+
+  await page.goto('/subjects/subject-1')
+
+  const jobs = page.getByRole('region', { name: 'Generation jobs' })
+  await expect(jobs.getByText('cell-biology.pdf')).toBeVisible()
+  await expect(jobs.getByText('3 actual, 4 estimated, 1 retry')).toBeVisible()
+  await expect(jobs.getByText('12.5 s')).toBeVisible()
+  await expect(jobs.getByText('8,192')).toBeVisible()
+  await expect(jobs.getByText('Card generation: 2, Planning: 1')).toBeVisible()
+})
+
 test.describe('role-aware subject details and recovery', () => {
   test('selects the instructor view and retries one failed subject load', async ({ page }) => {
     let allowLoad = false

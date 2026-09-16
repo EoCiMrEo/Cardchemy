@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import math
 import re
 import unicodedata
+from collections.abc import Callable
 
 from app.ai.contracts import DocumentChunk, ExtractedDocument
 
@@ -205,3 +206,40 @@ def allocate_card_targets(
     for index in remainder_order[:remaining]:
         allocations[index] += 1
     return {chunk.chunk_id: allocations[index] for index, chunk in enumerate(chunks)}
+
+
+def pack_chunks_for_requests(
+    chunks: list[DocumentChunk],
+    *,
+    max_tokens: int,
+    estimate_prompt_tokens: Callable[[tuple[DocumentChunk, ...]], int],
+    max_chunks: int = 500,
+) -> list[tuple[DocumentChunk, ...]]:
+    """Greedily pack logical chunks without changing their provenance.
+
+    ``estimate_prompt_tokens`` receives the complete candidate pack so callers
+    can include JSON, system instructions, and other request-specific overhead.
+    A single logical chunk is never split merely to meet the soft request
+    target; the pipeline's context-window check remains the hard safety bound.
+    """
+
+    if max_tokens < 1:
+        raise ValueError("max_tokens must be positive")
+    if max_chunks < 1:
+        raise ValueError("max_chunks must be positive")
+
+    packs: list[tuple[DocumentChunk, ...]] = []
+    current: list[DocumentChunk] = []
+    for chunk in chunks:
+        candidate = tuple([*current, chunk])
+        if current and (
+            len(candidate) > max_chunks
+            or estimate_prompt_tokens(candidate) > max_tokens
+        ):
+            packs.append(tuple(current))
+            current = [chunk]
+        else:
+            current.append(chunk)
+    if current:
+        packs.append(tuple(current))
+    return packs

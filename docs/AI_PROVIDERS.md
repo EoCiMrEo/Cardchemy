@@ -66,26 +66,44 @@ page/section provenance, and near duplicates before persistence.
 ## Bounds and pricing
 
 Temperature, context and output tokens, provider timeout/retries, retry delay,
-parallelism, chunk/summary budgets, per-job input/output ceilings, refill
-rounds, duplicate threshold, and cost ceiling are validated settings documented
-in `.env.example`.
+parallelism, RPM/TPM limits, safety margin, logical chunk size, request-packing
+target, cards per request, summary budgets, per-job input/output ceilings,
+refill rounds, duplicate threshold, and cost ceiling are validated settings
+documented in `.env.example`.
 
 Transient timeout, network, HTTP 408/409/425/429, and provider 5xx failures are
 retried at most three times after the initial call. The shipped configuration
-waits three seconds before every retry, and validation does not allow a shorter
-delay. HTTP 400/401/403/404 failures are classified as permanent and are not
-retried. After provider retries are exhausted, the job stops without another
-whole-job automatic attempt; retryable failures retain the encrypted source so
-an operator or instructor can retry later.
+waits at least three seconds before every retry, honors a longer usable provider
+`Retry-After`, and never lets the SDK add a second retry layer. HTTP
+400/401/403/404 failures are classified as permanent and are not retried. After
+provider retries are exhausted, the job stops without another whole-job
+automatic attempt; retryable failures retain the encrypted source so an
+operator or instructor can retry later.
 
 The Gemini SDK retry layer is explicitly disabled (`attempts=1`), leaving the
 application retry loop as the single owner of request count and delay policy.
 
-The first summary request and first card-generation request are compatibility
-probes before each stage fans out. A failed probe prevents sibling requests,
-and a later failure cancels outstanding siblings. `AI_CONCURRENCY` is enforced
-once per worker process, so concurrent jobs cannot each create their own full
-provider request pool.
+Small, provenance-safe logical chunks are retained, then greedily packed up to
+`AI_REQUEST_INPUT_TARGET_TOKENS` using the actual rendered prompt. A single-pack
+document skips the summary stage. Multi-pack documents summarize per pack, and
+card generation requests up to `AI_CARDS_PER_REQUEST` cards at once while each
+card still cites one trusted logical chunk. With the shipped 40,000-input-token
+and ten-card targets, a typical sub-40K document requesting 20 cards needs two
+initial provider requests instead of one request per chunk.
+
+The first required summary request and first card-generation request are
+compatibility probes before each stage fans out. A failed probe prevents sibling
+requests, and a later failure cancels outstanding siblings. `AI_CONCURRENCY` is
+enforced once per worker process, so concurrent jobs cannot each create their
+own full provider request pool.
+
+Every physical attempt, including a retry, passes through one worker-wide
+rolling RPM/input-TPM governor. Defaults mirror a 5 RPM / 250,000 input-TPM
+provider tier with an 80 percent safety margin, producing effective budgets of
+4 RPM and 200,000 input TPM. Reservations are reconciled to reported input
+usage after success and retained after ambiguous failures. This governor is
+process-local: operators running multiple generation-worker replicas must divide
+limits per replica or replace it with a distributed PostgreSQL/Redis governor.
 
 Set both `AI_INPUT_COST_PER_MILLION_USD` and
 `AI_OUTPUT_COST_PER_MILLION_USD` from the provider’s current price sheet. When

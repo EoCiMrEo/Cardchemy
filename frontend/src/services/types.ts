@@ -208,6 +208,12 @@ export interface GenerationJob {
   ai_model: string
   estimated_input_tokens: number
   estimated_output_tokens: number
+  estimated_request_count: number
+  provider_request_count: number
+  provider_retry_count: number
+  provider_rate_limit_wait_milliseconds: number
+  cached_input_tokens: number
+  provider_request_counts_by_stage: Record<string, number>
   actual_input_tokens: number | null
   actual_output_tokens: number | null
   estimated_cost_microusd: number | null

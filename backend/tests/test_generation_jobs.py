@@ -95,6 +95,36 @@ async def test_reservation_idempotency_and_mismatch(db):
     assert error.value.detail["code"] == "idempotency_key_reused"
 
 
+async def test_generation_job_response_exposes_request_telemetry(db):
+    owner, subject = await seed_owner_subject(db)
+    service = GenerationJobService(make_settings())
+    async with db.begin():
+        job = await service.create_reservation(
+            db,
+            user_id=owner.id,
+            data=job_data(subject.id),
+            idempotency_key="request-telemetry-response",
+        )
+        job.estimated_request_count = 4
+        job.provider_request_count = 3
+        job.provider_retry_count = 1
+        job.provider_rate_limit_wait_milliseconds = 12_500
+        job.cached_input_tokens = 8_192
+        job.provider_request_counts_by_stage = {"planning": 1, "card_generation": 2}
+
+    response = await service.to_response(db, job)
+
+    assert response.estimated_request_count == 4
+    assert response.provider_request_count == 3
+    assert response.provider_retry_count == 1
+    assert response.provider_rate_limit_wait_milliseconds == 12_500
+    assert response.cached_input_tokens == 8_192
+    assert response.provider_request_counts_by_stage == {
+        "planning": 1,
+        "card_generation": 2,
+    }
+
+
 async def test_source_is_encrypted_and_queued_then_cancelled(db):
     owner, subject = await seed_owner_subject(db)
     service = GenerationJobService(make_settings())
