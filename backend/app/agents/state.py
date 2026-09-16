@@ -20,6 +20,12 @@ class AgentState(TypedDict):
     rejected_card_count: int
     estimated_input_tokens: int
     estimated_output_tokens: int
+    estimated_request_count: int
+    provider_request_count: int
+    provider_retry_count: int
+    provider_rate_limit_wait_milliseconds: int
+    cached_input_tokens: int
+    provider_request_counts_by_stage: dict[str, int]
     actual_input_tokens: int
     actual_output_tokens: int
     estimated_cost_microusd: int | None

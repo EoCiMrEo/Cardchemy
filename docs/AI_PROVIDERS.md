@@ -91,6 +91,12 @@ card still cites one trusted logical chunk. With the shipped 40,000-input-token
 and ten-card targets, a typical sub-40K document requesting 20 cards needs two
 initial provider requests instead of one request per chunk.
 
+Direct batches include the complete evidence pack even when there are more
+chunks than cards. Multi-pack summary coverage is server-owned, so the summary
+output budget is used for facts rather than repeating source IDs. Request
+estimates include repeated direct context and the configured refill allowance;
+existing job token/cost limits still apply.
+
 The first required summary request and first card-generation request are
 compatibility probes before each stage fans out. A failed probe prevents sibling
 requests, and a later failure cancels outstanding siblings. `AI_CONCURRENCY` is
@@ -104,6 +110,9 @@ provider tier with an 80 percent safety margin, producing effective budgets of
 usage after success and retained after ambiguous failures. This governor is
 process-local: operators running multiple generation-worker replicas must divide
 limits per replica or replace it with a distributed PostgreSQL/Redis governor.
+Quota waits are covered by the whole-job time limit. Reaching that limit stops
+the job with available telemetry and manual Retry; it never automatically
+replays the expensive pipeline.
 
 Set both `AI_INPUT_COST_PER_MILLION_USD` and
 `AI_OUTPUT_COST_PER_MILLION_USD` from the provider’s current price sheet. When

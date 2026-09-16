@@ -22,7 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -107,7 +107,10 @@ class GenerationJob(Base):
     )
     cached_input_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
     provider_request_counts_by_stage = Column(
-        JSON, nullable=False, default=dict, server_default=text("'{}'")
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'"),
     )
     actual_input_tokens = Column(Integer, nullable=True)
     actual_output_tokens = Column(Integer, nullable=True)

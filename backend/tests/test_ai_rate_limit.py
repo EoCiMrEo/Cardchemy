@@ -73,6 +73,35 @@ async def test_governor_reconciles_estimated_tokens_to_actual_usage():
 
 
 @pytest.mark.asyncio
+async def test_reconciliation_wakes_a_queued_tpm_request_without_full_window_wait():
+    waiting = asyncio.Event()
+
+    async def blocked_sleep(_delay: float) -> None:
+        waiting.set()
+        await asyncio.Event().wait()
+
+    governor = ProviderRateGovernor(
+        requests_per_minute=0,
+        input_tokens_per_minute=100,
+        safety_percent=100,
+        sleep=blocked_sleep,
+    )
+    first = await governor.reserve(80, operation="summary_map", attempt=0)
+    queued = asyncio.create_task(
+        governor.reserve(80, operation="card_generation", attempt=0)
+    )
+    await waiting.wait()
+
+    await first.commit(20)
+    await asyncio.wait_for(queued, timeout=1)
+
+    snapshot = await governor.snapshot()
+    assert snapshot.request_attempts == 2
+    assert snapshot.current_window_input_tokens == 100
+    assert snapshot.queued_waiters == 0
+
+
+@pytest.mark.asyncio
 async def test_cancelled_waiter_is_removed_without_refunding_admitted_request():
     waiting = asyncio.Event()
     never_release = asyncio.Event()

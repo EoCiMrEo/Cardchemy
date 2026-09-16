@@ -39,6 +39,13 @@ def test_static_generation_routes_precede_dynamic_flashcard_route():
     assert paths.index("/flashcards/generation-jobs") < dynamic_index
 
 
+def test_generation_worker_owns_one_shared_provider_rate_governor():
+    worker = GenerationWorker(settings=make_settings(), worker_id="quota-owner")
+
+    assert worker.provider_rate_governor.requests_per_window == 4
+    assert worker.provider_rate_governor.input_tokens_per_window == 200_000
+
+
 async def seed_owner_subject(db) -> tuple[User, Subject]:
     owner = User(
         id=uuid4(),
@@ -121,6 +128,55 @@ async def test_generation_job_response_exposes_request_telemetry(db):
     assert response.cached_input_tokens == 8_192
     assert response.provider_request_counts_by_stage == {
         "planning": 1,
+        "card_generation": 2,
+    }
+
+
+async def test_request_telemetry_is_additive_and_stage_json_changes_persist(db):
+    owner, subject = await seed_owner_subject(db)
+    service = GenerationJobService(make_settings())
+    async with db.begin():
+        job = await service.create_reservation(
+            db,
+            user_id=owner.id,
+            data=job_data(subject.id),
+            idempotency_key="additive-request-telemetry",
+        )
+        GenerationWorker._apply_telemetry(
+            job,
+            {
+                "estimated_request_count": 6,
+                "provider_request_count": 2,
+                "provider_retry_count": 1,
+                "provider_rate_limit_wait_milliseconds": 500,
+                "cached_input_tokens": 20,
+                "provider_request_counts_by_stage": {"summary_map": 2},
+            },
+        )
+    async with db.begin():
+        GenerationWorker._apply_telemetry(
+            job,
+            {
+                "estimated_request_count": 4,
+                "provider_request_count": 3,
+                "provider_retry_count": 0,
+                "provider_rate_limit_wait_milliseconds": 1_500,
+                "cached_input_tokens": 30,
+                "provider_request_counts_by_stage": {
+                    "summary_map": 1,
+                    "card_generation": 2,
+                },
+            },
+        )
+    await db.refresh(job)
+
+    assert job.estimated_request_count == 6
+    assert job.provider_request_count == 5
+    assert job.provider_retry_count == 1
+    assert job.provider_rate_limit_wait_milliseconds == 2_000
+    assert job.cached_input_tokens == 50
+    assert job.provider_request_counts_by_stage == {
+        "summary_map": 3,
         "card_generation": 2,
     }
 
@@ -433,6 +489,15 @@ async def test_worker_records_pipeline_limit_telemetry_and_retains_retryable_sou
             actual_output_tokens=50,
             usage_estimated=False,
             rejected_card_count=3,
+            estimated_request_count=4,
+            provider_request_count=3,
+            provider_retry_count=1,
+            provider_rate_limit_wait_milliseconds=3_500,
+            cached_input_tokens=20,
+            provider_request_counts_by_stage={
+                "summary_map": 1,
+                "card_generation": 2,
+            },
         )
 
     monkeypatch.setattr(worker, "_pipeline", fail_pipeline)
@@ -446,11 +511,23 @@ async def test_worker_records_pipeline_limit_telemetry_and_retains_retryable_sou
         assert failed.actual_input_tokens == 100
         assert failed.actual_output_tokens == 50
         assert failed.rejected_card_count == 3
+        assert failed.estimated_request_count == 4
+        assert failed.provider_request_count == 3
+        assert failed.provider_retry_count == 1
+        assert failed.provider_rate_limit_wait_milliseconds == 3_500
+        assert failed.cached_input_tokens == 20
+        assert failed.provider_request_counts_by_stage == {
+            "summary_map": 1,
+            "card_generation": 2,
+        }
         assert await db.get(GenerationJobSource, job_id) is not None
 
 
+@pytest.mark.parametrize(
+    "failure_code", ["ai_provider_rate_limited", "generation_job_timeout"]
+)
 async def test_worker_does_not_automatically_repeat_pipeline_provider_failure(
-    session_factory, monkeypatch
+    session_factory, monkeypatch, failure_code
 ):
     async with session_factory() as db:
         owner, subject = await seed_owner_subject(db)
@@ -484,8 +561,10 @@ async def test_worker_does_not_automatically_repeat_pipeline_provider_failure(
     from app.ai.pipeline import PipelineError
 
     async def fail_pipeline(*_):
+        if failure_code == "generation_job_timeout":
+            raise TimeoutError("job time budget exhausted")
         raise PipelineError(
-            "ai_provider_rate_limited",
+            failure_code,
             "The AI provider rate limit was reached. Wait before retrying the job.",
             retryable=True,
         )
@@ -499,10 +578,41 @@ async def test_worker_does_not_automatically_repeat_pipeline_provider_failure(
         assert failed.status == GenerationJobStatus.FAILED.value
         assert failed.stage == "failed"
         assert failed.attempt_count == 1
-        assert failed.error_code == "ai_provider_rate_limited"
+        assert failed.error_code == failure_code
         assert failed.error_retryable is True
         assert source is not None
         assert source.expires_at is not None
+
+
+async def test_worker_job_timeout_snapshots_pipeline_request_telemetry(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.ai.pipeline import PipelineError
+
+    worker = GenerationWorker(settings=make_settings(), worker_id="timeout-telemetry")
+    error = PipelineError(
+        "generation_job_timeout",
+        "Job time limit reached.",
+        retryable=True,
+        provider_request_count=4,
+        provider_retry_count=1,
+        provider_rate_limit_wait_milliseconds=60_000,
+    )
+
+    async def time_out(_job_id, _claim_token, holder):
+        holder["graph"] = SimpleNamespace(
+            pipeline=SimpleNamespace(job_timeout_error=lambda: error)
+        )
+        raise TimeoutError("job time limit reached")
+
+    monkeypatch.setattr(worker, "_pipeline_with_graph", time_out)
+    with pytest.raises(PipelineError) as raised:
+        await worker._pipeline(uuid4(), "claim")
+
+    assert raised.value is error
+    assert raised.value.provider_request_count == 4
+    assert raised.value.provider_retry_count == 1
+    assert raised.value.provider_rate_limit_wait_milliseconds == 60_000
 
 
 async def test_limits_explain_provider_unavailability(db):

@@ -23,7 +23,14 @@ from app.ai.contracts import (
     ValidatedCard,
 )
 from app.ai.grounding import append_if_distinct, validate_grounded_candidate
-from app.ai.providers import AIProvider, AIProviderError, ProviderUsage, get_ai_provider
+from app.ai.providers import (
+    AIProvider,
+    AIProviderError,
+    ProviderAttemptTelemetry,
+    ProviderUsage,
+    get_ai_provider,
+)
+from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings, get_settings
 
 
@@ -38,11 +45,13 @@ evidence. Do not invent facts, chunk identifiers, quotes, answers, or citations.
 class UsageTotals:
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_input_tokens: int = 0
     estimated: bool = False
 
     def add(self, usage: ProviderUsage) -> None:
         self.input_tokens += usage.input_tokens
         self.output_tokens += usage.output_tokens
+        self.cached_input_tokens += usage.cached_input_tokens
         self.estimated = self.estimated or usage.estimated
 
 
@@ -50,10 +59,21 @@ class UsageTotals:
 class CardRequestBatch:
     chunks: tuple[DocumentChunk, ...]
     requested_by_chunk_id: dict[str, int]
+    context_chunks: tuple[DocumentChunk, ...] = ()
 
     @property
     def requested_count(self) -> int:
         return sum(self.requested_by_chunk_id.values())
+
+    @property
+    def evidence_chunks(self) -> tuple[DocumentChunk, ...]:
+        return self.context_chunks or self.chunks
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceSummary:
+    summary: str
+    source_chunk_ids: tuple[str, ...]
 
 
 class PipelineError(RuntimeError):
@@ -71,6 +91,12 @@ class PipelineError(RuntimeError):
         actual_cost_microusd: int | None = None,
         usage_estimated: bool = False,
         rejected_card_count: int = 0,
+        estimated_request_count: int = 0,
+        provider_request_count: int = 0,
+        provider_retry_count: int = 0,
+        provider_rate_limit_wait_milliseconds: int = 0,
+        cached_input_tokens: int = 0,
+        provider_request_counts_by_stage: dict[str, int] | None = None,
     ) -> None:
         super().__init__(safe_message)
         self.code = code
@@ -84,6 +110,16 @@ class PipelineError(RuntimeError):
         self.actual_cost_microusd = actual_cost_microusd
         self.usage_estimated = usage_estimated
         self.rejected_card_count = rejected_card_count
+        self.estimated_request_count = estimated_request_count
+        self.provider_request_count = provider_request_count
+        self.provider_retry_count = provider_retry_count
+        self.provider_rate_limit_wait_milliseconds = (
+            provider_rate_limit_wait_milliseconds
+        )
+        self.cached_input_tokens = cached_input_tokens
+        self.provider_request_counts_by_stage = (
+            provider_request_counts_by_stage or {}
+        )
 
 
 def cost_microusd(settings: Settings, input_tokens: int, output_tokens: int) -> int | None:
@@ -102,9 +138,12 @@ class FlashcardGenerationPipeline:
         settings: Settings | None = None,
         provider: AIProvider | None = None,
         provider_semaphore: asyncio.Semaphore | None = None,
+        rate_governor: ProviderRateGovernor | None = None,
     ):
         self.settings = settings or get_settings()
-        self.provider = provider or get_ai_provider(self.settings)
+        self.provider = provider or get_ai_provider(
+            self.settings, rate_governor=rate_governor
+        )
         self.provider_semaphore = provider_semaphore or asyncio.Semaphore(
             self.settings.ai_concurrency
         )
@@ -112,7 +151,56 @@ class FlashcardGenerationPipeline:
         self.estimated_input_tokens = 0
         self.estimated_output_tokens = 0
         self.estimated_cost_microusd: int | None = None
+        self.estimated_request_count = 0
+        self.provider_request_count = 0
+        self.provider_retry_count = 0
+        self.provider_rate_limit_wait_milliseconds = 0
+        self.provider_request_counts_by_stage: dict[str, int] = {}
+        self._logical_request_count = 0
+        self._logical_request_counts_by_stage: dict[str, int] = {}
+        self._provider_telemetry_baseline = self._provider_telemetry_snapshot()
         self.rejected = 0
+
+    def _provider_telemetry_snapshot(self) -> ProviderAttemptTelemetry | None:
+        snapshot = getattr(self.provider, "telemetry_snapshot", None)
+        if not callable(snapshot):
+            return None
+        value = snapshot()
+        return value if isinstance(value, ProviderAttemptTelemetry) else None
+
+    @staticmethod
+    def _stage_name(operation: str) -> str:
+        if operation.startswith("card_generation_"):
+            return "card_generation"
+        return operation
+
+    def _refresh_provider_telemetry(self) -> None:
+        current = self._provider_telemetry_snapshot()
+        baseline = self._provider_telemetry_baseline
+        if current is None or baseline is None:
+            self.provider_request_count = self._logical_request_count
+            self.provider_retry_count = 0
+            self.provider_rate_limit_wait_milliseconds = 0
+            self.provider_request_counts_by_stage = dict(
+                self._logical_request_counts_by_stage
+            )
+            return
+        self.provider_request_count = max(
+            0, current.request_count - baseline.request_count
+        )
+        self.provider_retry_count = max(0, current.retry_count - baseline.retry_count)
+        wait_seconds = max(
+            0.0,
+            current.rate_limit_wait_seconds - baseline.rate_limit_wait_seconds,
+        )
+        self.provider_rate_limit_wait_milliseconds = int(round(wait_seconds * 1_000))
+        by_stage: dict[str, int] = {}
+        for operation, count in current.request_counts_by_stage.items():
+            delta = count - baseline.request_counts_by_stage.get(operation, 0)
+            if delta > 0:
+                stage = self._stage_name(operation)
+                by_stage[stage] = by_stage.get(stage, 0) + delta
+        self.provider_request_counts_by_stage = by_stage
 
     def _error(self, code: str, message: str, *, retryable: bool) -> PipelineError:
         return PipelineError(
@@ -129,6 +217,26 @@ class FlashcardGenerationPipeline:
             ),
             usage_estimated=self.usage.estimated,
             rejected_card_count=self.rejected,
+            estimated_request_count=self.estimated_request_count,
+            provider_request_count=self.provider_request_count,
+            provider_retry_count=self.provider_retry_count,
+            provider_rate_limit_wait_milliseconds=(
+                self.provider_rate_limit_wait_milliseconds
+            ),
+            cached_input_tokens=self.usage.cached_input_tokens,
+            provider_request_counts_by_stage=dict(
+                self.provider_request_counts_by_stage
+            ),
+        )
+
+    def job_timeout_error(self) -> PipelineError:
+        """Snapshot completed usage and physical attempts after job cancellation."""
+
+        self._refresh_provider_telemetry()
+        return self._error(
+            "generation_job_timeout",
+            "Generation reached the configured job time limit. Retry later or reduce the requested cards.",
+            retryable=True,
         )
 
     def _prompt_tokens(self, user_prompt: str) -> int:
@@ -173,7 +281,7 @@ class FlashcardGenerationPipeline:
                 f"Create up to {batch.requested_count} distinct multiple-choice cards."
             ),
             "requested_cards_by_source_chunk_id": batch.requested_by_chunk_id,
-            "untrusted_documents": self._evidence_items(batch.chunks),
+            "untrusted_documents": self._evidence_items(batch.evidence_chunks),
             "requirements": [
                 "Use only a supplied source chunk id.",
                 "Respect the requested card count for every source chunk id.",
@@ -191,6 +299,7 @@ class FlashcardGenerationPipeline:
         chunks: list[DocumentChunk],
         allocations: dict[str, int],
         global_summary: str | None,
+        context_chunks: tuple[DocumentChunk, ...] = (),
     ) -> list[CardRequestBatch]:
         batches: list[CardRequestBatch] = []
         current_chunks: list[DocumentChunk] = []
@@ -203,6 +312,7 @@ class FlashcardGenerationPipeline:
                     CardRequestBatch(
                         chunks=tuple(current_chunks),
                         requested_by_chunk_id=dict(current_allocations),
+                        context_chunks=context_chunks,
                     )
                 )
             current_chunks = []
@@ -230,8 +340,9 @@ class FlashcardGenerationPipeline:
                 candidate = CardRequestBatch(
                     chunks=tuple(candidate_chunks),
                     requested_by_chunk_id=candidate_allocations,
+                    context_chunks=context_chunks,
                 )
-                if current_allocations and self._prompt_tokens(
+                if not context_chunks and current_allocations and self._prompt_tokens(
                     self._generation_prompt(candidate, global_summary)
                 ) > self.settings.ai_request_input_target_tokens:
                     flush()
@@ -272,7 +383,13 @@ class FlashcardGenerationPipeline:
             else None
         )
         generation_batches = self._generation_batches(
-            chunks, allocation, summary_placeholder
+            chunks,
+            allocation,
+            summary_placeholder,
+            context_chunks=summary_packs[0] if not uses_planning else (),
+        )
+        self.estimated_request_count = summary_calls + (
+            len(generation_batches) * generation_rounds
         )
         map_input_tokens = sum(
             self._prompt_tokens(self._summary_map_prompt(pack))
@@ -335,10 +452,17 @@ class FlashcardGenerationPipeline:
                 retryable=False,
             )
         try:
+            operation = self._stage_name(str(kwargs["operation"]))
+            self._logical_request_count += 1
+            self._logical_request_counts_by_stage[operation] = (
+                self._logical_request_counts_by_stage.get(operation, 0) + 1
+            )
             async with self.provider_semaphore:
                 response = await self.provider.generate_structured(**kwargs)
         except AIProviderError as exc:
+            self._refresh_provider_telemetry()
             raise self._error(exc.code, exc.safe_message, retryable=exc.retryable) from exc
+        self._refresh_provider_telemetry()
         self.usage.add(response.usage)
         if self.usage.input_tokens > self.settings.ai_max_job_input_tokens:
             raise self._error(
@@ -402,7 +526,7 @@ class FlashcardGenerationPipeline:
 
     async def _summarize_pack(
         self, chunks: tuple[DocumentChunk, ...]
-    ) -> SummaryOutput:
+    ) -> EvidenceSummary:
         user_prompt = self._summary_map_prompt(chunks)
         result: SummaryOutput = await self._call(
             response_model=SummaryOutput,
@@ -411,19 +535,19 @@ class FlashcardGenerationPipeline:
             max_output_tokens=self.settings.ai_summary_output_tokens,
             operation="summary_map",
         )
-        allowed_ids = {chunk.chunk_id for chunk in chunks}
-        if set(result.source_chunk_ids) != allowed_ids:
-            raise self._error(
-                "summary_generation_failed",
-                "The document summary could not be verified. The job can be retried.",
-                retryable=True,
-            )
-        return result
+        # Coverage is server-owned. Asking the model to repeat hundreds of IDs
+        # wastes output tokens and cannot prove that it retained every fact.
+        return EvidenceSummary(
+            summary=result.summary,
+            source_chunk_ids=tuple(chunk.chunk_id for chunk in chunks),
+        )
 
-    async def _reduce_summaries(self, summaries: list[SummaryOutput]) -> SummaryOutput:
+    async def _reduce_summaries(
+        self, summaries: list[EvidenceSummary]
+    ) -> EvidenceSummary:
         current = summaries
         while len(current) > 1:
-            next_level: list[SummaryOutput] = []
+            next_level: list[EvidenceSummary] = []
             for start in range(0, len(current), 8):
                 group = current[start : start + 8]
                 if len(group) == 1:
@@ -433,7 +557,6 @@ class FlashcardGenerationPipeline:
                 user_prompt = json.dumps(
                     {
                         "task": "Merge all summaries without dropping distinct facts.",
-                        "allowed_source_chunk_ids": allowed,
                         "untrusted_summaries": [item.summary for item in group],
                     },
                     ensure_ascii=False,
@@ -445,13 +568,12 @@ class FlashcardGenerationPipeline:
                     max_output_tokens=self.settings.ai_summary_output_tokens,
                     operation="summary_reduce",
                 )
-                if set(reduced.source_chunk_ids) != set(allowed):
-                    raise self._error(
-                        "summary_generation_failed",
-                        "The document summary could not be verified. The job can be retried.",
-                        retryable=True,
+                next_level.append(
+                    EvidenceSummary(
+                        summary=reduced.summary,
+                        source_chunk_ids=tuple(allowed),
                     )
-                next_level.append(reduced)
+                )
             current = next_level
         return current[0]
 
@@ -483,6 +605,14 @@ class FlashcardGenerationPipeline:
         self.estimated_input_tokens = 0
         self.estimated_output_tokens = 0
         self.estimated_cost_microusd = None
+        self.estimated_request_count = 0
+        self.provider_request_count = 0
+        self.provider_retry_count = 0
+        self.provider_rate_limit_wait_milliseconds = 0
+        self.provider_request_counts_by_stage = {}
+        self._logical_request_count = 0
+        self._logical_request_counts_by_stage = {}
+        self._provider_telemetry_baseline = self._provider_telemetry_snapshot()
         self.rejected = 0
         chunks = chunk_document(
             document,
@@ -519,7 +649,10 @@ class FlashcardGenerationPipeline:
             allocations = allocate_card_targets(chunks, missing)
 
             request_batches = self._generation_batches(
-                chunks, allocations, global_summary
+                chunks,
+                allocations,
+                global_summary,
+                context_chunks=summary_packs[0] if len(summary_packs) == 1 else (),
             )
 
             async def bounded_generation(batch: CardRequestBatch):
@@ -590,4 +723,14 @@ class FlashcardGenerationPipeline:
             "actual_output_tokens": self.usage.output_tokens,
             "actual_cost_microusd": actual_cost,
             "usage_estimated": self.usage.estimated,
+            "estimated_request_count": self.estimated_request_count,
+            "provider_request_count": self.provider_request_count,
+            "provider_retry_count": self.provider_retry_count,
+            "provider_rate_limit_wait_milliseconds": (
+                self.provider_rate_limit_wait_milliseconds
+            ),
+            "cached_input_tokens": self.usage.cached_input_tokens,
+            "provider_request_counts_by_stage": dict(
+                self.provider_request_counts_by_stage
+            ),
         }

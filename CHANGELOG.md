@@ -16,15 +16,17 @@ and the Keep a Changelog structure.
   failures to three retries with three-second waits, stage canaries,
   fail-fast sibling cancellation, and worker-wide provider concurrency.
 
-### Changed
+### AI request efficiency
 
 - Kept page/section-grounded logical chunks while packing them into larger
   provider requests, added a one-pack direct-generation fast path, and generated
   up to ten cards per request to reduce RPM pressure without weakening source
-  provenance.
+  provenance or omitting zero-quota evidence from direct context. Summary
+  coverage is server-owned rather than repeated in model output.
 - Added a shared worker-wide RPM/input-TPM safety governor that accounts for
   every physical attempt, reconciles successful token usage, and keeps retries
-  inside the same quota and delay policy.
+  inside the same quota and delay policy. Whole-job timeouts stop with telemetry
+  and manual Retry instead of automatically replaying provider work.
 - Persisted estimated and actual provider requests, retries, wait time, cached
   input tokens, and per-stage request counts on durable generation jobs and
   exposed compact request telemetry in the instructor UI.

@@ -31,15 +31,6 @@ function formatRateLimitWait(milliseconds: number): string {
   return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(milliseconds / 1000)} s`
 }
 
-function formatRequestStages(counts: Record<string, number>): string {
-  const entries = Object.entries(counts).filter(([, count]) => count > 0)
-  if (entries.length === 0) return copy.generation.noRequestStages
-  return entries
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([stage, count]) => `${stageLabel(stage)}: ${count}`)
-    .join(', ')
-}
-
 export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardProps) {
   const [action, setAction] = useState<'cancel' | 'retry' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -154,10 +145,6 @@ export function GenerationJobCard({ job, onCancel, onRetry }: GenerationJobCardP
           <div>
             <dt className="font-medium">{copy.generation.cachedInputTokens}</dt>
             <dd>{formatTokens(job.cached_input_tokens)}</dd>
-          </div>
-          <div>
-            <dt className="font-medium">{copy.generation.requestStages}</dt>
-            <dd>{formatRequestStages(job.provider_request_counts_by_stage)}</dd>
           </div>
           <div>
             <dt className="font-medium">{copy.generation.estimatedCost}</dt>

@@ -57,7 +57,6 @@ class DeterministicProvider:
                     else "; ".join(payload.get("untrusted_summaries", []))
                     or "All source facts."
                 ),
-                source_chunk_ids=payload["allowed_source_chunk_ids"],
             )
         else:
             payload = json.loads(kwargs["user_prompt"])
@@ -93,7 +92,10 @@ class DeterministicProvider:
                         }
                     )
             data = CandidateBatch(cards=cards)
-        return ProviderResponse(data=data, usage=ProviderUsage(20, 10, False))
+        return ProviderResponse(
+            data=data,
+            usage=ProviderUsage(20, 10, False, cached_input_tokens=5),
+        )
 
 
 @pytest.mark.parametrize("target_count", [1, 5, 8])
@@ -134,6 +136,12 @@ async def test_pipeline_returns_exact_corpus_targets_with_grounding_and_cost(tar
     assert result["actual_input_tokens"] > 0
     assert result["actual_output_tokens"] > 0
     assert result["usage_estimated"] is False
+    assert result["provider_request_count"] == len(provider.calls)
+    assert result["provider_retry_count"] == 0
+    assert result["cached_input_tokens"] == len(provider.calls) * 5
+    assert sum(result["provider_request_counts_by_stage"].values()) == len(
+        provider.calls
+    )
     assert result["estimated_cost_microusd"] is not None
     assert result["actual_cost_microusd"] == (
         result["actual_input_tokens"] * 0.10
@@ -401,3 +409,91 @@ async def test_generation_batch_accepts_multiple_logical_source_chunks():
     assert len(payload["untrusted_documents"]) == 2
     assert set(payload["requested_cards_by_source_chunk_id"].values()) == {1}
     assert {card["source_page"] for card in result["final_cards"]} == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_twenty_cards_use_two_initial_provider_requests():
+    provider = DeterministicProvider()
+    document = ExtractedDocument(
+        pages=[
+            ExtractedPage(
+                page_number=index,
+                text=f"Fact{index} is verified evidence number {index}.",
+            )
+            for index in range(1, 21)
+        ]
+    )
+
+    result = await FlashcardGenerationPipeline(settings(), provider).run(document, 20)
+
+    generation_calls = [
+        call
+        for call in provider.calls
+        if call["operation"].startswith("card_generation_")
+    ]
+    assert len(result["final_cards"]) == 20
+    assert len(generation_calls) == 2
+    assert result["provider_request_count"] == 2
+    assert result["estimated_request_count"] == 6
+    assert result["provider_request_counts_by_stage"] == {"card_generation": 2}
+
+
+@pytest.mark.asyncio
+async def test_one_pack_with_more_chunks_than_cards_keeps_final_page_context():
+    provider = DeterministicProvider()
+    document = ExtractedDocument(
+        pages=[
+            ExtractedPage(
+                page_number=index,
+                text=f"Fact{index:02d} is verified evidence number {index:02d}.",
+            )
+            for index in range(1, 41)
+        ]
+    )
+    configured = settings(ai_request_input_target_tokens=8_192)
+    expected_chunks = chunk_document(document, max_tokens=128, overlap_tokens=0)
+
+    result = await FlashcardGenerationPipeline(configured, provider).run(document, 20)
+
+    assert len(result["final_cards"]) == 20
+    assert len(provider.calls) == 2
+    for call in provider.calls:
+        payload = json.loads(call["user_prompt"])
+        assert [item["source_chunk_id"] for item in payload["untrusted_documents"]] == [
+            chunk.chunk_id for chunk in expected_chunks
+        ]
+        assert "Fact40" in payload["untrusted_documents"][-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_summary_coverage_over_five_hundred_chunks_is_server_owned():
+    provider = DeterministicProvider()
+    document = ExtractedDocument(
+        pages=[
+            ExtractedPage(
+                page_number=index,
+                text=f"Fact{index:03d} is verified evidence number {index:03d}.",
+            )
+            for index in range(1, 601)
+        ]
+    )
+
+    result = await FlashcardGenerationPipeline(
+        settings(ai_request_input_target_tokens=40_000), provider
+    ).run(document, 1)
+
+    map_calls = [call for call in provider.calls if call["operation"] == "summary_map"]
+    reduce_calls = [
+        call for call in provider.calls if call["operation"] == "summary_reduce"
+    ]
+    mapped_items = [
+        item
+        for call in map_calls
+        for item in json.loads(call["user_prompt"])["untrusted_documents"]
+    ]
+    assert len(result["final_cards"]) == 1
+    assert len(map_calls) == 2
+    assert len(reduce_calls) == 1
+    assert len(mapped_items) == 600
+    assert "Fact600" in mapped_items[-1]["text"]
+    assert set(SummaryOutput.model_json_schema()["properties"]) == {"summary"}

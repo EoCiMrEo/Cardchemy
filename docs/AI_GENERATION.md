@@ -16,7 +16,10 @@ settings, output structure, or source metadata.
    prompt size. A document that fits one evidence pack skips summarization and
    goes directly to card generation. Multi-pack documents receive one summary
    per pack and are reduced in bounded levels until one global summary remains;
-   no first-page or first-character shortcut is used.
+   no first-page or first-character shortcut is used. Every direct-generation
+   batch receives the complete one-pack document, including zero-card-quota
+   chunks. Summary coverage is tracked by the server; the model returns summary
+   text rather than repeating hundreds of source identifiers in its output.
 5. A largest-remainder allocation assigns a global card quota to logical chunks. The
    quotas sum to the requested card count, including when there are more chunks
    than cards.
@@ -52,9 +55,9 @@ duplicate checks, and atomic database validation—not on provider obedience.
 
 ## Failure behavior
 
-- Summary map or reduce failures use `summary_generation_failed`, remain
-  visible on the job, and retain the encrypted source for the configured retry
-  period.
+- Summary/card provider failures preserve their precise safe provider error
+  categories and remain visible on the job; retryable errors retain the
+  encrypted source for the configured retry period.
 - Invalid structured output uses `invalid_generated_cards`; invalid values are
   never truncated or coerced into valid cards.
 - Exhausted refill attempts use `insufficient_grounded_cards` and persist no
@@ -62,8 +65,10 @@ duplicate checks, and atomic database validation—not on provider obedience.
 - Preflight token/context/cost refusals use stable limit-reason codes, make no
   provider request, and remain visible in the job API and instructor UI.
 - Provider timeouts, rate limits, and temporary service failures use bounded
-  retries and the durable worker retry policy. Authentication and capability
-  errors are permanent until configuration changes.
+  per-call retries, not automatic whole-job replay. A whole-job time limit
+  produces `generation_job_timeout` with available request telemetry and a
+  manual retry option. Authentication and capability errors are permanent until
+  configuration changes.
 
 ## Usage and cost
 

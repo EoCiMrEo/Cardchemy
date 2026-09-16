@@ -73,7 +73,7 @@ class ExtractedDocument(StrictModel):
 class DocumentChunk(StrictModel):
     """A token-bounded chunk whose provenance is assigned by the server."""
 
-    chunk_id: Annotated[str, StringConstraints(pattern=r"^chunk-[0-9]{4}-p[0-9]+$")]
+    chunk_id: Annotated[str, StringConstraints(pattern=r"^chunk-[0-9]{4,}-p[0-9]+$")]
     text: NonEmptyText
     page_number: int = Field(ge=1)
     section: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None = None
@@ -87,7 +87,7 @@ class GeneratedCardCandidate(StrictModel):
     back: CardBack
     options: list[CardOption] = Field(min_length=4, max_length=4)
     source_chunk_id: Annotated[
-        str, StringConstraints(pattern=r"^chunk-[0-9]{4}-p[0-9]+$")
+        str, StringConstraints(pattern=r"^chunk-[0-9]{4,}-p[0-9]+$")
     ]
     source_quote: SourceQuote
 
@@ -112,21 +112,11 @@ class CandidateBatch(StrictModel):
 
 
 class SummaryOutput(StrictModel):
-    """One map/reduce summary with traceable source chunk identifiers."""
+    """Untrusted summary text; source coverage is tracked by the server."""
 
     summary: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20_000)
     ]
-    source_chunk_ids: list[
-        Annotated[str, StringConstraints(pattern=r"^chunk-[0-9]{4}-p[0-9]+$")]
-    ] = Field(min_length=1, max_length=500)
-
-    @field_validator("source_chunk_ids")
-    @classmethod
-    def unique_source_ids(cls, source_ids: list[str]) -> list[str]:
-        if len(set(source_ids)) != len(source_ids):
-            raise ValueError("source_chunk_ids must be unique")
-        return source_ids
 
 
 class ValidatedCard(StrictModel):

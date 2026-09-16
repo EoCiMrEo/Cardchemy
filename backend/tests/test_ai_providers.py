@@ -38,11 +38,12 @@ def settings(**overrides) -> Settings:
 
 
 class GeminiModels:
-    def __init__(self, text='{"value":"ok"}', errors=None):
+    def __init__(self, text='{"value":"ok"}', errors=None, cached_input_tokens=0):
         self.text = text
         self.request = None
         self.requests = []
         self.errors = list(errors or [])
+        self.cached_input_tokens = cached_input_tokens
 
     async def generate_content(self, **kwargs):
         self.request = kwargs
@@ -51,7 +52,11 @@ class GeminiModels:
             raise self.errors.pop(0)
         return SimpleNamespace(
             text=self.text,
-            usage_metadata=SimpleNamespace(prompt_token_count=11, candidates_token_count=7),
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=11,
+                candidates_token_count=7,
+                cached_content_token_count=self.cached_input_tokens,
+            ),
         )
 
 
@@ -63,7 +68,7 @@ def test_gemini_sdk_retry_layer_is_explicitly_disabled():
 
 @pytest.mark.asyncio
 async def test_gemini_adapter_uses_schema_system_boundary_and_usage():
-    models = GeminiModels()
+    models = GeminiModels(cached_input_tokens=4)
     client = SimpleNamespace(aio=SimpleNamespace(models=models))
     response = await GeminiProvider(settings(), client=client).generate_structured(
         response_model=Output,
@@ -76,6 +81,7 @@ async def test_gemini_adapter_uses_schema_system_boundary_and_usage():
     assert response.data.value == "ok"
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 7
+    assert response.usage.cached_input_tokens == 4
     assert models.request["config"]["system_instruction"] == "system"
     assert models.request["config"]["response_json_schema"] == {
         "type": "object",
@@ -195,10 +201,9 @@ async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
         delays.append(delay)
 
     monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
+    provider = GeminiProvider(settings(), client=client, rate_governor=governor)
     with pytest.raises(AIProviderError) as error:
-        await GeminiProvider(
-            settings(), client=client, rate_governor=governor
-        ).generate_structured(
+        await provider.generate_structured(
             response_model=Output,
             system_prompt="system",
             user_prompt="data",
@@ -213,6 +218,11 @@ async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
     assert [attempt for _, _, attempt in governor.admissions] == [0, 1, 2, 3]
     assert {operation for _, operation, _ in governor.admissions} == {"rate limited"}
     assert governor.commits == []
+    telemetry = provider.telemetry_snapshot()
+    assert telemetry.request_count == 4
+    assert telemetry.retry_count == 3
+    assert telemetry.rate_limit_wait_seconds == 9
+    assert telemetry.request_counts_by_stage == {"rate limited": 4}
 
 
 @pytest.mark.asyncio
@@ -226,9 +236,8 @@ async def test_retry_after_is_honored_and_success_reconciles_actual_usage(monkey
         delays.append(delay)
 
     monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
-    response = await GeminiProvider(
-        settings(), client=client, rate_governor=governor
-    ).generate_structured(
+    provider = GeminiProvider(settings(), client=client, rate_governor=governor)
+    response = await provider.generate_structured(
         response_model=Output,
         system_prompt="system boundary",
         user_prompt="untrusted document",
@@ -241,6 +250,11 @@ async def test_retry_after_is_honored_and_success_reconciles_actual_usage(monkey
     assert [attempt for _, _, attempt in governor.admissions] == [0, 1]
     assert all(tokens > 0 for tokens, _, _ in governor.admissions)
     assert governor.commits == [11]
+    telemetry = provider.telemetry_snapshot()
+    assert telemetry.request_count == 2
+    assert telemetry.retry_count == 1
+    assert telemetry.rate_limit_wait_seconds == 9
+    assert telemetry.request_counts_by_stage == {"summary_map": 2}
 
 
 @pytest.mark.asyncio

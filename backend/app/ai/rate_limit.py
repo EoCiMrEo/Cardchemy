@@ -88,9 +88,12 @@ class ProviderRateReservation:
         self,
         governor: ProviderRateGovernor,
         reservation: _WindowReservation,
+        *,
+        waited_seconds: float,
     ) -> None:
         self._governor = governor
         self._reservation = reservation
+        self.waited_seconds = max(0.0, waited_seconds)
 
     async def commit(self, actual_input_tokens: int) -> None:
         if actual_input_tokens < 0:
@@ -133,6 +136,7 @@ class ProviderRateGovernor:
         self._clock = clock or time.monotonic
         self._sleep = sleep or asyncio.sleep
         self._condition = asyncio.Condition()
+        self._capacity_changed = asyncio.Event()
         self._reservations: deque[_WindowReservation] = deque()
         self._waiters: deque[object] = deque()
         self._totals = _Totals()
@@ -233,7 +237,12 @@ class ProviderRateGovernor:
                                     operation, max(0.0, now - started_at)
                                 )
                             self._condition.notify_all()
-                            return ProviderRateReservation(self, reservation)
+                            return ProviderRateReservation(
+                                self,
+                                reservation,
+                                waited_seconds=max(0.0, now - started_at),
+                            )
+                        self._capacity_changed.clear()
 
                     if delay is None:
                         waited = True
@@ -241,7 +250,7 @@ class ProviderRateGovernor:
                         continue
 
                 waited = True
-                await self._sleep(delay)
+                await self._wait_for_capacity_change(delay)
         finally:
             if not admitted:
                 async with self._condition:
@@ -254,6 +263,26 @@ class ProviderRateGovernor:
                             operation, max(0.0, self._clock() - started_at)
                         )
                     self._condition.notify_all()
+                    self._capacity_changed.set()
+
+    async def _wait_for_capacity_change(self, delay: float) -> None:
+        """Wake early when actual usage reconciliation frees token capacity."""
+
+        tasks = [
+            asyncio.create_task(self._sleep(delay)),
+            asyncio.create_task(self._capacity_changed.wait()),
+        ]
+        try:
+            done, _ = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                task.result()
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _record_admission(self, reservation: _WindowReservation) -> None:
         self._totals.request_attempts += 1
@@ -287,6 +316,7 @@ class ProviderRateGovernor:
                 reservation.operation
             ).actual_input_tokens += actual_input_tokens
             self._condition.notify_all()
+            self._capacity_changed.set()
 
     async def snapshot(self) -> ProviderRateSnapshot:
         async with self._condition:

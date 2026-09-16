@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.graph import create_flashcard_graph
 from app.ai.pipeline import PipelineError
+from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings, get_settings
 from app.database import async_session_maker
 from app.models.generation import GenerationJob, GenerationJobSource, GenerationJobStatus
@@ -60,6 +61,11 @@ class GenerationWorker:
         # One gate per worker process prevents concurrent jobs from multiplying
         # the configured provider-request concurrency.
         self.provider_semaphore = asyncio.Semaphore(self.settings.ai_concurrency)
+        # One rolling quota window is shared by every job in this worker
+        # process. Provider retries reserve through this same governor.
+        self.provider_rate_governor = ProviderRateGovernor.from_settings(
+            self.settings
+        )
         self.worker_id = worker_id or (
             f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:12]}"
         )
@@ -294,13 +300,25 @@ class GenerationWorker:
                 message="The retained PDF could not be read. Upload it again.",
                 retryable=False,
             )
-        except (ModelGenerationFailure, TimeoutError):
+        except ModelGenerationFailure:
             await self._finish_failure(
                 job_id,
                 claim_token,
                 code="generation_temporarily_unavailable",
                 message="Flashcard generation was temporarily unavailable.",
                 retryable=True,
+            )
+        except TimeoutError:
+            # A timeout must not replay an expensive provider pipeline. Normal
+            # job timeouts are mapped below with telemetry; this is a safe
+            # fallback for an unexpected timeout at another worker boundary.
+            await self._finish_failure(
+                job_id,
+                claim_token,
+                code="generation_job_timeout",
+                message="Generation reached the configured job time limit. Retry later or reduce the requested cards.",
+                retryable=True,
+                auto_retry=False,
             )
         except PipelineError as exc:
             await self._finish_failure(
@@ -319,6 +337,16 @@ class GenerationWorker:
                     "actual_cost_microusd": exc.actual_cost_microusd,
                     "usage_estimated": exc.usage_estimated,
                     "rejected_card_count": exc.rejected_card_count,
+                    "estimated_request_count": exc.estimated_request_count,
+                    "provider_request_count": exc.provider_request_count,
+                    "provider_retry_count": exc.provider_retry_count,
+                    "provider_rate_limit_wait_milliseconds": (
+                        exc.provider_rate_limit_wait_milliseconds
+                    ),
+                    "cached_input_tokens": exc.cached_input_tokens,
+                    "provider_request_counts_by_stage": (
+                        exc.provider_request_counts_by_stage
+                    ),
                 },
             )
         except (KeyError, TypeError, ValueError, ValidationError):
@@ -344,6 +372,22 @@ class GenerationWorker:
             await asyncio.gather(heartbeat, return_exceptions=True)
 
     async def _pipeline(self, job_id: UUID, claim_token: str) -> None:
+        graph_holder: dict = {}
+        try:
+            await self._pipeline_with_graph(job_id, claim_token, graph_holder)
+        except TimeoutError as exc:
+            graph = graph_holder.get("graph")
+            if graph is not None:
+                raise graph.pipeline.job_timeout_error() from exc
+            raise PipelineError(
+                "generation_job_timeout",
+                "Generation reached the configured job time limit. Retry later or reduce the requested cards.",
+                retryable=True,
+            ) from exc
+
+    async def _pipeline_with_graph(
+        self, job_id: UUID, claim_token: str, graph_holder: dict
+    ) -> None:
         async with asyncio.timeout(self.settings.generation_job_timeout_seconds):
             await self._update_stage(job_id, claim_token, "validating_pdf", 12)
             async with self.session_factory() as db:
@@ -386,7 +430,9 @@ class GenerationWorker:
             graph = create_flashcard_graph(
                 settings=job_settings,
                 provider_semaphore=self.provider_semaphore,
+                rate_governor=self.provider_rate_governor,
             )
+            graph_holder["graph"] = graph
             result = await graph.ainvoke(
                 {
                     "pdf_document": document,
@@ -569,6 +615,37 @@ class GenerationWorker:
         job.estimated_output_tokens = max(
             job.estimated_output_tokens, int(telemetry.get("estimated_output_tokens") or 0)
         )
+        job.estimated_request_count = max(
+            job.estimated_request_count or 0,
+            int(telemetry.get("estimated_request_count") or 0),
+        )
+        job.provider_request_count = (job.provider_request_count or 0) + int(
+            telemetry.get("provider_request_count") or 0
+        )
+        job.provider_retry_count = (job.provider_retry_count or 0) + int(
+            telemetry.get("provider_retry_count") or 0
+        )
+        job.provider_rate_limit_wait_milliseconds = (
+            job.provider_rate_limit_wait_milliseconds or 0
+        ) + int(
+            telemetry.get("provider_rate_limit_wait_milliseconds") or 0
+        )
+        job.cached_input_tokens = (job.cached_input_tokens or 0) + int(
+            telemetry.get("cached_input_tokens") or 0
+        )
+        stage_counts = dict(job.provider_request_counts_by_stage or {})
+        for stage, raw_count in (
+            telemetry.get("provider_request_counts_by_stage") or {}
+        ).items():
+            if stage not in {"summary_map", "summary_reduce", "card_generation"}:
+                continue
+            if not isinstance(raw_count, int) or isinstance(raw_count, bool):
+                continue
+            count = raw_count
+            if count < 0:
+                continue
+            stage_counts[stage] = int(stage_counts.get(stage, 0)) + count
+        job.provider_request_counts_by_stage = stage_counts
         estimated_cost = telemetry.get("estimated_cost_microusd")
         if estimated_cost is not None:
             job.estimated_cost_microusd = max(

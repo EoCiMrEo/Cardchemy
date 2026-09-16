@@ -1,6 +1,6 @@
 # Agent Logs
 
-Last Updated: 2026-09-15
+Last Updated: 2026-09-16
 
 This directory records agent-visible development history for Cardchemy: what changed, why the work was needed, what problems appeared, how they were solved, and how the result was verified.
 
@@ -10,6 +10,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-16 | `2026-09-16-ai-request-efficiency-remediation.md` | Evidence packing, direct-generation fast path, multi-card batches, worker-wide RPM/TPM safety governor, durable request/cache telemetry, JSONB migrations, and end-to-end verification. |
 | 2026-09-15 | `2026-09-15-ai-provider-retry-and-error-remediation.md` | Gemini schema compatibility, precise provider/model errors, three fixed-delay retries, stage canaries, fail-fast cancellation, and worker-wide request concurrency. |
 | 2026-09-15 | `2026-09-15-ai-provider-enablement-fix.md` | Non-secret AI enablement shared by API and worker, worker-only provider credentials, fail-fast validation, no-claim kill switch, and runtime verification. |
 | 2026-09-15 | `2026-09-15-phase-8-remediation.md` | Production-shaped self-hosting, generated secrets, multi-stage images, secure SPA edge, readiness/draining, backup/restore rehearsal, and platform evidence. |

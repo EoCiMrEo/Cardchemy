@@ -6,6 +6,7 @@ from typing import Any
 from app.ai.contracts import ExtractedDocument, ExtractedPage
 from app.ai.pipeline import FlashcardGenerationPipeline
 from app.ai.providers import AIProvider
+from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings
 
 
@@ -17,11 +18,13 @@ class FlashcardGraph:
         settings: Settings | None = None,
         provider: AIProvider | None = None,
         provider_semaphore: asyncio.Semaphore | None = None,
+        rate_governor: ProviderRateGovernor | None = None,
     ):
         self.pipeline = FlashcardGenerationPipeline(
             settings=settings,
             provider=provider,
             provider_semaphore=provider_semaphore,
+            rate_governor=rate_governor,
         )
 
     async def ainvoke(self, state: dict[str, Any], config: dict[str, Any] | None = None):
@@ -37,9 +40,11 @@ def create_flashcard_graph(
     settings: Settings | None = None,
     provider: AIProvider | None = None,
     provider_semaphore: asyncio.Semaphore | None = None,
+    rate_governor: ProviderRateGovernor | None = None,
 ) -> FlashcardGraph:
     return FlashcardGraph(
         settings=settings,
         provider=provider,
         provider_semaphore=provider_semaphore,
+        rate_governor=rate_governor,
     )

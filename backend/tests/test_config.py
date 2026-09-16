@@ -65,3 +65,28 @@ def test_environment_file_path_is_absolute_and_backend_relative():
 
 def test_removed_email_verification_switch_cannot_create_a_partial_workflow():
     assert "email_verification_required" not in Settings.model_fields
+
+
+def test_ai_request_pack_must_fit_context_and_safety_adjusted_tpm():
+    base = {
+        "_env_file": None,
+        "database_url": "postgresql+asyncpg://user:password@database/app",
+        "secret_key": "a-test-secret-with-real-entropy-1234567890",
+        "generation_source_encryption_key": (
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ),
+    }
+    with pytest.raises(ValidationError):
+        Settings(
+            **base,
+            ai_request_input_target_tokens=10_000,
+            ai_max_output_tokens=2_000,
+            ai_context_window_tokens=11_000,
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            **base,
+            ai_request_input_target_tokens=10_000,
+            ai_input_tokens_per_minute=10_000,
+            ai_rate_limit_safety_percent=80,
+        )

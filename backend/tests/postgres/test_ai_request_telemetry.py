@@ -20,7 +20,7 @@ async def test_ai_request_telemetry_migration_columns_constraints_and_defaults()
         async with engine.connect() as connection:
             assert (
                 await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260916_0006"
+                == "20260916_0007"
             )
 
             def inspect_schema(sync_connection):
@@ -48,6 +48,10 @@ async def test_ai_request_telemetry_migration_columns_constraints_and_defaults()
         }
         assert expected <= columns.keys()
         assert all(columns[name]["nullable"] is False for name in expected)
+        assert (
+            columns["provider_request_counts_by_stage"]["type"].__class__.__name__
+            == "JSONB"
+        )
         assert "ck_generation_jobs_request_telemetry" in checks
     finally:
         await engine.dispose()

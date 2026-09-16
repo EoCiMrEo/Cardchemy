@@ -13,13 +13,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
-import math
 import re
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from app.ai.chunking import estimate_tokens as estimate_text_tokens
 from app.ai.rate_limit import ProviderRateGovernor, ProviderRateLimitExceeded
 from app.config import Settings
 
@@ -33,10 +33,23 @@ class ProviderUsage:
     input_tokens: int
     output_tokens: int
     estimated: bool
+    cached_input_tokens: int = 0
 
     def __post_init__(self) -> None:
-        if self.input_tokens < 0 or self.output_tokens < 0:
+        if (
+            self.input_tokens < 0
+            or self.output_tokens < 0
+            or self.cached_input_tokens < 0
+        ):
             raise ValueError("provider token usage cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAttemptTelemetry:
+    request_count: int
+    retry_count: int
+    rate_limit_wait_seconds: float
+    request_counts_by_stage: dict[str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,9 +106,7 @@ class AIProvider(Protocol):
 def _estimate_tokens(value: str) -> int:
     """Conservative provider-independent fallback when usage is unavailable."""
 
-    if not value:
-        return 0
-    return max(1, math.ceil(len(value.encode("utf-8")) / 3))
+    return estimate_text_tokens(value)
 
 
 def _closed_schema(model: type[BaseModel]) -> dict[str, Any]:
@@ -169,12 +180,16 @@ def _read_usage(
     *,
     input_tokens: Any,
     output_tokens: Any,
+    cached_input_tokens: Any = None,
     system_prompt: str,
     user_prompt: str,
     output_text: str,
 ) -> ProviderUsage:
     input_actual = isinstance(input_tokens, int) and input_tokens >= 0
     output_actual = isinstance(output_tokens, int) and output_tokens >= 0
+    cached_actual = (
+        isinstance(cached_input_tokens, int) and cached_input_tokens >= 0
+    )
     return ProviderUsage(
         input_tokens=(
             input_tokens
@@ -183,6 +198,7 @@ def _read_usage(
         ),
         output_tokens=output_tokens if output_actual else _estimate_tokens(output_text),
         estimated=not (input_actual and output_actual),
+        cached_input_tokens=cached_input_tokens if cached_actual else 0,
     )
 
 
@@ -325,6 +341,18 @@ class _RetryingProvider:
     ) -> None:
         self.settings = settings
         self.rate_governor = rate_governor or ProviderRateGovernor.from_settings(settings)
+        self._request_count = 0
+        self._retry_count = 0
+        self._rate_limit_wait_seconds = 0.0
+        self._request_counts_by_stage: dict[str, int] = {}
+
+    def telemetry_snapshot(self) -> ProviderAttemptTelemetry:
+        return ProviderAttemptTelemetry(
+            request_count=self._request_count,
+            retry_count=self._retry_count,
+            rate_limit_wait_seconds=self._rate_limit_wait_seconds,
+            request_counts_by_stage=dict(self._request_counts_by_stage),
+        )
 
     async def _run_with_retries(
         self,
@@ -339,6 +367,15 @@ class _RetryingProvider:
                     estimated_input_tokens,
                     operation=operation,
                     attempt=attempt,
+                )
+                self._request_count += 1
+                if attempt > 0:
+                    self._retry_count += 1
+                self._rate_limit_wait_seconds += float(
+                    getattr(reservation, "waited_seconds", 0.0)
+                )
+                self._request_counts_by_stage[operation] = (
+                    self._request_counts_by_stage.get(operation, 0) + 1
                 )
                 async with asyncio.timeout(self.settings.ai_provider_timeout_seconds):
                     response = await call()
@@ -365,6 +402,7 @@ class _RetryingProvider:
                     # hint exceeds our bounded wait, retain the retryable error
                     # for a later manual job retry instead.
                     raise normalized from exc
+                self._rate_limit_wait_seconds += delay
                 await asyncio.sleep(delay)
         raise AssertionError("provider retry loop exhausted unexpectedly")
 
@@ -430,6 +468,9 @@ class GeminiProvider(_RetryingProvider):
             usage = _read_usage(
                 input_tokens=getattr(usage_metadata, "prompt_token_count", None),
                 output_tokens=getattr(usage_metadata, "candidates_token_count", None),
+                cached_input_tokens=getattr(
+                    usage_metadata, "cached_content_token_count", None
+                ),
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 output_text=output_text,
@@ -516,6 +557,9 @@ class OpenAICompatibleProvider(_RetryingProvider):
             usage = _read_usage(
                 input_tokens=raw_usage.get("prompt_tokens"),
                 output_tokens=raw_usage.get("completion_tokens"),
+                cached_input_tokens=(
+                    raw_usage.get("prompt_tokens_details") or {}
+                ).get("cached_tokens"),
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 output_text=output_text,
@@ -554,6 +598,7 @@ __all__ = [
     "AIProviderInvalidOutputError",
     "GeminiProvider",
     "OpenAICompatibleProvider",
+    "ProviderAttemptTelemetry",
     "ProviderResponse",
     "ProviderUsage",
     "get_ai_provider",

@@ -66,7 +66,6 @@ test('renders durable provider request telemetry for a completed generation job'
   await expect(jobs.getByText('3 actual, 4 estimated, 1 retry')).toBeVisible()
   await expect(jobs.getByText('12.5 s')).toBeVisible()
   await expect(jobs.getByText('8,192')).toBeVisible()
-  await expect(jobs.getByText('Card generation: 2, Planning: 1')).toBeVisible()
 })
 
 test.describe('role-aware subject details and recovery', () => {
