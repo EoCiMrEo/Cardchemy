@@ -37,7 +37,7 @@ Priority labels:
   repaired hosted run 35129468986 passed every mandatory gate. Full locked
   audits remain mandatory where private-repository native dependency review
   requires an additional GitHub entitlement. Evidence is recorded in
-  `.agent/logs/2026-09-16-phase-9-remediation.md`.
+  [the dated Phase 9 log](.agent/logs/2026-09-16/2026-09-16-phase-9-remediation.md).
 - Preserve existing user changes and the real root `.env`. Updating this plan
   does not authorize deleting local environments, data, credentials, or volumes.
 

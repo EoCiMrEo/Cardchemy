@@ -107,8 +107,10 @@ The defaults are conservative for a small self-hosted installation:
 | `EMAIL_FAILED_RETENTION_DAYS` | 30 | Retains terminal sanitized failures |
 | `EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS` | 24 | Prevents stale security notifications |
 
-Temporary disconnects, timeouts, and SMTP 4xx responses are retried with
-bounded exponential backoff and jitter. Permanent recipient, authentication,
+Disconnects and timeouts before the SMTP delivery stage, and explicit SMTP
+4xx rejections, are retried with bounded exponential backoff and jitter.
+Disconnects/timeouts during delivery become `smtp_delivery_ambiguous` and
+require operator review instead of automatic retry. Permanent recipient, authentication,
 certificate, and SMTP 5xx failures become terminal rather than retrying
 forever. Fix the provider configuration or recipient problem, restart the
 email worker, and inspect the queue without exposing recipients or message

@@ -8,7 +8,7 @@ bounded timeouts and fresh dependency installations. Paid AI requests are exclud
 
 | Mandatory job | Contract |
 | --- | --- |
-| `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow contract validation |
+| `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow and repository-context/link validation |
 | `postgres-migrations` | Disposable PostgreSQL; constraints, transactions and concurrency; Alembic head and drift checks; full downgrade to base and upgrade to head |
 | `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts |
 | `frontend` | `npm run check`: types, lint, unit tests, component coverage, production build and Chromium browser contracts; emitted bundle budgets |
@@ -39,6 +39,8 @@ python -m pytest -q -m "not postgres and not mailpit and not ai_live" \
 ```
 
 From the repository root run
+`python scripts/check_context.py` for required context files and active local
+documentation links (external URLs and historical bodies are excluded),
 `python scripts/check_coverage.py backend/coverage.json`,
 `python scripts/test_services.py postgres`,
 `python scripts/test_services.py mailpit`,

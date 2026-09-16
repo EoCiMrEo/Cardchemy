@@ -42,6 +42,9 @@ def main() -> None:
     require({"push", "pull_request", "merge_group", "workflow_dispatch"} <= set(ci["on"]),
             "CI must run for commits, pull requests, merge queues and manual rehearsals")
     jobs = ci["jobs"]
+    require(any(step.get("run") == "python scripts/check_context.py"
+                for step in jobs["backend-offline"]["steps"]),
+            "Backend CI must validate required repository context and local documentation links")
     mandatory = {"backend-offline", "postgres-migrations", "mailpit", "frontend", "journey",
                  "dependency-audit", "secret-scan", "containers"}
     require(mandatory <= set(jobs), "A mandatory CI gate is missing")
