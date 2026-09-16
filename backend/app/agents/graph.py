@@ -1,5 +1,6 @@
 """Compatibility facade for the provider-neutral generation pipeline."""
 
+import asyncio
 from typing import Any
 
 from app.ai.contracts import ExtractedDocument, ExtractedPage
@@ -11,8 +12,17 @@ from app.config import Settings
 class FlashcardGraph:
     """Retains the old ``ainvoke`` boundary without a framework dependency."""
 
-    def __init__(self, settings: Settings | None = None, provider: AIProvider | None = None):
-        self.pipeline = FlashcardGenerationPipeline(settings=settings, provider=provider)
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        provider: AIProvider | None = None,
+        provider_semaphore: asyncio.Semaphore | None = None,
+    ):
+        self.pipeline = FlashcardGenerationPipeline(
+            settings=settings,
+            provider=provider,
+            provider_semaphore=provider_semaphore,
+        )
 
     async def ainvoke(self, state: dict[str, Any], config: dict[str, Any] | None = None):
         del config
@@ -24,6 +34,12 @@ class FlashcardGraph:
 
 
 def create_flashcard_graph(
-    settings: Settings | None = None, provider: AIProvider | None = None
+    settings: Settings | None = None,
+    provider: AIProvider | None = None,
+    provider_semaphore: asyncio.Semaphore | None = None,
 ) -> FlashcardGraph:
-    return FlashcardGraph(settings=settings, provider=provider)
+    return FlashcardGraph(
+        settings=settings,
+        provider=provider,
+        provider_semaphore=provider_semaphore,
+    )

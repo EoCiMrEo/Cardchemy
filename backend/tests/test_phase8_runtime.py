@@ -24,6 +24,54 @@ def make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **(BASE_SETTINGS | overrides))
 
 
+def test_ai_admission_uses_non_secret_flag_and_worker_validates_credentials():
+    disabled_with_key = make_settings(
+        ai_provider_enabled=False,
+        ai_api_key="worker-only-key",
+    )
+    assert disabled_with_key.ai_provider_configured is True
+    assert disabled_with_key.ai_provider_enabled is False
+
+    enabled_without_key = make_settings(
+        ai_provider_enabled=True,
+        ai_api_key=None,
+        gemini_api_key=None,
+    )
+    assert enabled_without_key.ai_provider_configured is False
+    assert enabled_without_key.ai_provider_enabled is True
+    with pytest.raises(ValueError, match="Enabled Gemini generation requires"):
+        enabled_without_key.require_generation_worker_config()
+
+    enabled_with_key = make_settings(
+        ai_provider_enabled=True,
+        ai_api_key="worker-only-key",
+    )
+    assert enabled_with_key.ai_provider_configured is True
+    assert enabled_with_key.require_generation_worker_config() is enabled_with_key
+
+    enabled_with_legacy_key = make_settings(
+        ai_provider_enabled=True,
+        ai_api_key=None,
+        gemini_api_key="legacy-worker-key",
+    )
+    assert (
+        enabled_with_legacy_key.require_generation_worker_config()
+        is enabled_with_legacy_key
+    )
+
+    enabled_keyless_local_endpoint = make_settings(
+        ai_provider_enabled=True,
+        ai_provider="openai_compatible",
+        ai_base_url="http://model:11434/v1",
+        ai_api_key=None,
+        gemini_api_key=None,
+    )
+    assert (
+        enabled_keyless_local_endpoint.require_generation_worker_config()
+        is enabled_keyless_local_endpoint
+    )
+
+
 @pytest.mark.parametrize(
     "origins",
     [
@@ -212,11 +260,13 @@ class _ControlledGenerationWorker(GenerationWorker):
         self.release = asyncio.Event()
         self.finished = False
         self._claimed = False
+        self.claim_calls = 0
 
     async def recover_and_cleanup(self):
         return None
 
     async def claim_next(self):
+        self.claim_calls += 1
         if self._claimed:
             return None
         self._claimed = True
@@ -254,9 +304,28 @@ class _ControlledEmailWorker(EmailWorker):
 
 
 @pytest.mark.asyncio
+async def test_disabled_generation_worker_waits_without_claiming_jobs():
+    worker = _ControlledGenerationWorker(
+        make_settings(
+            ai_provider_enabled=False,
+            generation_worker_poll_seconds=0.1,
+        )
+    )
+    stop_event = asyncio.Event()
+    run_task = asyncio.create_task(worker.run(stop_event))
+    await asyncio.sleep(0.02)
+    assert worker.claim_calls == 0
+    assert worker.started.is_set() is False
+
+    stop_event.set()
+    await asyncio.wait_for(run_task, timeout=1)
+
+
+@pytest.mark.asyncio
 async def test_generation_worker_drains_short_active_work():
     worker = _ControlledGenerationWorker(
         make_settings(
+            ai_provider_enabled=True,
             generation_worker_concurrency=1,
             generation_worker_poll_seconds=0.1,
             worker_shutdown_grace_seconds=0.5,
@@ -275,6 +344,7 @@ async def test_generation_worker_drains_short_active_work():
 async def test_email_worker_cancels_work_only_after_shutdown_grace():
     worker = _ControlledEmailWorker(
         make_settings(
+            ai_provider_enabled=True,
             email_worker_concurrency=1,
             email_worker_poll_seconds=0.1,
             worker_shutdown_grace_seconds=0.01,

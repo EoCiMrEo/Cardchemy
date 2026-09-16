@@ -1,5 +1,6 @@
-import json
+import asyncio
 import hashlib
+import json
 import re
 
 import pytest
@@ -164,8 +165,67 @@ async def test_summary_failure_is_visible_and_recoverable():
     )
     with pytest.raises(PipelineError) as error:
         await FlashcardGenerationPipeline(settings(), provider).run(document, 1)
-    assert error.value.code == "summary_generation_failed"
+    assert error.value.code == "ai_provider_timeout"
     assert error.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_permanent_summary_error_stops_after_single_canary_call():
+    class RejectedProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_structured(self, **_kwargs):
+            self.calls += 1
+            raise AIProviderError(
+                "ai_provider_invalid_request",
+                "The configured AI model rejected the request format.",
+                retryable=False,
+            )
+
+    provider = RejectedProvider()
+    document = ExtractedDocument(
+        pages=[ExtractedPage(page_number=1, text="Evidence sentence. " * 2_000)]
+    )
+
+    with pytest.raises(PipelineError) as error:
+        await FlashcardGenerationPipeline(settings(), provider).run(document, 1)
+
+    assert error.value.code == "ai_provider_invalid_request"
+    assert error.value.retryable is False
+    assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_shared_provider_gate_caps_concurrency_across_jobs():
+    class TrackingProvider(DeterministicProvider):
+        def __init__(self):
+            super().__init__()
+            self.active = 0
+            self.maximum_active = 0
+
+        async def generate_structured(self, **kwargs):
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+            try:
+                await asyncio.sleep(0)
+                return await super().generate_structured(**kwargs)
+            finally:
+                self.active -= 1
+
+    provider = TrackingProvider()
+    gate = asyncio.Semaphore(1)
+    configured = settings(ai_concurrency=3)
+    document = ExtractedDocument(
+        pages=[ExtractedPage(page_number=1, text="Alpha is evidence. " * 600)]
+    )
+
+    await asyncio.gather(
+        FlashcardGenerationPipeline(configured, provider, gate).run(document, 1),
+        FlashcardGenerationPipeline(configured, provider, gate).run(document, 1),
+    )
+
+    assert provider.maximum_active == 1
 
 
 @pytest.mark.asyncio

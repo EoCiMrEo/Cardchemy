@@ -22,7 +22,9 @@ The bootstrap command creates `.env` once, refuses to overwrite it, generates
 the database password and two application keys independently, and never prints
 their values. The application is at <http://127.0.0.1:8080>; Mailpit is at
 <http://127.0.0.1:8025>. A provider key is optional for startup but required to
-generate cards. Stop the stack with `docker compose down`; do not add
+generate cards; set `AI_PROVIDER_ENABLED=true` only after configuring that key.
+The API receives this non-secret switch while the credential remains isolated
+to the generation worker. Stop the stack with `docker compose down`; do not add
 `--volumes` unless destroying all local application data is intentional.
 
 ## Compose variants

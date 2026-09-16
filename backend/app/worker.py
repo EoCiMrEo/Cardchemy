@@ -4,6 +4,7 @@ import asyncio
 import logging
 import signal
 
+from app.config import get_settings
 from app.database import close_database, verify_database_revision
 from app.workers.generation import GenerationWorker
 
@@ -14,6 +15,8 @@ async def run_worker() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     try:
+        settings = get_settings()
+        settings.require_generation_worker_config()
         await verify_database_revision()
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -22,7 +25,7 @@ async def run_worker() -> None:
                 loop.add_signal_handler(signal_name, stop_event.set)
             except NotImplementedError:
                 signal.signal(signal_name, lambda *_: loop.call_soon_threadsafe(stop_event.set))
-        await GenerationWorker().run(stop_event)
+        await GenerationWorker(settings=settings).run(stop_event)
     finally:
         await close_database()
 

@@ -57,12 +57,20 @@ class GenerationWorker:
         self.settings = settings or get_settings()
         self.session_factory = session_factory
         self.job_service = GenerationJobService(self.settings)
+        # One gate per worker process prevents concurrent jobs from multiplying
+        # the configured provider-request concurrency.
+        self.provider_semaphore = asyncio.Semaphore(self.settings.ai_concurrency)
         self.worker_id = worker_id or (
             f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:12]}"
         )
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Poll with bounded local concurrency until shutdown is requested."""
+
+        if not self.settings.ai_provider_enabled:
+            logger.info("AI generation is disabled; worker will not claim jobs")
+            await stop_event.wait()
+            return
 
         tasks: set[asyncio.Task[None]] = set()
         last_cleanup = 0.0
@@ -301,6 +309,7 @@ class GenerationWorker:
                 code=exc.code,
                 message=exc.safe_message,
                 retryable=exc.retryable,
+                auto_retry=False,
                 telemetry={
                     "estimated_input_tokens": exc.estimated_input_tokens,
                     "estimated_output_tokens": exc.estimated_output_tokens,
@@ -374,7 +383,10 @@ class GenerationWorker:
             job_settings = self.settings.model_copy(
                 update={"ai_provider": job_provider, "ai_model": job_model}
             )
-            graph = create_flashcard_graph(settings=job_settings)
+            graph = create_flashcard_graph(
+                settings=job_settings,
+                provider_semaphore=self.provider_semaphore,
+            )
             result = await graph.ainvoke(
                 {
                     "pdf_document": document,
@@ -470,6 +482,7 @@ class GenerationWorker:
         code: str,
         message: str,
         retryable: bool,
+        auto_retry: bool = True,
         telemetry: dict | None = None,
     ) -> None:
         async with self.session_factory() as db:
@@ -508,7 +521,7 @@ class GenerationWorker:
                     }:
                         job.limit_reason_code = code
                         job.limit_reason_message = message
-                    if retryable and job.attempt_count < job.max_attempts:
+                    if auto_retry and retryable and job.attempt_count < job.max_attempts:
                         cap = min(
                             self.settings.generation_retry_max_seconds,
                             self.settings.generation_retry_base_seconds

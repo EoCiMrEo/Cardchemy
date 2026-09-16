@@ -3,9 +3,10 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.ai.providers import (
+    AIProviderError,
     AIProviderInvalidOutputError,
     GeminiProvider,
     OpenAICompatibleProvider,
@@ -16,6 +17,12 @@ from app.config import Settings
 class Output(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     value: str
+
+
+class ConstrainedOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    value: str = Field(min_length=2, max_length=20, pattern=r"^[a-z]+$")
+    labels: list[str] = Field(min_length=1, max_length=4)
 
 
 def settings(**overrides) -> Settings:
@@ -31,16 +38,27 @@ def settings(**overrides) -> Settings:
 
 
 class GeminiModels:
-    def __init__(self, text='{"value":"ok"}'):
+    def __init__(self, text='{"value":"ok"}', errors=None):
         self.text = text
         self.request = None
+        self.requests = []
+        self.errors = list(errors or [])
 
     async def generate_content(self, **kwargs):
         self.request = kwargs
+        self.requests.append(kwargs)
+        if self.errors:
+            raise self.errors.pop(0)
         return SimpleNamespace(
             text=self.text,
             usage_metadata=SimpleNamespace(prompt_token_count=11, candidates_token_count=7),
         )
+
+
+def test_gemini_sdk_retry_layer_is_explicitly_disabled():
+    provider = GeminiProvider(settings())
+
+    assert provider._client._api_client._http_options.retry_options.attempts == 1
 
 
 @pytest.mark.asyncio
@@ -59,7 +77,112 @@ async def test_gemini_adapter_uses_schema_system_boundary_and_usage():
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 7
     assert models.request["config"]["system_instruction"] == "system"
-    assert models.request["config"]["response_json_schema"]["additionalProperties"] is False
+    assert models.request["config"]["response_json_schema"] == {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_gemini_adapter_uses_minimal_inline_schema():
+    models = GeminiModels('{"value":"valid","labels":["one"]}')
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+
+    await GeminiProvider(settings(), client=client).generate_structured(
+        response_model=ConstrainedOutput,
+        system_prompt="system",
+        user_prompt="data",
+        max_output_tokens=100,
+        operation="schema subset",
+    )
+
+    schema = models.request["config"]["response_json_schema"]
+    serialized = json.dumps(schema)
+    assert schema == {
+        "type": "object",
+        "properties": {
+            "value": {"type": "string"},
+            "labels": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["value", "labels"],
+    }
+    assert "additionalProperties" not in serialized
+    assert "$defs" not in serialized
+    assert "$ref" not in serialized
+    assert "minLength" not in serialized
+    assert "maxLength" not in serialized
+    assert "pattern" not in serialized
+
+
+class ProviderHttpError(Exception):
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+
+@pytest.mark.asyncio
+async def test_permanent_provider_error_is_clear_and_not_retried():
+    models = GeminiModels(errors=[ProviderHttpError(404)])
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+
+    with pytest.raises(AIProviderError) as error:
+        await GeminiProvider(settings(), client=client).generate_structured(
+            response_model=Output,
+            system_prompt="system",
+            user_prompt="data",
+            max_output_tokens=100,
+            operation="model unavailable",
+        )
+
+    assert error.value.code == "ai_model_unavailable"
+    assert error.value.retryable is False
+    assert "AI_MODEL" in error.value.safe_message
+    assert len(models.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_request_is_classified_as_model_compatibility_failure():
+    models = GeminiModels(errors=[ProviderHttpError(400)])
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+
+    with pytest.raises(AIProviderError) as error:
+        await GeminiProvider(settings(), client=client).generate_structured(
+            response_model=Output,
+            system_prompt="system",
+            user_prompt="data",
+            max_output_tokens=100,
+            operation="invalid schema",
+        )
+
+    assert error.value.code == "ai_provider_invalid_request"
+    assert error.value.retryable is False
+    assert "AI_MODEL" in error.value.safe_message
+    assert len(models.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_retries_three_times_with_bounded_delays(monkeypatch):
+    models = GeminiModels(errors=[ProviderHttpError(429)] * 4)
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
+    with pytest.raises(AIProviderError) as error:
+        await GeminiProvider(settings(), client=client).generate_structured(
+            response_model=Output,
+            system_prompt="system",
+            user_prompt="data",
+            max_output_tokens=100,
+            operation="rate limited",
+        )
+
+    assert error.value.code == "ai_provider_rate_limited"
+    assert error.value.retryable is True
+    assert len(models.requests) == 4
+    assert delays == [3, 3, 3]
 
 
 @pytest.mark.asyncio
@@ -150,6 +273,10 @@ def test_ai_configuration_matrix_and_secret_repr():
         settings(ai_input_cost_per_million_usd="1", ai_output_cost_per_million_usd="0")
     with pytest.raises(ValidationError):
         settings(ai_base_url="https://user:password@example.com/v1")
+    with pytest.raises(ValidationError):
+        settings(ai_provider_max_retries=4)
+    with pytest.raises(ValidationError):
+        settings(ai_retry_base_seconds=2)
     configured = settings()
     assert "provider-secret" not in repr(configured)
     assert configured.ai_pricing_configured is False

@@ -26,6 +26,7 @@ def make_settings(**overrides) -> Settings:
         "database_url": "sqlite+aiosqlite:///:memory:",
         "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
         "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "ai_provider_enabled": True,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -418,15 +419,102 @@ async def test_worker_records_pipeline_limit_telemetry_and_retains_retryable_sou
         assert await db.get(GenerationJobSource, job_id) is not None
 
 
-async def test_limits_explain_provider_unavailability(db):
-    owner, _ = await seed_owner_subject(db)
-    service = GenerationJobService(make_settings(ai_api_key=None, gemini_api_key=None))
+async def test_worker_does_not_automatically_repeat_pipeline_provider_failure(
+    session_factory, monkeypatch
+):
+    async with session_factory() as db:
+        owner, subject = await seed_owner_subject(db)
+        configured = make_settings(generation_max_attempts=3)
+        service = GenerationJobService(configured)
+        async with db.begin():
+            job = await service.create_reservation(
+                db,
+                user_id=owner.id,
+                data=job_data(subject.id),
+                idempotency_key="provider-rate-limit-reservation",
+            )
+        async with db.begin():
+            await service.attach_source(
+                db,
+                job_id=job.id,
+                user_id=owner.id,
+                media_type="application/pdf",
+                content=b"%PDF-1.7\nprovider-rate-limit",
+            )
+        job_id = job.id
 
-    limits = await service.limits(db, owner.id)
+    worker = GenerationWorker(
+        settings=configured,
+        session_factory=session_factory,
+        worker_id="provider-rate-limit",
+    )
+    claim = await worker.claim_next()
+    assert claim is not None
+
+    from app.ai.pipeline import PipelineError
+
+    async def fail_pipeline(*_):
+        raise PipelineError(
+            "ai_provider_rate_limited",
+            "The AI provider rate limit was reached. Wait before retrying the job.",
+            retryable=True,
+        )
+
+    monkeypatch.setattr(worker, "_pipeline", fail_pipeline)
+    await worker.process_claim(*claim)
+
+    async with session_factory() as db:
+        failed = await db.get(GenerationJob, job_id)
+        source = await db.get(GenerationJobSource, job_id)
+        assert failed.status == GenerationJobStatus.FAILED.value
+        assert failed.stage == "failed"
+        assert failed.attempt_count == 1
+        assert failed.error_code == "ai_provider_rate_limited"
+        assert failed.error_retryable is True
+        assert source is not None
+        assert source.expires_at is not None
+
+
+async def test_limits_explain_provider_unavailability(db):
+    owner, subject = await seed_owner_subject(db)
+    owner_id = owner.id
+    subject_id = subject.id
+    service = GenerationJobService(
+        make_settings(ai_provider_enabled=False, ai_api_key="worker-only-key")
+    )
+
+    limits = await service.limits(db, owner_id)
 
     assert limits.generation_available is False
     assert limits.unavailable_reasons[0].code == "ai_provider_not_configured"
     assert limits.ai_provider == "gemini"
+    await db.rollback()
+
+    with pytest.raises(HTTPException) as error:
+        async with db.begin():
+            await service.create_reservation(
+                db,
+                user_id=owner_id,
+                data=job_data(subject_id),
+                idempotency_key="disabled-provider-reservation",
+            )
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "ai_provider_not_configured"
+
+
+async def test_limits_use_non_secret_enablement_without_api_credentials(db):
+    owner, _ = await seed_owner_subject(db)
+    settings = make_settings(
+        ai_provider_enabled=True,
+        ai_api_key=None,
+        gemini_api_key=None,
+    )
+    assert settings.ai_provider_configured is False
+
+    limits = await GenerationJobService(settings).limits(db, owner.id)
+
+    assert limits.generation_available is True
+    assert limits.unavailable_reasons == []
 
 
 async def test_bounded_raw_request_rejects_declared_and_chunked_overflow():

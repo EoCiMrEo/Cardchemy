@@ -12,7 +12,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 import json
 import math
-import random
 import re
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
@@ -107,6 +106,47 @@ def _closed_schema(model: type[BaseModel]) -> dict[str, Any]:
     return schema
 
 
+def _gemini_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """Return a minimal schema accepted by Gemini structured output.
+
+    The application keeps the full strict Pydantic contract authoritative after
+    generation. The provider receives only structural keywords and inline
+    object definitions to avoid model-specific schema-complexity rejections.
+    """
+
+    source = deepcopy(model.model_json_schema())
+    definitions = source.get("$defs", {})
+
+    def simplify(node: Any) -> Any:
+        if not isinstance(node, dict):
+            return node
+        reference = node.get("$ref")
+        if isinstance(reference, str) and reference.startswith("#/$defs/"):
+            name = reference.removeprefix("#/$defs/")
+            target = definitions.get(name)
+            if isinstance(target, dict):
+                return simplify(target)
+
+        result: dict[str, Any] = {}
+        for keyword in ("type", "format", "enum"):
+            if keyword in node:
+                result[keyword] = deepcopy(node[keyword])
+        if "properties" in node:
+            result["properties"] = {
+                name: simplify(child)
+                for name, child in node["properties"].items()
+            }
+        if "required" in node:
+            result["required"] = list(node["required"])
+        if "items" in node:
+            result["items"] = simplify(node["items"])
+        if "anyOf" in node:
+            result["anyOf"] = [simplify(child) for child in node["anyOf"]]
+        return result
+
+    return simplify(source)
+
+
 def _strict_validate(response_model: type[T], raw_text: str) -> T:
     try:
         return response_model.model_validate_json(raw_text, strict=True)
@@ -159,8 +199,38 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
         if isinstance(candidate, int):
             status_code = candidate
 
+    if status_code == 400:
+        return AIProviderError(
+            "ai_provider_invalid_request",
+            "The configured AI model rejected the request format. Check AI_MODEL compatibility.",
+            retryable=False,
+        )
+    if status_code == 401:
+        return AIProviderError(
+            "ai_provider_authentication_failed",
+            "The AI provider rejected its credentials. Update the provider API key.",
+            retryable=False,
+        )
+    if status_code == 403:
+        return AIProviderError(
+            "ai_provider_access_denied",
+            "The AI provider denied access. Check API-key restrictions and project permissions.",
+            retryable=False,
+        )
+    if status_code == 404:
+        return AIProviderError(
+            "ai_model_unavailable",
+            "The configured AI model is unavailable. Update AI_MODEL and create a new generation job.",
+            retryable=False,
+        )
+    if status_code == 429:
+        return AIProviderError(
+            "ai_provider_rate_limited",
+            "The AI provider rate limit was reached. Wait before retrying the job.",
+            retryable=True,
+        )
     if status_code is not None:
-        retryable = status_code in {408, 409, 425, 429} or status_code >= 500
+        retryable = status_code in {408, 409, 425} or status_code >= 500
         return AIProviderError(
             "ai_provider_unavailable" if retryable else "ai_provider_rejected_request",
             (
@@ -191,11 +261,11 @@ class _RetryingProvider:
                 normalized = _normalize_provider_error(exc)
                 if not normalized.retryable or attempt >= self.settings.ai_provider_max_retries:
                     raise normalized from exc
-                cap = min(
+                delay = min(
                     self.settings.ai_retry_max_seconds,
-                    self.settings.ai_retry_base_seconds * (2**attempt),
+                    self.settings.ai_retry_base_seconds,
                 )
-                await asyncio.sleep(random.uniform(0, cap))
+                await asyncio.sleep(delay)
         raise AssertionError("provider retry loop exhausted unexpectedly")
 
 
@@ -208,11 +278,17 @@ class GeminiProvider(_RetryingProvider):
                 raise AIProviderConfigurationError()
             try:
                 from google import genai
+                from google.genai import types as genai_types
             except ImportError as exc:  # pragma: no cover - installation defect
                 raise AIProviderConfigurationError(
                     "The Gemini provider dependency is not installed."
                 ) from exc
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(
+                api_key=api_key,
+                http_options=genai_types.HttpOptions(
+                    retry_options=genai_types.HttpRetryOptions(attempts=1)
+                ),
+            )
         self._client = client
 
     async def generate_structured(
@@ -238,7 +314,7 @@ class GeminiProvider(_RetryingProvider):
                     "temperature": self.settings.ai_temperature,
                     "max_output_tokens": output_limit,
                     "response_mime_type": "application/json",
-                    "response_json_schema": _closed_schema(response_model),
+                    "response_json_schema": _gemini_schema(response_model),
                 },
             )
             output_text = getattr(response, "text", None)

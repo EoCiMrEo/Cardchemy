@@ -10,6 +10,8 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-15 | `2026-09-15-ai-provider-retry-and-error-remediation.md` | Gemini schema compatibility, precise provider/model errors, three fixed-delay retries, stage canaries, fail-fast cancellation, and worker-wide request concurrency. |
+| 2026-09-15 | `2026-09-15-ai-provider-enablement-fix.md` | Non-secret AI enablement shared by API and worker, worker-only provider credentials, fail-fast validation, no-claim kill switch, and runtime verification. |
 | 2026-09-15 | `2026-09-15-phase-8-remediation.md` | Production-shaped self-hosting, generated secrets, multi-stage images, secure SPA edge, readiness/draining, backup/restore rehearsal, and platform evidence. |
 | 2026-09-15 | `2026-09-15-phase-7-remediation.md` | Transactional email outbox, bounded SMTP worker, Mailpit capture/fault tests, reset and invitation delivery, guarded recovery, and live browser verification. |
 | 2026-09-15 | `2026-09-15-phase-6-remediation.md` | Durable study-answer idempotency, valid review-all sessions, keyboard/screen-reader semantics, reduced motion, responsive/touch-safe UI, axe coverage, and 44 browser checks. |

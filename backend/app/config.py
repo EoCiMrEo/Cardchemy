@@ -143,6 +143,7 @@ class Settings(BaseSettings):
 
     # Provider-independent AI settings. ``GEMINI_API_KEY`` remains as a
     # compatibility fallback while deployments migrate to ``AI_API_KEY``.
+    ai_provider_enabled: bool = False
     ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
     ai_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=128)
     ai_api_key: SecretStr | None = None
@@ -153,9 +154,9 @@ class Settings(BaseSettings):
     ai_max_output_tokens: int = Field(default=4_096, ge=64, le=131_072)
     ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
     ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
-    ai_provider_max_retries: int = Field(default=1, ge=0, le=5)
-    ai_retry_base_seconds: float = Field(default=1, ge=0.1, le=60)
-    ai_retry_max_seconds: float = Field(default=10, ge=0.1, le=600)
+    ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
+    ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
+    ai_retry_max_seconds: float = Field(default=30, ge=3, le=600)
     ai_concurrency: int = Field(default=3, ge=1, le=32)
     ai_chunk_input_tokens: int = Field(default=1_200, ge=128, le=131_072)
     ai_chunk_overlap_tokens: int = Field(default=120, ge=0, le=32_768)
@@ -282,9 +283,24 @@ class Settings(BaseSettings):
 
     @property
     def ai_provider_configured(self) -> bool:
+        """Return whether this process has the provider connection material."""
+
         if self.ai_provider == "gemini":
             return self.ai_api_key_value is not None
         return self.ai_base_url is not None
+
+    def require_generation_worker_config(self) -> "Settings":
+        """Fail worker startup when an enabled provider lacks credentials."""
+
+        if (
+            self.ai_provider_enabled
+            and self.ai_provider == "gemini"
+            and self.ai_api_key_value is None
+        ):
+            raise ValueError(
+                "Enabled Gemini generation requires AI_API_KEY or GEMINI_API_KEY"
+            )
+        return self
 
     @property
     def ai_pricing_configured(self) -> bool:

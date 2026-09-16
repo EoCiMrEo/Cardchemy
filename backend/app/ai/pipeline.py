@@ -82,9 +82,17 @@ def cost_microusd(settings: Settings, input_tokens: int, output_tokens: int) -> 
 
 
 class FlashcardGenerationPipeline:
-    def __init__(self, settings: Settings | None = None, provider: AIProvider | None = None):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        provider: AIProvider | None = None,
+        provider_semaphore: asyncio.Semaphore | None = None,
+    ):
         self.settings = settings or get_settings()
         self.provider = provider or get_ai_provider(self.settings)
+        self.provider_semaphore = provider_semaphore or asyncio.Semaphore(
+            self.settings.ai_concurrency
+        )
         self.usage = UsageTotals()
         self.estimated_input_tokens = 0
         self.estimated_output_tokens = 0
@@ -176,7 +184,8 @@ class FlashcardGenerationPipeline:
                 retryable=False,
             )
         try:
-            response = await self.provider.generate_structured(**kwargs)
+            async with self.provider_semaphore:
+                response = await self.provider.generate_structured(**kwargs)
         except AIProviderError as exc:
             raise self._error(exc.code, exc.safe_message, retryable=exc.retryable) from exc
         self.usage.add(response.usage)
@@ -206,6 +215,40 @@ class FlashcardGenerationPipeline:
             )
         return response.data
 
+    @staticmethod
+    async def _gather_fail_fast(*coroutines: Any) -> list[Any]:
+        """Preserve ordering while cancelling siblings after the first error."""
+
+        if not coroutines:
+            return []
+        tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+        try:
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_EXCEPTION
+            )
+            failure = next(
+                (
+                    task.exception()
+                    for task in done
+                    if not task.cancelled() and task.exception() is not None
+                ),
+                None,
+            )
+            if failure is not None:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                raise failure
+            if pending:
+                await asyncio.gather(*pending)
+            return [task.result() for task in tasks]
+        finally:
+            unfinished = [task for task in tasks if not task.done()]
+            for task in unfinished:
+                task.cancel()
+            if unfinished:
+                await asyncio.gather(*unfinished, return_exceptions=True)
+
     async def _summarize_chunk(self, chunk: DocumentChunk) -> SummaryOutput:
         user_prompt = json.dumps(
             {
@@ -215,27 +258,13 @@ class FlashcardGenerationPipeline:
             },
             ensure_ascii=False,
         )
-        try:
-            result: SummaryOutput = await self._call(
-                response_model=SummaryOutput,
-                system_prompt=SYSTEM_BOUNDARY,
-                user_prompt=user_prompt,
-                max_output_tokens=self.settings.ai_summary_output_tokens,
-                operation="summary_map",
-            )
-        except PipelineError as exc:
-            if exc.code in {
-                "ai_context_window_limit",
-                "ai_input_token_limit",
-                "ai_output_token_limit",
-                "ai_cost_limit",
-            }:
-                raise
-            raise self._error(
-                "summary_generation_failed",
-                "The document summary could not be generated. The job can be retried.",
-                retryable=True,
-            ) from exc
+        result: SummaryOutput = await self._call(
+            response_model=SummaryOutput,
+            system_prompt=SYSTEM_BOUNDARY,
+            user_prompt=user_prompt,
+            max_output_tokens=self.settings.ai_summary_output_tokens,
+            operation="summary_map",
+        )
         if set(result.source_chunk_ids) != {chunk.chunk_id}:
             raise self._error(
                 "summary_generation_failed",
@@ -262,27 +291,13 @@ class FlashcardGenerationPipeline:
                     },
                     ensure_ascii=False,
                 )
-                try:
-                    reduced: SummaryOutput = await self._call(
-                        response_model=SummaryOutput,
-                        system_prompt=SYSTEM_BOUNDARY,
-                        user_prompt=user_prompt,
-                        max_output_tokens=self.settings.ai_summary_output_tokens,
-                        operation="summary_reduce",
-                    )
-                except PipelineError as exc:
-                    if exc.code in {
-                        "ai_context_window_limit",
-                        "ai_input_token_limit",
-                        "ai_output_token_limit",
-                        "ai_cost_limit",
-                    }:
-                        raise
-                    raise self._error(
-                        "summary_generation_failed",
-                        "The document summary could not be generated. The job can be retried.",
-                        retryable=True,
-                    ) from exc
+                reduced: SummaryOutput = await self._call(
+                    response_model=SummaryOutput,
+                    system_prompt=SYSTEM_BOUNDARY,
+                    user_prompt=user_prompt,
+                    max_output_tokens=self.settings.ai_summary_output_tokens,
+                    operation="summary_reduce",
+                )
                 if set(reduced.source_chunk_ids) != set(allowed):
                     raise self._error(
                         "summary_generation_failed",
@@ -341,13 +356,17 @@ class FlashcardGenerationPipeline:
                 "document_has_no_text", "The document contains no usable text.", retryable=False
             )
         self._preflight(chunks, target_count)
-        semaphore = asyncio.Semaphore(self.settings.ai_concurrency)
-
         async def bounded_summary(chunk: DocumentChunk):
-            async with semaphore:
-                return await self._summarize_chunk(chunk)
+            return await self._summarize_chunk(chunk)
 
-        summaries = await asyncio.gather(*(bounded_summary(chunk) for chunk in chunks))
+        # Probe one chunk before fan-out. Provider-wide configuration failures
+        # then cost one bounded retry sequence instead of one sequence per chunk.
+        summaries = [await bounded_summary(chunks[0])]
+        summaries.extend(
+            await self._gather_fail_fast(
+                *(bounded_summary(chunk) for chunk in chunks[1:])
+            )
+        )
         global_summary = (await self._reduce_summaries(list(summaries))).summary
         chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
         accepted: list[ValidatedCard] = []
@@ -359,12 +378,26 @@ class FlashcardGenerationPipeline:
             allocations = allocate_card_targets(chunks, missing)
 
             async def bounded_generation(chunk: DocumentChunk):
-                async with semaphore:
-                    return chunk, await self._generate(
-                        chunk, global_summary, allocations[chunk.chunk_id], round_index
-                    )
+                return chunk, await self._generate(
+                    chunk, global_summary, allocations[chunk.chunk_id], round_index
+                )
 
-            batches = await asyncio.gather(*(bounded_generation(chunk) for chunk in chunks))
+            requested_chunks = [
+                chunk for chunk in chunks if allocations[chunk.chunk_id] > 0
+            ]
+            batches = []
+            if requested_chunks:
+                # Card generation has a different schema from summaries, so it
+                # receives its own single-call compatibility probe.
+                batches.append(await bounded_generation(requested_chunks[0]))
+                batches.extend(
+                    await self._gather_fail_fast(
+                        *(
+                            bounded_generation(chunk)
+                            for chunk in requested_chunks[1:]
+                        )
+                    )
+                )
             for requested_chunk, candidates in batches:
                 for candidate in candidates:
                     if candidate.source_chunk_id != requested_chunk.chunk_id:

@@ -19,8 +19,9 @@ async def test_live_flashcard_graph():
     from app.config import get_settings
 
     settings = get_settings()
-    if not settings.ai_provider_configured:
-        pytest.skip("the configured AI provider is unavailable")
+    if not settings.ai_provider_enabled:
+        pytest.skip("AI_PROVIDER_ENABLED is not true")
+    settings.require_generation_worker_config()
 
     result = await create_flashcard_graph(settings=settings).ainvoke(
         {

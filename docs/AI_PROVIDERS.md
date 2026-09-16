@@ -5,12 +5,41 @@ strict application contract. Provider clients are created lazily by workers;
 the API can still start when credentials are absent and reports a precise
 generation-availability reason.
 
+`AI_PROVIDER_ENABLED` is the non-secret operator switch shared by the API and
+generation worker. When false, the API rejects new generation jobs and the
+worker does not claim queued jobs. Provider credentials remain available only
+to the worker process.
+
 ## Supported profiles
 
 | Provider | Required settings | Production baseline |
 |---|---|---|
-| `gemini` | `AI_MODEL`, `AI_API_KEY` | A specific stable Gemini text model with structured JSON output and usage metadata |
-| `openai_compatible` | `AI_MODEL`, `AI_BASE_URL`; key when the endpoint requires one | Chat Completions, separate system/user roles, strict JSON Schema response format, output-token limits, and usage metadata or estimator fallback |
+| `gemini` | `AI_PROVIDER_ENABLED=true`, `AI_MODEL`, `AI_API_KEY` | A specific stable Gemini text model with structured JSON output and usage metadata |
+| `openai_compatible` | `AI_PROVIDER_ENABLED=true`, `AI_MODEL`, `AI_BASE_URL`; key when the endpoint requires one | Chat Completions, separate system/user roles, strict JSON Schema response format, output-token limits, and usage metadata or estimator fallback |
+
+For native Gemini, use:
+
+```dotenv
+AI_PROVIDER_ENABLED=true
+AI_PROVIDER=gemini
+AI_MODEL=gemini-3.8-flash
+AI_API_KEY=<provider-key>
+GEMINI_API_KEY=
+AI_BASE_URL=
+```
+
+`AI_BASE_URL` must remain empty for the native Gemini adapter. `GEMINI_API_KEY`
+is a legacy fallback; prefer one value in `AI_API_KEY`, not duplicate secrets in
+both fields. After changing provider settings, recreate the API and worker so
+both receive the non-secret switch and the worker receives the credential:
+
+```text
+docker compose up -d --force-recreate backend worker
+```
+
+Recreating the frontend is unnecessary because it reads availability from the
+API. Enabling Gemini without a worker credential fails the generation worker at
+startup instead of accepting jobs that can never run.
 
 The default, `gemini-3.8-flash`, is a specific stable identifier in Google’s
 model catalog as checked on 2026-09-14. Model availability changes over time;
@@ -26,17 +55,37 @@ Authoritative references:
 - [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)
 - [OpenAI Chat API usage fields](https://developers.openai.com/api/reference/resources/chat)
 
-Provider-native JSON Schema constrains the wire response, but it is never the
-trust boundary. The server validates strict Pydantic types, canonical card
-rules, exact document grounding, page/section provenance, and near duplicates
-before persistence.
+Gemini receives a minimal, inline structured-output schema containing only the
+field shape required for generation. Descriptions, references, and validation
+constraints stay in the server-side Pydantic contract to avoid provider/model
+schema-complexity rejection. Provider-native schema still constrains the wire
+response, but it is never the trust boundary. The server validates strict
+Pydantic types, unknown fields, canonical card rules, exact document grounding,
+page/section provenance, and near duplicates before persistence.
 
 ## Bounds and pricing
 
-Temperature, context and output tokens, provider timeout/retries, retry jitter,
+Temperature, context and output tokens, provider timeout/retries, retry delay,
 parallelism, chunk/summary budgets, per-job input/output ceilings, refill
 rounds, duplicate threshold, and cost ceiling are validated settings documented
 in `.env.example`.
+
+Transient timeout, network, HTTP 408/409/425/429, and provider 5xx failures are
+retried at most three times after the initial call. The shipped configuration
+waits three seconds before every retry, and validation does not allow a shorter
+delay. HTTP 400/401/403/404 failures are classified as permanent and are not
+retried. After provider retries are exhausted, the job stops without another
+whole-job automatic attempt; retryable failures retain the encrypted source so
+an operator or instructor can retry later.
+
+The Gemini SDK retry layer is explicitly disabled (`attempts=1`), leaving the
+application retry loop as the single owner of request count and delay policy.
+
+The first summary request and first card-generation request are compatibility
+probes before each stage fans out. A failed probe prevents sibling requests,
+and a later failure cancels outstanding siblings. `AI_CONCURRENCY` is enforced
+once per worker process, so concurrent jobs cannot each create their own full
+provider request pool.
 
 Set both `AI_INPUT_COST_PER_MILLION_USD` and
 `AI_OUTPUT_COST_PER_MILLION_USD` from the provider’s current price sheet. When

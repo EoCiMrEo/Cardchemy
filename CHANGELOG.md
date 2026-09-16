@@ -5,6 +5,17 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+### Fixed
+
+- Added an explicit non-secret `AI_PROVIDER_ENABLED` admission switch so the
+  API can enable PDF generation without receiving provider credentials; the
+  generation worker retains the key, validates enabled Gemini configuration at
+  startup, and treats the switch as a no-claim cost-control kill switch.
+- Made Gemini structured-output schemas use the provider-supported subset,
+  preserved clear provider/model failure categories, and bounded transient
+  failures to three retries with three-second waits, stage canaries,
+  fail-fast sibling cancellation, and worker-wide provider concurrency.
+
 ### Phase 8 - deployment and self-hosting
 
 - Added a generated-secret clean-clone bootstrap, production-shaped Compose

@@ -176,7 +176,7 @@ class GenerationJobService:
 
     async def _check_reservation_capacity(self, db: AsyncSession, user_id: UUID) -> None:
         await self._lock_admission(db)
-        if not self.settings.ai_provider_configured:
+        if not self.settings.ai_provider_enabled:
             raise generation_http_error(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "ai_provider_not_configured",
@@ -637,7 +637,7 @@ class GenerationJobService:
         )
         _, reset_at = self._day_bounds()
         unavailable_reasons: list[GenerationLimitReason] = []
-        if not self.settings.ai_provider_configured:
+        if not self.settings.ai_provider_enabled:
             unavailable_reasons.append(
                 GenerationLimitReason(
                     code="ai_provider_not_configured",
