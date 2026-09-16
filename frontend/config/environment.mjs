@@ -4,7 +4,8 @@ import { parseEnv } from 'node:util'
 // Read exactly one file. Vite's normal .env.local/.env.<mode> fallbacks are
 // intentionally disabled so native and container builds have one contract.
 export function publicEnvironment(rootFile, processEnvironment = process.env) {
-  const file = existsSync(rootFile) ? parseEnv(readFileSync(rootFile, 'utf8')) : {}
+  const fullyInjected = Boolean(processEnvironment.API_PORT && processEnvironment.VITE_API_URL)
+  const file = !fullyInjected && existsSync(rootFile) ? parseEnv(readFileSync(rootFile, 'utf8')) : {}
   const value = (key, fallback) => processEnvironment[key] || file[key] || fallback
   const apiPort = Number(value('API_PORT', '8000'))
   if (!Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {

@@ -602,7 +602,7 @@ implementation artifacts.
 - [x] **P1** Add secret scanning, dependency review, container scanning, and a
   generated SBOM for releases.
 - [x] **P1** Configure Dependabot or Renovate with grouped, tested updates.
-- [ ] **P1** Add branch protection and require CI before merge.
+- [x] **P1** Add branch protection and require CI before merge.
 - [x] **P1** Refresh stale browser-compatibility data and define a measured
   frontend bundle budget; address the current warning with verified splitting
   where appropriate, rather than hiding it by raising the warning threshold.

@@ -118,13 +118,14 @@ workflow does not push images or attach files to a release automatically.
 
 The actual GitHub repository is `EoCiMrEo/Cardchemy`, private. On 2026-09-16,
 the Phase 9 protection payload was applied to `main` using the existing
-authenticated account. The required check must still run successfully on the
-published changes, and a controlled failing pull request must prove merge
-blocking. Local workflow files and the payload alone cannot prevent merges.
-GitHub protection for private
-repositories depends on the account plan; native dependency review additionally
-depends on Advanced Security. Resolve those feature entitlements before claiming
-the Phase 9 completion criterion.
+authenticated account. The controlled first run on review PR #1 passed all
+mandatory suites but deliberately failed its authentication coverage threshold;
+`ci-required` failed and GitHub reported the non-draft PR blocked. The final
+threshold is restored to 88%; the repaired head must pass every mandatory gate.
+Local workflow files and the payload alone cannot prevent merges. Main
+protection is active for this private repository; native dependency review
+requires its separate Advanced Security entitlement, with full locked registry
+audits across all scopes enforced regardless.
 [GitHub documents protected-branch availability and required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
 Publish the reviewed changes

@@ -18,11 +18,11 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function RoleBasedSubjectDetails() {
-    const { user } = useAuth();
-    if (user?.role === 'instructor') {
-        return <SubjectDetails />;
-    }
-    return <StudentSubjectDetails />;
+  const { user } = useAuth();
+  if (user?.role === 'instructor') {
+    return <SubjectDetails />;
+  }
+  return <StudentSubjectDetails />;
 }
 
 function App() {
@@ -32,59 +32,59 @@ function App() {
         <AppErrorBoundary>
           <Suspense fallback={<div className="flex min-h-dvh items-center justify-center" role="status">{copy.routing.loadingAccount}</div>}>
             <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/join" element={<JoinCourse />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/join" element={<JoinCourse />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
 
-            <Route
-              path="/subjects/:id"
-              element={
-                <ProtectedRoute>
-                  <div className="min-h-dvh bg-gray-50">
+              <Route
+                path="/subjects/:id"
+                element={
+                  <ProtectedRoute>
+                    <div className="min-h-dvh bg-gray-50">
                       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                          <RoleBasedSubjectDetails />
+                        <RoleBasedSubjectDetails />
                       </main>
-                  </div>
-                </ProtectedRoute>
-              }
-            />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
 
-            <Route
-              path="/sets/:id"
-              element={
-                <RoleRoute role="instructor">
-                  <div className="min-h-dvh bg-gray-50">
+              <Route
+                path="/sets/:id"
+                element={
+                  <RoleRoute role="instructor">
+                    <div className="min-h-dvh bg-gray-50">
                       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                          <SetView />
+                        <SetView />
                       </main>
-                  </div>
-                </RoleRoute>
-              }
-            />
+                    </div>
+                  </RoleRoute>
+                }
+              />
 
-            <Route
-              path="/study/:id"
-              element={
-                <RoleRoute role="student">
-                  <StudyMode />
-                </RoleRoute>
-              }
-            />
+              <Route
+                path="/study/:id"
+                element={
+                  <RoleRoute role="student">
+                    <StudyMode />
+                  </RoleRoute>
+                }
+              />
 
-            {/* Default redirect */}
-            <Route path="/" element={<Navigate to="/dashboard" />} />
-            <Route path="*" element={<NotFound />} />
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/dashboard" />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </AppErrorBoundary>

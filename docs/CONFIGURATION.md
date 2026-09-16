@@ -16,8 +16,8 @@ or delete its database volume to apply a setting.
 
 An explicitly set nonempty process environment value takes precedence over the
 root .env; the file takes precedence over validated application defaults.
-Backend settings ignore empty values, so an empty optional field uses its
-default. Compose interpolation also uses defaults for empty values where the
+Backend settings ignore empty values: an empty process value does not override
+a nonempty root value, and an empty root value uses the validated default. Compose interpolation also uses defaults for empty values where the
 compose file specifies them, while required values cause configuration to fail.
 Tests must inject their own settings with _env_file=None and use disposable
 services; normal test runs must not consume the operator's real root .env.
@@ -38,7 +38,9 @@ managed database. The development override publishes PostgreSQL, API, and
 Mailpit SMTP on host loopback for native tooling. Its command is in
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Vite reads the root .env. With VITE_API_URL=/api, its development proxy sends
+Vite reads the root .env when its public settings are not fully injected.
+Explicit API_PORT and VITE_API_URL values avoid reading that file, as used by
+`npm run check` and the browser runner. With VITE_API_URL=/api, its development proxy sends
 requests to the host API_PORT, strips /api, and rewrites the refresh-cookie
 path. The built Compose frontend uses Nginx for the same-origin /api route;
 VITE_API_URL is a public value embedded at build time. Only VITE_* settings

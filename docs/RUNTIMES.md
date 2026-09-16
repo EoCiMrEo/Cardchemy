@@ -21,9 +21,8 @@ verified on that architecture.
 
 The reference frontend build pins Node 24.7.0 for compilation and runs on an
 unprivileged Nginx 1.31.3 Alpine image. The backend runtime uses Python 3.11 on
-Alpine 3.24,
-runs as a non-root application user, and omits the compiler/header toolchain
-from its dependency-builder stage. Exact reference sizes and release inspection
+Alpine 3.24, runs as a non-root application user, and omits the compiler/header
+toolchain used in its dependency-builder stage. Exact reference sizes and release inspection
 commands are in [Deployment and self-hosting](DEPLOYMENT.md).
 
 The npm version is declared in `frontend/package.json`. Python runtime packages

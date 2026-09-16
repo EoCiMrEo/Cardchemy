@@ -3,7 +3,7 @@
   "line_percent": 77,
   "branch_percent": 55,
   "critical_files": {
-    "app/services/auth.py": 101,
+    "app/services/auth.py": 88,
     "app/services/flashcard.py": 68,
     "app/services/generation.py": 78,
     "app/ai/pipeline.py": 85,

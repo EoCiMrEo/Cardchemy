@@ -110,7 +110,7 @@ pipeline directly; the graph facade remains a shipped worker dependency.
 | Offline backend, Python 3.13.7 | 203 passed; 25 service/live cases deselected |
 | PostgreSQL | 21 passed, three Mailpit-only skips, 204 deselected; current head, no drift, all seven revisions downgrade/re-upgrade passed |
 | Mailpit | Three passed, 225 deselected; generated services/credentials cleaned |
-| `npm run check` | All typechecks, lint, three Node units, 26 component contracts/coverage and production build passed; 47 Chromium passed, one separately gated live reset skipped |
+| `npm run check` | All typechecks, lint, four Node units, 26 component contracts/coverage and production build passed; 47 Chromium passed, one separately gated live reset skipped |
 | Real instructor/student journey | One passed in 23.2 seconds; actual API/generation/email workers, PDF extraction/grounding, review/publication, invitation, signup/study and database progress proof |
 | Live evaluation admission | 19 offline guards passed; paid case deselected, no provider call |
 
@@ -204,3 +204,49 @@ steps; the corresponding checklist item stays pending until verified.
 Final approved local scanner run passed: 24 commits including the exported current changes, zero Gitleaks findings, zero worktree secret findings, and zero HIGH/CRITICAL OS/Python findings in all three final image archives, including unfixed advisories. Three CycloneDX SBOMs, immutable image identities, advisory database timestamps and SHA256 checksums are retained in ignored artifacts/security. Generated scanner source/history/archive directories are removed. No OS vulnerability exception or ignore-unfixed option was introduced.
 
 Controlled hosted merge-blocking rehearsal: the first review-branch commit intentionally sets authentication coverage to an impossible 101% floor. This is confined to the review branch, is expected to fail ci-required, and must be restored to the measured 88% floor before final closure. Branch protection prevents merging this rehearsal.
+
+## Hosted enforcement and final isolation review
+
+The Phase 9 branch is published as codex/phase-9-remediation and review PR
+https://github.com/EoCiMrEo/Cardchemy/pull/1 is open without merging main.
+The initial hosted run is
+https://github.com/EoCiMrEo/Cardchemy/actions/runs/35129005199 at
+731bc7d6942710774e42be91e751cb8d67f58ffb. Both Python 3.11/3.13 suites
+passed 203 tests and failed only the deliberately impossible authentication
+coverage floor (89.40% actual versus 101%). Migrations, Mailpit, the real
+journey, dependency audits, secret scans and all three final-image gates passed.
+GitHub returns a non-draft, conflict-free PR with mergeable_state=blocked; the
+required aggregate result is still pending the frontend at this checkpoint.
+The returned main policy retains strict ci-required bound to Actions app 15368,
+admin enforcement, zero required reviewers and disabled force pushes/deletion.
+
+A final subagent audit found that Vite had eagerly parsed root .env before
+applying public process overrides; earlier browser checks could therefore
+consult the operator file for API_PORT. Its contents were not printed, copied
+or modified. The loader now skips the file when both public values are supplied.
+The complete frontend check, browser runner and direct Playwright server inject
+safe API_PORT/VITE_API_URL values; standalone dev/build keep the root contract.
+A new Node regression uses a directory as an unreadable root file to prove no
+read with complete injection, partial fallback behavior and port validation.
+Node discovery increases from three to four cases. The existing pre-browser
+check stages/order remain unchanged and propagate failures before the browser.
+
+All four named early QA/scanner temporary artifacts were removed after exact
+path checks. The source exports were owned by the sandbox account, so cleanup
+ran under that same account with a path-bounded read-only-file callback.
+Final audits/SBOMs and filtered remote evidence remain in ignored artifacts.
+
+The controlled negative run completed: frontend and all other mandatory gates
+passed, both backend matrix members failed only Coverage budgets, and
+ci-required failed with backend-offline as its sole failed dependency. GitHub
+reports the PR blocked with a completed failing ci-required from app 15368;
+main protection includes administrators, so the authenticated maintainer also
+cannot bypass this requirement. No merge was attempted. The authentication
+floor is restored to 88% and the branch-protection task is now verified/done.
+The repaired branch must still receive a successful final hosted CI run.
+
+The repaired isolation orchestrator passed all three typecheck stages, full
+lint, four Node units, all 26 component contracts/coverage, production build
+and four focused authentication browser cases. Its 48 ordinary browser cases
+are unchanged; hosted CI will run the entire browser suite on the repaired head.
+Workflow contracts and restored backend coverage budgets pass locally.
