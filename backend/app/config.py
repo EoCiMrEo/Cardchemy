@@ -2,7 +2,7 @@
 
 Secrets are intentionally required instead of falling back to values that could
 accidentally reach production. The environment file is resolved relative to
-the backend directory, so startup does not depend on the caller's cwd.
+the repository root, so startup does not depend on the caller's cwd.
 """
 
 import base64
@@ -10,9 +10,11 @@ import binascii
 from decimal import Decimal
 from functools import lru_cache
 import ipaddress
+import os
 from pathlib import Path
 import re
 from typing import Literal
+from urllib.parse import quote
 from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
@@ -20,6 +22,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = BACKEND_DIR.parent
 INSECURE_SECRET_VALUES = {
     "your-super-secret-key-change-in-production",
     "your-super-secret-key-change-in-production-please",
@@ -78,10 +81,10 @@ def normalize_http_origin(origin: str) -> str:
 
 
 class Settings(BaseSettings):
-    """Settings loaded from the process environment and ``backend/.env``."""
+    """Settings loaded from process environment and the root ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=BACKEND_DIR / ".env",
+        env_file=ROOT_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -96,7 +99,13 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     worker_shutdown_grace_seconds: float = Field(default=30, ge=0, le=7_200)
 
-    database_url: str
+    # Compose injects DATABASE_URL with its internal ``db`` host. Native
+    # processes derive a localhost URL from the same root PostgreSQL settings.
+    database_url: str = ""
+    postgres_db: str = Field(default="flashcard_gen", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    postgres_user: str = Field(default="admin", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    postgres_password: SecretStr | None = None
+    postgres_port: int = Field(default=5432, ge=1, le=65535)
 
     secret_key: SecretStr = Field(min_length=32)
     algorithm: Literal["HS256"] = "HS256"
@@ -198,7 +207,7 @@ class Settings(BaseSettings):
     generation_max_active_jobs_per_user: int = Field(default=2, ge=1, le=100)
     generation_max_active_jobs_deployment: int = Field(default=20, ge=1, le=10_000)
     generation_max_queued_jobs_deployment: int = Field(default=100, ge=1, le=100_000)
-    generation_daily_jobs_per_user: int = Field(default=10, ge=1, le=10_000)
+    generation_daily_jobs_per_user: int = Field(default=20, ge=1, le=10_000)
     generation_daily_cards_per_user: int = Field(default=500, ge=1, le=1_000_000)
     generation_daily_upload_bytes_per_user: int = Field(
         default=100 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024 * 1024
@@ -439,6 +448,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":
+        if not self.database_url:
+            if not self.postgres_password or not self.postgres_password.get_secret_value():
+                raise ValueError("DATABASE_URL or POSTGRES_PASSWORD is required")
+            password = quote(self.postgres_password.get_secret_value(), safe="")
+            self.database_url = (
+                f"postgresql+asyncpg://{self.postgres_user}:{password}"
+                f"@127.0.0.1:{self.postgres_port}/{self.postgres_db}"
+            )
         secret = self.secret_key_value
         if secret.lower() in INSECURE_SECRET_VALUES or len(set(secret)) < 8:
             raise ValueError("SECRET_KEY is known-insecure or lacks sufficient entropy")
@@ -560,4 +577,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # The test runner injects every required setting and must never pick up an
+    # operator's real root .env through an imported application module.
+    return Settings(_env_file=None if os.getenv("ENVIRONMENT") == "test" else ROOT_DIR / ".env")

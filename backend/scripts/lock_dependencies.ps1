@@ -11,6 +11,8 @@ if (-not $PythonCommand) {
 }
 
 Push-Location $backendDirectory
+$previousCompileCommand = $env:CUSTOM_COMPILE_COMMAND
+$env:CUSTOM_COMPILE_COMMAND = "powershell -File scripts/lock_dependencies.ps1"
 try {
     & $PythonCommand -m piptools compile --generate-hashes --strip-extras --resolver=backtracking --output-file requirements.txt requirements.in
     if ($LASTEXITCODE -ne 0) { throw "Production dependency lock failed." }
@@ -19,5 +21,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Development dependency lock failed." }
 }
 finally {
+    $env:CUSTOM_COMPILE_COMMAND = $previousCompileCommand
     Pop-Location
 }

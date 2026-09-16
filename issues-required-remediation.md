@@ -10,18 +10,36 @@ Priority labels:
 - **P1**: required for a dependable v1.0.
 - **P2**: important hardening, maintainability, or product polish.
 
-## Current baseline
+## Verified baseline and next work (2026-09-16)
 
-- The main flow exists: PDF upload -> AI generation -> instructor review ->
-  publish -> student study -> spaced-repetition progress.
-- Backend Docker configuration builds and the application imports successfully.
-- Frontend production build currently fails with TypeScript errors.
-- Frontend lint currently reports 48 errors and 7 warnings.
-- The production npm dependency audit currently reports 5 advisories (4 high,
-  1 moderate).
-- The repository has no automated unit, integration, or end-to-end test suite.
-- `frontend/src/services/api.ts` contains an existing uncommitted change and must
-  be preserved while remediation work is performed.
+- Phases 0-9 are recorded complete. Remaining work is operational hardening
+  and open-source release in Phases 10-11.
+- The application includes durable PDF-generation and email workers, versioned
+  migrations, source-grounded AI generation, provider quota controls, request
+  telemetry, and a production-shaped Compose deployment. Root `.env` is the
+  sole supported user-managed configuration file.
+- Phase 9 verification: 203 offline backend cases pass on hosted Python 3.11
+  and 3.13; 21 PostgreSQL contracts plus full migration downgrade/re-upgrade,
+  three Mailpit cases, and the real instructor/student journey pass.
+- Frontend `npm run check` passes all typechecks/lint, four Node units,
+  26 component contracts/coverage, production build and 47 Chromium cases.
+  The separate live password-reset case and paid-provider evaluation remain
+  explicitly opt-in; no paid AI call was made during Phase 9.
+- Fresh full Python/npm dependency audits and Git/history/worktree secret scans
+  report no findings. All three final runtime images pass native/auth/PDF/OCR
+  probes and HIGH/CRITICAL OS/application scans, including unfixed advisories;
+  CycloneDX SBOMs and checksums are retained.
+- Browser-compatibility data is current. Emitted JavaScript measures 120,400
+  bytes initial gzip, 360,202 bytes largest raw asset and 222,704 bytes total
+  gzip, below enforced 130,000/400,000/240,000-byte budgets.
+- GitHub main protection requires current-base `ci-required` from Actions app
+  15368, including administrators. A controlled coverage failure blocked PR #1;
+  repaired hosted run 35129468986 passed every mandatory gate. Full locked
+  audits remain mandatory where private-repository native dependency review
+  requires an additional GitHub entitlement. Evidence is recorded in
+  `.agent/logs/2026-09-16-phase-9-remediation.md`.
+- Preserve existing user changes and the real root `.env`. Updating this plan
+  does not authorize deleting local environments, data, credentials, or volumes.
 
 ---
 
@@ -428,45 +446,185 @@ upgrade/backup path.
 
 ---
 
-## Phase 9 - Add tests, CI, and supply-chain checks
+## Phase 9 - Clean the repository, consolidate tests, and add CI/security gates
 
-**Goal:** Prevent security and behavior regressions before merging or releasing.
+**Goal:** Remove verified unused/stale material, establish one root environment
+configuration, and protect the maintained product with reproducible test and
+release gates.
 
-### Automated tests
+**Required order:** complete Phase 9A before expanding the test/CI work in 9B/9C
+or proceeding to Phases 10-11. Cleanup is a behavior-preserving change, not an
+opportunity to remove useful regression coverage.
 
-- [ ] **P0** Add backend unit tests for token types, token expiry, malformed
+### Phase 9A - Repository hygiene and one root environment file
+
+#### Inventory and cleanup rules
+
+- [x] **P0** Review the current code, recent AI changes, entry points, imports,
+  test discovery, scripts, Docker builds, and documentation before deleting
+  anything. Classify each candidate as keep, rename, consolidate, archive, or
+  remove, with evidence of its consumers or lack of consumers.
+- [x] **P0** Preserve runtime behavior, public contracts, database records,
+  migration revision IDs/chains, lockfiles, authored AI-evaluation fixtures, and
+  test safety boundaries. Do not rewrite/drop migrations or regenerate secrets
+  merely to make filenames cleaner.
+- [x] **P1** Inspect unused compatibility modules
+  `backend/app/agents/nodes.py` and `state.py`, the unused frontend UI Slot
+  wrapper, and the React scaffold asset; remove them only after confirming no
+  shipped code, test, script, or documented workflow needs them.
+- [x] **P1** Review `backend/app/agents/graph.py` separately: the generation worker
+  and live test still use this facade. If retiring it, migrate consumers to the
+  AI pipeline first and preserve timeout, telemetry, and provider-governor
+  behavior before removing the compatibility package.
+- [x] **P1** Remove remaining scaffold assets only after replacing active
+  references; `frontend/public/vite.svg` is still the configured favicon.
+- [x] **P1** Review duplicate Tailwind configuration/theme definitions and
+  Vite/PostCSS processing. Consolidate only after verifying the generated CSS
+  and accessibility/responsive behavior remain equivalent.
+- [x] **P1** Review dependencies and ignore rules for unused scaffolding. Keep
+  legitimate dynamic/CLI/build/test dependencies and all secret/cache/data
+  exclusions; ignored `venv` and `node_modules` are not tracked source cleanup.
+- [x] **P1** Archive the obsolete `idea.md` design and replace the frontend Vite
+  README with a useful entry point. Update maintained docs/comments to describe
+  current architecture and behavior, not remediation phases, retired tools, or
+  superseded per-job concurrency/retry policies. Preserve historical evidence
+  in development logs or an explicitly labelled archive.
+- [x] **P1** Update renamed paths in imports, scripts, test commands, docs, and
+  CI configuration; do not leave references to removed files or old phase names.
+
+#### Keep regression tests; name them by product behavior
+
+- [x] **P0** Keep `test_ai_chunking.py`, `test_ai_evaluation.py`,
+  `test_ai_grounding.py`, `test_ai_pipeline.py`, and the other maintained AI
+  tests. A completed remediation phase does not make its tests disposable.
+- [x] **P0** Rename or split phase-labelled tests by domain using the map below.
+  Remove a test only when its behavior is retired or equivalent retained
+  coverage is demonstrated; never delete it solely because its phase is done.
+- [x] **P1** Consolidate shared PostgreSQL/test fixtures and resolve the current
+  repeated hardcoded Alembic-head assertions through one maintained schema-head
+  check. Validate disposable database identity before any mutation or cleanup.
+- [x] **P1** Rename phase-labelled helpers, fixtures, test descriptions, and
+  `PHASE7_*` live-test variables consistently. Preserve explicit opt-in,
+  disposable-account/database restrictions, and no-secret logging.
+
+| Original test/helper | Maintained domain name or split |
+| --- | --- |
+| `backend/tests/test_phase2_integrity.py` | `test_flashcard_validation.py` and `test_study_progress.py` |
+| `backend/tests/test_phase6_study.py` | `test_study_sessions.py` and `test_study_idempotency.py` |
+| `backend/tests/test_phase7_email.py` | `test_email_delivery.py`; split outbox/worker coverage if useful |
+| `backend/tests/test_phase8_runtime.py` | `test_runtime.py`; split security, health, and shutdown if useful |
+| `backend/tests/postgres/test_phase2_postgres.py` | `test_database_integrity.py`; split concurrency by domain |
+| `backend/tests/postgres/test_phase3_generation_jobs.py` | `test_generation_job_persistence.py` (avoids the unit-module name collision) |
+| `backend/tests/postgres/test_phase4_ai_quality.py` | `test_ai_schema.py` |
+| `backend/tests/postgres/test_phase7_email_outbox.py` | `test_email_outbox.py` |
+| `backend/tests/integration/test_live_graph.py` | `test_live_ai_pipeline.py` after facade migration |
+| `backend/tests/support/phase7_browser_user.py` | `password_reset_browser_user.py` |
+| `frontend/e2e/phase5-coverage.spec.ts` | Split auth recovery, subject mutations/recovery, study recovery, and generation telemetry |
+| `frontend/e2e/phase6-accessibility.spec.ts` | `accessibility.spec.ts` |
+| `frontend/e2e/phase6-responsive.spec.ts` | `responsive.spec.ts` |
+| `frontend/e2e/phase6-study-reliability.spec.ts` | `study-reliability.spec.ts` |
+| `frontend/e2e/phase7-invitation-email.spec.ts` | `invitation-email.spec.ts` |
+| `frontend/e2e/phase7-live-password-reset.spec.ts` | `password-reset.live.spec.ts` |
+
+#### Configuration decision: exactly one user-managed `.env` at repository root
+
+There must be one supported configuration file: `<repository-root>/.env`, with
+one documented template: `<repository-root>/.env.example`. Backend/frontend
+`.env` files must not be required, loaded as fallbacks, or recommended in docs.
+Docker and isolated tests may inject process environment values without a file.
+
+- [x] **P0** Merge root and backend `.env.example` into the root template, retain
+  all supported settings, reconcile conflicting defaults, and remove the
+  component-specific examples after updating every consumer/reference.
+- [x] **P0** Change backend configuration from `backend/.env` to an absolute,
+  working-directory-independent root `.env` location for native development,
+  CLI commands, migrations, and workers. Support Docker process injection
+  without copying or mounting secrets into runtime images.
+- [x] **P0** Make frontend development/build configuration use the same root
+  source or its explicitly injected public settings. Resolve local API/proxy
+  routing deliberately; deleting `frontend/.env.example` alone is insufficient.
+- [x] **P0** Define precedence as explicit process environment -> root `.env` ->
+  validated defaults. Keep tests isolated from the user's real `.env` through
+  injected test settings and `_env_file=None` where appropriate.
+- [x] **P0** Preserve least-privilege Compose injection: provider keys reach only
+  the generation worker, SMTP credentials only the email worker, and frontend
+  build variables are public `VITE_*` values only. Do not add a blanket
+  `env_file: .env` to every service.
+- [x] **P0** Document/derive Docker database host `db` versus host-development
+  `localhost` from this same configuration. Explain Compose-only ports,
+  `DATABASE_URL`, frontend URLs, and build-time API configuration without
+  requiring a second environment file.
+- [x] **P0** Fix fresh-local-bootstrap SMTP defaults: the current root template
+  can select Compose's `mailpit` host while explicitly retaining port `587`.
+  Local Mailpit must use port `1025` with both TLS flags false; production must
+  require a real relay and the correct encrypted mode.
+- [x] **P1** Reconcile the root example's daily per-user job quota `20` with the
+  backend example/default `10`; preserve the intended operator decision and
+  document it instead of silently overriding it during the merge.
+- [x] **P1** Group the root example into basic setup and optional advanced
+  settings. Explain each variable's purpose, default, units/range, required
+  conditions, consuming process, and security implications; clarify whether
+  an empty value means fallback, disabled, or invalid.
+- [x] **P1** Document when root `.env` edits require container recreation,
+  process restart, or frontend rebuild. Keep bootstrap non-overwriting and
+  provide a safe settings-update path for existing installations.
+- [x] **P1** Add root-loader tests from different working directories, environment
+  precedence/isolation tests, and configuration-template completeness/default
+  checks covering application and Compose-only settings.
+
+**9A complete when:** the reviewed cleanup inventory is resolved, maintained
+tests have domain names and equivalent coverage, migrations/data/secrets are
+preserved, no active reference points to removed files or component `.env`
+files, and fresh-clone Compose plus supported native workflows configure the
+app from root `.env` only. Backend/frontend gates and isolated PostgreSQL,
+Mailpit, and browser regressions must pass; paid AI calls remain opt-in.
+
+### Phase 9B - Consolidated test coverage and commands
+
+Audit existing coverage first and add only missing cases; tests already added
+in Phases 0-8 and subsequent AI changes are the starting suite, not disposable
+implementation artifacts.
+
+- [x] **P0** Verify/add backend unit tests for token types, token expiry, malformed
   claims, password/auth behavior, invitations, permissions, scheduling, and
   progress calculations.
-- [ ] **P0** Add PostgreSQL integration tests for migrations, constraints,
+- [x] **P0** Verify/add PostgreSQL integration tests for migrations, constraints,
   transactions, cascades, duplicate enrollments, and concurrent updates.
-- [ ] **P0** Add PDF tests for valid, empty, encrypted, malformed, oversized,
+- [x] **P0** Verify/add PDF tests for valid, empty, encrypted, malformed, oversized,
   scanned, and high-page-count inputs.
-- [ ] **P0** Mock the model for normal tests and cover retry, invalid JSON,
+- [x] **P0** Mock the model for normal tests and cover retry, invalid JSON,
   timeout, partial failure, and cancellation paths.
-- [ ] **P0** Add frontend component tests for route guards, token refresh, joins,
+- [x] **P0** Verify/add frontend component tests for route guards, token refresh, joins,
   card editing, timers, submission locking, and error recovery.
-- [ ] **P0** Add end-to-end tests for instructor creation -> generation -> review
+- [x] **P0** Verify/add end-to-end tests for instructor creation -> generation -> review
   -> publish -> invitation -> student study -> progress.
-- [ ] **P1** Add an optional live-model evaluation suite with a strict budget and
+- [x] **P1** Verify/add an optional live-model evaluation suite with a strict budget and
   explicit opt-in.
+- [x] **P1** Document one authoritative command per offline, PostgreSQL, Mailpit,
+  browser, and opt-in live-AI suite, including disposable-environment setup and
+  expected gating; ensure renames do not silently reduce test discovery.
 
-### Continuous integration and dependency safety
+### Phase 9C - Continuous integration and dependency safety
 
-- [ ] **P0** Add CI gates for backend tests, frontend typecheck/lint/test/build,
+- [x] **P0** Add CI gates for backend tests, frontend typecheck/lint/test/build,
   migration checks, and Docker builds.
-- [ ] **P0** Update vulnerable frontend dependencies and make the production audit
+- [x] **P0** Update vulnerable frontend dependencies and make the production audit
   pass or document narrowly accepted exceptions.
-- [ ] **P0** Audit fresh locked Python dependencies; assess replacing the
+- [x] **P0** Audit fresh locked Python dependencies; assess replacing the
   `python-jose`/`ecdsa` chain if the advisory cannot be remediated.
-- [ ] **P1** Add secret scanning, dependency review, container scanning, and a
+- [x] **P1** Add secret scanning, dependency review, container scanning, and a
   generated SBOM for releases.
-- [ ] **P1** Configure Dependabot or Renovate with grouped, tested updates.
-- [ ] **P1** Add branch protection and require CI before merge.
-- [ ] **P2** Add coverage reporting with meaningful thresholds rather than a
+- [x] **P1** Configure Dependabot or Renovate with grouped, tested updates.
+- [x] **P1** Add branch protection and require CI before merge.
+- [x] **P1** Refresh stale browser-compatibility data and define a measured
+  frontend bundle budget; address the current warning with verified splitting
+  where appropriate, rather than hiding it by raising the warning threshold.
+- [x] **P2** Add coverage reporting with meaningful thresholds rather than a
   vanity 100% target.
 
-**Phase complete when:** a pull request cannot merge if it breaks the full build,
-security boundaries, migrations, or critical user journey.
+**Phase complete when:** 9A cleanup/root configuration is verified, test discovery
+and required coverage are maintained, and a pull request cannot merge if it
+breaks the full build, security boundaries, migrations, or critical user journey.
 
 ---
 
@@ -510,13 +668,14 @@ and contribute to.
 - [ ] **P0** Add a root README containing product scope, screenshots, architecture,
   prerequisites, quick start, configuration, upgrades, backups, limitations,
   privacy notes, and troubleshooting.
-- [ ] **P0** Add complete root/backend/frontend `.env.example` files with safe
-  placeholders and comments.
+- [ ] **P0** Publish and verify the single root `.env.example` and configuration
+  guidance completed in Phase 9A; do not reintroduce backend/frontend examples
+  or a second user-managed `.env` file.
 - [ ] **P1** Add `CONTRIBUTING.md`, `SECURITY.md`, Code of Conduct, pull-request
   template, and issue templates.
 - [ ] **P1** Document a responsible vulnerability-reporting channel and supported
   release versions.
-- [ ] **P1** Rewrite or remove stale `idea.md` claims about Instructor Toolkits,
+- [ ] **P1** remove stale `idea.md` claims about Instructor Toolkits,
   RAG/pgvector, Redis/Celery, OCR, PWA/offline, testing, and CI; move unfinished
   ideas into an explicit roadmap.
 - [ ] **P1** Replace the Vite template README, favicon, document title, package
@@ -544,6 +703,8 @@ documentation.
 Do not publish v1.0 until all of the following are true:
 
 - [ ] All P0 items are complete.
+- [x] Phase 9A repository cleanup is verified with no lost regression coverage,
+  and root `.env` is the sole documented file-based configuration source.
 - [ ] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.
 - [ ] Authentication and cross-subject authorization tests pass.

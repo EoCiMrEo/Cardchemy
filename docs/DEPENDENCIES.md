@@ -1,35 +1,27 @@
 # Dependency policy
 
-Runtime packages must be directly imported by shipped code. Test and lock tools
-belong in `requirements-dev.in`; optional live-AI tests are excluded from normal
-test runs and require both `RUN_LIVE_AI_TESTS=1` and provider credentials.
+Keep a package when it supports shipped runtime behavior, a CLI command, a
+build step, or a maintained test. Python runtime dependencies are pinned with
+hashes in `backend/requirements.txt`; test and lock tools are in
+`backend/requirements-dev.txt`. Update direct pins in the corresponding `.in`
+file and regenerate locks with `backend/scripts/lock_dependencies.ps1`, then
+verify the supported Python versions in [RUNTIMES.md](RUNTIMES.md).
 
-Phase 0 removed these unused or premature dependencies at that time:
+The backend uses FastAPI, SQLAlchemy, PostgreSQL through `asyncpg`, and Alembic
+for schema migrations. PyJWT handles purpose-scoped HS256 tokens; token
+claims, issuer/audience, clock skew, and session verification remain enforced.
+The production lock excludes python-jose and its unfixable ECDSA dependency. `cryptography` protects temporary PDF source data with
+AES-256-GCM. Gemini uses the direct `google-genai` SDK; an OpenAI-compatible
+endpoint uses `httpx`. AI orchestration and grounding are typed application
+code, without a framework or vector-database dependency. OCR uses external
+Poppler and Tesseract executables only in the explicitly enabled worker image.
 
-- Backend: `pgvector` (no vector schema or search exists) and `python-docx`
-  (only PDF input exists).
-- Frontend: `idb` (no offline outbox), `@tanstack/react-query` (no queries used
-  it), and `jwt-decode` (the browser no longer trusts token claims).
+The frontend uses React and Redux Toolkit for study-session state. Radix
+packages support the shared UI controls. Build dependencies include Vite,
+Tailwind, TypeScript, and ESLint. Playwright and axe run the maintained browser
+and accessibility checks; install the pinned Chromium runtime with
+`npx playwright install chromium` before `npm run check` on a new host.
 
-`@reduxjs/toolkit` and `react-redux` remain because study-session state uses
-them. Radix packages remain because the shared UI components import them.
-`@playwright/test` is a development-only dependency for the Phase 5 browser
-acceptance suite; install its pinned Chromium runtime with
-`npx playwright install chromium` before running `npm run test:e2e`.
-`@axe-core/playwright` is a development-only Phase 6 accessibility gate. It
-fails browser tests on serious or critical automated accessibility findings;
-manual assistive-technology checks remain part of the release procedure.
-
-Phase 2 introduced Alembic as the required schema owner. Phase 3 directly pins
-`cryptography` because temporary PDF sources use AES-256-GCM authenticated
-encryption. Optional OCR is provided by the external `poppler-utils` and
-`tesseract-ocr` packages in OCR-enabled worker images; they are deliberately not
-installed in the default image. See `docs/PDF_GENERATION.md` for the dependency,
-capacity, and retention policy.
-
-Phase 4 uses the direct `google-genai` SDK for Gemini and `httpx` for the
-portable OpenAI-compatible HTTP contract. Provider prompts and orchestration
-are plain typed application code, so `langchain`, `langchain-google-genai`, and
-`langgraph` are not runtime dependencies. No vector schema, embedding model,
-retrieval pipeline, or `pgvector` dependency is shipped. See
-`docs/AI_PROVIDERS.md`.
+Normal tests use injected providers and fixtures. The live AI evaluation is
+separately opted in with `RUN_LIVE_AI_TESTS=1` and configured provider
+credentials, and may consume quota. See [AI_EVALUATION.md](AI_EVALUATION.md).

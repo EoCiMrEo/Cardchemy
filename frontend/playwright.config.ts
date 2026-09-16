@@ -20,6 +20,7 @@ export default defineConfig({
         url: APP_ORIGIN,
         reuseExistingServer: false,
         env: {
+          API_PORT: '8000',
           VITE_API_URL: API_ORIGIN,
         },
       },

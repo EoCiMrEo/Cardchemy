@@ -1,0 +1,7 @@
+{
+  "limits": {
+    "initial_js_gzip_bytes": 130000,
+    "largest_js_raw_bytes": 400000,
+    "total_js_gzip_bytes": 240000
+  }
+}

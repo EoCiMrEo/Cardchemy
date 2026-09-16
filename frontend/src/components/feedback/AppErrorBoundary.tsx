@@ -18,10 +18,6 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     return { failed: true }
   }
 
-  componentDidCatch() {
-    // Phase 9 will connect this boundary to opt-in structured error reporting.
-  }
-
   private recover = () => {
     window.location.assign('/dashboard')
   }

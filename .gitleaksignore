@@ -1,0 +1,9 @@
+# Exact historical false positives: synthetic idempotency keys in unit tests.
+# These are reservation-key-1/-2 and quota-reservation-1/-2, never credentials.
+# Scope exclusions to the original commit, path, rule and line; scan other tests.
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:73
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:80
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:91
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:106
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:141
+b49d2bda53ff649c8d3dd4ed109b8a62ccf75132:backend/tests/test_generation_jobs.py:generic-api-key:156

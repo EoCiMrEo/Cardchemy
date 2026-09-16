@@ -1,0 +1,95 @@
+name: Release SBOM
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-sbom:
+    name: release-sbom (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: backend
+            build-arguments: --build-arg INSTALL_OCR=false
+          - image: backend-ocr
+            context: backend
+            build-arguments: --build-arg INSTALL_OCR=true
+          - image: frontend
+            context: frontend
+            build-arguments: --build-arg VITE_API_URL=/api
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Build the final image from the checked-out release commit
+        env:
+          IMAGE: ${{ matrix.image }}
+          CONTEXT: ${{ matrix.context }}
+          BUILD_ARGUMENTS: ${{ matrix.build-arguments }}
+        run: docker build --platform linux/amd64 --target runtime $BUILD_ARGUMENTS -t "cardchemy-$IMAGE:release" "$CONTEXT"
+      - name: Verify the final runtime before its release inventory
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: python3 scripts/check_images.py "$IMAGE" --image "cardchemy-$IMAGE:release"
+      - name: Audit the final image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: cardchemy-${{ matrix.image }}:release
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "false"
+          exit-code: "1"
+          format: json
+          output: container-audit.json
+          cache: "false"
+      - name: Generate CycloneDX inventory
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: cardchemy-${{ matrix.image }}:release
+          format: cyclonedx
+          output: runtime.sbom.json
+          skip-setup-trivy: true
+          cache: "false"
+      - name: Record source, image identity and artifact checksums
+        if: always()
+        env:
+          IMAGE: ${{ matrix.image }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          export IMAGE_ID="$(docker image inspect --format '{{.Id}}' "cardchemy-$IMAGE:release")"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          record = {key.lower(): os.environ[key] for key in (
+              "IMAGE", "IMAGE_ID", "SOURCE_SHA", "SOURCE_REF", "REPOSITORY", "RUN_URL"
+          )}
+          record["created_at"] = datetime.now(timezone.utc).isoformat()
+          record["platform"] = "linux/amd64"
+          with open("build-metadata.json", "w") as output:
+              json.dump(record, output, indent=2)
+              output.write("\n")
+          PY
+          sha256sum runtime.sbom.json container-audit.json build-metadata.json > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: release-sbom-${{ matrix.image }}-${{ github.sha }}
+          path: |
+            runtime.sbom.json
+            container-audit.json
+            build-metadata.json
+            SHA256SUMS
+          retention-days: 90
+          if-no-files-found: error

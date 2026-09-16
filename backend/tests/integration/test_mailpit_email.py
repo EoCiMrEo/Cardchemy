@@ -10,7 +10,6 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import Settings
 from app.database import get_db
@@ -29,21 +28,14 @@ pytestmark = [pytest.mark.postgres, pytest.mark.mailpit]
 
 
 @pytest_asyncio.fixture
-async def mailpit_environment():
-    database_url = os.getenv("POSTGRES_TEST_DATABASE_URL")
+async def mailpit_environment(postgres_engine, postgres_session_factory, postgres_test_database_url):
     api_url = os.getenv("MAILPIT_API_URL")
     smtp_host = os.getenv("MAILPIT_SMTP_HOST")
-    if not database_url or not api_url or not smtp_host:
-        pytest.skip("PostgreSQL and Mailpit integration settings are not configured")
+    if not api_url or not smtp_host:
+        pytest.skip("Mailpit integration settings are not configured")
 
-    engine = create_async_engine(database_url, pool_size=8, max_overflow=0)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        async with engine.connect() as connection:
-            revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260916_0007":
-            pytest.fail(f"PostgreSQL test database is at Alembic revision {revision!r}")
-        async with engine.begin() as connection:
+        async with postgres_engine.begin() as connection:
             await connection.execute(
                 text(
                     "DELETE FROM rate_limit_buckets WHERE scope IN "
@@ -57,14 +49,13 @@ async def mailpit_environment():
             cleared = await mailpit.delete("/api/v1/messages")
             cleared.raise_for_status()
 
-        yield factory, integration_settings(database_url, smtp_host), api_url
+        yield postgres_session_factory, integration_settings(postgres_test_database_url, smtp_host), api_url
     finally:
         app.dependency_overrides.clear()
-        async with engine.begin() as connection:
+        async with postgres_engine.begin() as connection:
             await connection.execute(
                 text("DELETE FROM users WHERE email LIKE 'mailpit-%@example.com'")
             )
-        await engine.dispose()
 
 
 def integration_settings(database_url: str, smtp_host: str) -> Settings:

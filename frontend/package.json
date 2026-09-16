@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "npm@11.5.1",
+  "packageManager": "npm@11.19.1",
   "engines": {
     "node": ">=24.0.0 <25",
     "npm": ">=11.0.0 <12"
@@ -17,8 +17,10 @@
     "test:unit": "node --test ./tests/*.test.mjs",
     "test:e2e": "node ./e2e/support/run.mjs",
     "test:e2e:headed": "node ./e2e/support/run.mjs --headed",
-    "check": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run test:unit && npm run build && npm run test:e2e",
-    "preview": "vite preview"
+    "check": "node ./e2e/support/run.mjs --check",
+    "preview": "vite preview",
+    "test:components": "vitest run --coverage",
+    "typecheck:components": "tsc -p tsconfig.components.json --noEmit --pretty false"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -44,21 +46,25 @@
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.63.0",
-    "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
     "@types/node": "^24.10.9",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "4.1.11",
     "autoprefixer": "^10.4.23",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "27.4.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "4.1.11"
   }
 }

@@ -1,0 +1,14 @@
+title = "Cardchemy secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Four exact synthetic generation reservation strings; these are not credentials"
+condition = "AND"
+paths = ['''(?:^|/)backend/tests/test_generation_jobs\.py$''']
+regexTarget = "line"
+regexes = ['''^\s*idempotency_key\s*=\s*"(?:reservation-key-[12]|quota-reservation-[12])"\s*,?\s*$''']

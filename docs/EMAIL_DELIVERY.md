@@ -13,22 +13,25 @@ delivery result. API requests therefore do not wait for the SMTP provider.
 
 ## Local development with Mailpit
 
-Start the local stack with the development profile:
+Start the local stack with the base Compose file:
 
 ```powershell
-docker compose --profile dev up -d --build --wait
+docker compose up -d --build --wait
 ```
 
 Open the Mailpit UI at <http://127.0.0.1:8025>. Containers deliver to
-`mailpit:1025` without authentication, STARTTLS, or implicit TLS. Port `1025`
-is available only on the Compose network; it is deliberately not published to
-the host. Only the Web UI and test API are bound, on IPv4 loopback.
+`mailpit:1025` without authentication, STARTTLS, or implicit TLS. In the base
+stack SMTP remains on the Compose network; only the Web UI and API bind to host
+loopback.
 
-The test profile uses the same capture service:
+For native development that needs host access to Mailpit's SMTP port, use the
+development override:
 
 ```powershell
-docker compose --profile test up -d --build --wait
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile development up -d --build --wait
 ```
+
+The override publishes SMTP only on host loopback, at MAILPIT_SMTP_PORT.
 
 Mailpit retains at most 250 messages for at most seven days and rejects a
 message larger than 2 MiB. Its SQLite database is stored in the
