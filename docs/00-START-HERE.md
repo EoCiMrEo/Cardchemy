@@ -34,9 +34,10 @@ application with an online-first study flow.
 ## Current development state
 
 Version 0.1.0; [the roadmap](../issues-required-remediation.md) and dated
-[closure evidence](../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
-record Phases 0–10 complete. Phase 11 source/documentation are implemented;
-release verification and publication remain open. See [release procedures](RELEASING.md).
+[closure evidence](../.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md)
+record Phases 0–11 complete and independently verified public v0.1.0
+publication. The separate v1.0 operational readiness gate remains open.
+See [release procedures](RELEASING.md).
 Local development is the reference environment;
 production-shaped Compose and production operating guides do not establish a
 live production deployment. Read [current state](development/CURRENT-STATE.md).

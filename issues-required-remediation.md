@@ -12,8 +12,9 @@ Priority labels:
 
 ## Verified baseline and next work (2026-09-17)
 
-- Phases 0-10 are recorded complete. Phase 11 remains for open-source release
-  and branding. Phase 10 closure evidence is recorded in
+- Phases 0-11 are recorded complete; signed public v0.1.0 publication is
+  recorded in [Phase 11 evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+  The separate v1.0 operational readiness gate remains open. Phase 10 evidence is in
   [the dated remediation log](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
 - Phase 10 verification: 259 offline backend cases, 34 PostgreSQL cases with
   head/drift and full disposable downgrade/re-upgrade, three Mailpit cases,
