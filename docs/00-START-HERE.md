@@ -36,7 +36,9 @@ application with an online-first study flow.
 Version 0.1.0; [the roadmap](../issues-required-remediation.md) and dated
 [closure evidence](../.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md)
 record Phases 0–11 complete and independently verified public v0.1.0
-publication. The separate v1.0 operational readiness gate remains open.
+publication. The separate v1.0 operational readiness gate passed; see
+[gate evidence](../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+The published version remains 0.1.0; readiness completion did not publish v1.0.
 See [release procedures](RELEASING.md).
 Local development is the reference environment;
 production-shaped Compose and production operating guides do not establish a

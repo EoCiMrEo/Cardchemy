@@ -2,12 +2,14 @@
 
 Snapshot: 2026-09-17. Phases 0–11 are complete. The public v0.1.0 release
 contains independently verified keyless-signed image digests, checksums,
-source/provenance, audits and SBOMs. The separate v1.0 gate remains in progress.
+source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
+passed, including an actual clean-machine production-profile recovery rehearsal.
 
 ## Current phase
 
 The [remediation plan](../../issues-required-remediation.md) records Phases 0–11
-complete. The separate v1.0 operational readiness gate is in progress.
+complete. All eleven separate v1.0 operational readiness items passed; see
+[exact-source evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 Current product version is 0.1.0. The repository context system is implemented;
 its [completion log](../../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md) records its
 separate documentation scope.
@@ -83,11 +85,13 @@ browser/assistive-technology versions were unknown and are recorded as such.
 
 ## Next and maintenance
 
-Finish the clean-machine [production recovery rehearsal](../PRODUCTION_REHEARSAL.md)
-and final hosted CI for the separate v1.0 gate. Actual authenticated local
+The clean-machine [production recovery rehearsal](../PRODUCTION_REHEARSAL.md)
+and exact-source hosted CI passed. Actual authenticated local
 [TLS SMTP delivery/recovery](../SMTP-VERIFICATION.md) passed both supported modes.
-Completing readiness does not publish v1.0. Update this summary whenever a
-phase/milestone completes, and retain task
+The v1.0 readiness gate is complete; current version remains 0.1.0 and no v1.0
+publication is performed. Repeat required release checks for future source
+changes and verify each deployment's own edge, relay and recovery goals.
+Update this summary whenever a phase/milestone completes, and retain task
 detail in the roadmap. For ongoing work read [orientation](../00-START-HERE.md),
 [project map](../../PROJECT-MAP.md), [ADR index](../decisions/ADR-000-INDEX.md)
 and [agent maintenance rules](../../AGENTS.md).

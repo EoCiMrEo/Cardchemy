@@ -373,3 +373,18 @@ credential-redaction and demo contracts passed; CI/context/whitespace checks
 passed. Remote main protection was revalidated: strict current-base
 ci-required bound to GitHub Actions app15368, administrator enforcement,
 resolved conversations, no force pushes and no branch deletion.
+
+## Superseding operational readiness closure
+
+The later [v1.0 readiness closure](2026-09-17-v1-release-gate.md) now completes
+the separate gate; it supersedes the pending rehearsal/CI status above while
+preserving those historical checkpoints. Exact-main CI `35266166793` and
+actual clean-machine strict-production/TLS/current-head backup/separate-volume
+restore/upgrade rehearsal `35266166852` passed at protected source
+`79e3212cfa682ee0d9f643a03d45aeea66502162`. Its twelve checks, restored
+counts/answer receipt/progress and owned cleanup were independently verified.
+Actual local authenticated TLS SMTP delivery/recovery also passed as recorded
+in its twelve-case evidence. All nineteen Phase 11 and eleven separate
+readiness checkboxes are complete. The published release remains v0.1.0;
+readiness completion does not publish/tag v1.0 or claim paid AI/external
+mailbox delivery or an operator's live production installation.

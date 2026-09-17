@@ -14,7 +14,10 @@ Priority labels:
 
 - Phases 0-11 are recorded complete; signed public v0.1.0 publication is
   recorded in [Phase 11 evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
-  The separate v1.0 operational readiness gate remains open. Phase 10 evidence is in
+  The separate v1.0 operational readiness gate passed; current version remains
+  0.1.0. [Gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md)
+  records exact-source CI, actual local TLS SMTP and clean-machine recovery.
+  Phase 10 evidence is in
   [the dated remediation log](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
 - Phase 10 verification: 259 offline backend cases, 34 PostgreSQL cases with
   head/drift and full disposable downgrade/re-upgrade, three Mailpit cases,
@@ -770,7 +773,8 @@ private vulnerability reporting is enabled, and [v0.1.0](https://github.com/EoCi
 publishes all 17 verified attachments and three independently verified signed
 GHCR image digests. Anonymous asset downloads/image pulls passed. See the
 [Phase 11 closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
-The separate v1.0 operational readiness checklist below remains independently gated.
+The separate v1.0 operational readiness checklist below also passed; completing
+readiness does not publish a v1.0 version or tag.
 
 ---
 
@@ -784,14 +788,25 @@ Do not publish v1.0 until all of the following are true:
 - [x] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.
 - [x] Authentication and cross-subject authorization tests pass.
-- [ ] Database migration, backup, restore, and upgrade tests pass.
+- [x] Database migration, backup, restore, and upgrade tests pass.
 - [x] PDF jobs are bounded, durable, cancellable, and recoverable.
 - [x] Transactional email passes Mailpit integration and end-to-end tests;
   production SMTP setup and failure recovery are documented and verified.
 - [x] Frontend typecheck, lint, tests, accessibility checks, and production build
   pass.
-- [ ] A fresh-clone production deployment has been tested on a clean machine.
+- [x] A fresh-clone production deployment has been tested on a clean machine.
 - [x] Documentation, license, privacy disclosure, security policy, and release
   artifacts are complete.
 - [x] The end-to-end instructor/student journey passes without manual database or
   source-code changes.
+
+**Readiness completed 2026-09-17:** all eleven items are supported by
+[gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+[Clean-machine production/recovery 35266166852](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166852)
+and [exact-source CI 35266166793](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166793)
+passed at protected source `79e3212cfa682ee0d9f643a03d45aeea66502162`.
+Actual authenticated local STARTTLS/implicit-TLS delivery and failure recovery,
+public signed v0.1.0 artifacts, and the accurately recorded human spoken check
+complete the evidence. Paid-provider quality, external SMTP/DNS/mailbox delivery
+and each operator's hosting/recovery goals remain site-specific checks.
+The current published version is **0.1.0**; no v1.0 publication is performed.

@@ -201,3 +201,89 @@ Official downloaded verification binaries stay in ignored verification storage;
 installed tools, operator settings, databases and volumes are untouched. This
 scoped fix still needs protected-source CI and the complete hosted recovery
 rehearsal before checking the final two items.
+
+The additional exact-runner reproduction also passed using official Compose
+**2.38.2**. Its standalone Windows binary SHA-256
+`ba8f09d3873f7a9755b863ed2013a1276b96fcbbc074c69ff3d3cfbce3e0186f`
+matched the official GitHub asset digest. The original fixture failed wait
+with missing-health while running; the corrected generated TLS fixture passed
+wait with both real image probes healthy and actual Python 3.13 strict HTTPS
+certificate/hostname validation. All generated resources were removed and
+absence verified. This exact version matches the hosted runner manifest.
+
+PR #21 head `b1cd9effc08526913a7d807678aecb356f9768bf` passed every required
+[CI job in 35265860035](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35265860035),
+then merged as `79e3212cfa682ee0d9f643a03d45aeea66502162`. No inline review
+comments existed; Copilot's quota message is still not a completed review.
+The complete recovery rehearsal and exact-main checks are dispatched at this
+corrected protected checkpoint; completion depends on their actual results.
+
+## Passing clean-machine recovery and completed readiness gate
+
+[Exact-main CI 35266166793](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166793)
+passed every required job at protected source
+`79e3212cfa682ee0d9f643a03d45aeea66502162`.
+[Production recovery 35266166852](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166852)
+also passed on a fresh Ubuntu Linux/amd64 runner using actual Compose **2.38.2**.
+Independent artifact verification required exactly one content-free JSON member,
+the expected source/platform/version/head, the exact twelve-check set, numeric
+expected aggregate counts, a 64-hex archive checksum, zero external activity and
+successful cleanup. Artifact `10516972145` met every requirement.
+
+The current-head custom archive checksum is
+`e76b6bc7d3b340fb816578749b81e3f0ea01461a6e06eaad0cc623106ce995d7`.
+Source and separately restored database both have Alembic `20260917_0008`,
+two users, one subject/set/card/enrollment/progress/answer receipt and zero
+outbox rows. The checksum matched on the host and inside both containers.
+Restore targeted a verified empty independent volume; upgrade, heads and drift
+passed. Real HTTPS instructor/student reads and the original study receipt
+survived; retrying the answer left progress/receipt counts unchanged. Temporary
+clone, generated secrets/certificates/archive, owned containers/networks/volumes
+and generated image tags were cleaned up. No operator resources were touched.
+
+The twelve executed checks cover fresh-clone bootstrap, strict production
+settings, private API/database, TLS trust/hostname verification, secure refresh
+cookies, edge headers/SPA/closed docs, instructor/student reads, server grading,
+custom backup checksum, separate-empty-volume restore, upgrade/heads/drift and
+restored receipt/progress. This passing run supersedes the three earlier failed
+rehearsals as completion evidence; those historical failures remain recorded.
+
+| v1.0 readiness item | Passing evidence |
+| --- | --- |
+| All P0 complete | Completed phase tracker; public signed Phase 11 publication |
+| Phase 9A cleanup/root configuration | Phase 9 closure, preserved regressions, one root user-managed environment |
+| No known reachable HIGH/CRITICAL vulnerability | Required locked Python/npm audits and three full image scans; no exceptions or lower thresholds |
+| Authentication/cross-subject authorization | Required Python 3.11/3.13 offline/coverage and negative authorization contracts |
+| Migration/backup/restore/upgrade | Full disposable PostgreSQL head/drift/reversal plus actual current-head independent-volume recovery above |
+| Bounded durable/recoverable PDF jobs | Required bounds, queue, cancellation, claim fencing, retry and atomic-result contracts |
+| Transactional email/setup/recovery | Real Mailpit API reset/password-change/invitation integration and browser invitation journey; twelve actual authenticated local TLS/recovery cases |
+| Frontend/accessibility/production build | Required full frontend gate/Chromium plus accurately recorded reported human Chrome/Narrator pass |
+| Fresh clean-machine production installation | Passing exact-clone strict-production/TLS rehearsal above |
+| Documentation/license/privacy/security/artifacts | Governance, separate brand terms, public root template, seventeen verified attachments and three signed public digests |
+| Instructor/student end-to-end journey | Required real browser/API/workers/PostgreSQL deterministic journey without manual database/source edits |
+
+All **19 Phase 11** and **11 v1.0 readiness** checkboxes are now marked done.
+Active operating/current-state/orientation/public-roadmap summaries and the
+log index reflect that milestone. Published application version remains **0.1.0**;
+no v1.0 version/tag/publication is performed. The closure edits only context
+documentation and preserve the passing application/harness/runtime files.
+Independent comparison confirms application, whole frontend, migrations,
+runtime Dockerfiles/dependencies/legal files and production override match
+release source `8ced522`; base Compose differs only in the independently
+verified internal TCP database probe. The reported spoken UI pass therefore
+still applies; browser/Narrator versions remain unknown, viewport 1920×1080.
+
+Limits remain explicit: this is a disposable production-profile deployment,
+not an operator's live site. Local authenticated certificate-validating SMTP
+capture/recovery proves supported application transport, not external inbox/
+DNS/relay behavior. Paid AI, the separate opt-in live password-reset browser
+case, site-specific privacy/routing and operator RPO/RTO are not asserted.
+Ignored verification summaries/binaries are retained as local evidence; the
+unrelated untracked RAG proposal, real root configuration and operator data
+are preserved. Future release/source changes require fresh applicable checks.
+
+Independent closure review found no remaining unchecked tasks or contradictory
+active gate status. Context validation passed 37 required files, 61 active
+guides and 787 local links; CI/protection contracts, version 0.1.0 metadata and
+whitespace checks passed. The exact final source will retain its own hosted
+CI/recovery run evidence through the enforced protected documentation PR flow.
