@@ -211,9 +211,13 @@ and [Trivy action v0.36.0](https://github.com/aquasecurity/trivy-action/commit/e
 Release preparation additionally uses
 [download-artifact v4.3.0](https://github.com/actions/download-artifact/commit/d3f86a106a0bac45b974a628896c90dbdf5c8093)
 and [Cosign installer v4.1.2](https://github.com/sigstore/cosign-installer/commit/6f9f17788090df1f26f669e9d70d6ae9567deba6),
-with Cosign explicitly pinned to v3.0.6. The release-only action owner and
+with Cosign explicitly pinned to v3.1.3. The release-only action owner and
 permissions are checked by `scripts/check_ci.py`.
 Trivy's scanner version is explicitly v0.70.0 and
+[its release cache is held in the runner's temporary directory](https://github.com/aquasecurity/trivy-action#inputs)
+so later release readiness checks see the same clean source checkout.
+The patched Cosign pin addresses the legacy-bundle verification advisory
+[GHSA-fx35-mq7g-6g98](https://github.com/sigstore/cosign/security/advisories/GHSA-fx35-mq7g-6g98).
 [Gitleaks is v8.24.2 with the official GHCR manifest digest](https://github.com/gitleaks/gitleaks/pkgs/container/gitleaks).
 When updating pins verify the official release/commit and review upstream
 changes; a version comment does not replace commit verification.

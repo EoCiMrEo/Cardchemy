@@ -61,6 +61,7 @@ jobs:
       RELEASE_READINESS_TOKEN: ${{ secrets.CARDCHEMY_RELEASE_READINESS_TOKEN }}
       CERTIFICATE_IDENTITY: https://github.com/EoCiMrEo/Cardchemy/.github/workflows/release-sbom.yml@refs/heads/main
       OIDC_ISSUER: https://token.actions.githubusercontent.com
+      TRIVY_CACHE_DIR: ${{ runner.temp }}/cardchemy-trivy-cache
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -105,6 +106,7 @@ jobs:
           format: json
           output: artifacts/release/backend.audit.json
           cache: "false"
+          cache-dir: ${{ runner.temp }}/cardchemy-trivy-cache
       - name: Audit remaining runtimes and inventory all exact images
         shell: bash
         run: |
@@ -119,7 +121,7 @@ jobs:
       - name: Install verified Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2; embedded bootstrap checksums
         with:
-          cosign-release: v3.0.6
+          cosign-release: v3.1.3
       - name: Publish unique release tags and verify keyless image signatures
         shell: bash
         run: |

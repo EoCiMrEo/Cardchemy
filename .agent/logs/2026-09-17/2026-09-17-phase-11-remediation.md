@@ -172,3 +172,37 @@ the exact CI-passed main SHA. The focused release suite passed (70 tests), as
 did the CI, local release and context validators. A new protected PR and its
 exact-main CI are required before another release dispatch. This rehearsal
 does not validate the Actions secret value or substitute for the hosted gate.
+
+## Second hosted release attempt and scanner-cache repair
+
+PR #16 merged as `50c4fdd653d5454ce27d82e8a0fe55c0921b5d2a`; exact-main
+CI run `35253753500` passed. GitHub dependency graph and Dependabot alerts
+were enabled after the public transition; the native dependency-review job
+passed on its rerun. Release run `35254026625` passed protected-main preflight,
+built and probed all three Linux/amd64 images, and passed each HIGH/CRITICAL
+Trivy gate. It pushed three unique `v0.1.0-<source>-35254026625-1` GHCR tags,
+then stopped before signing any image or checksum, creating a Git tag, or
+drafting/publishing a GitHub Release. These partial tags must not be described
+as a signed release or removed without separately reviewing their consumers.
+
+The second `--remote` readiness gate failed because the job checkout was
+dirty. The Trivy action's log puts its vulnerability database at
+`$GITHUB_WORKSPACE/.cache/trivy`, which `.gitignore` does not exclude; its
+temporary `trivy/` checkout and environment file were removed by the action.
+The workflow did not print the exact `git status` paths, so the database is
+the evidence-backed cause, not a captured path list. Relocate its cache to
+`${{ runner.temp }}/cardchemy-trivy-cache` for both the action and direct
+CLI calls, preserving the strict clean-tree gate. The workflow contract now
+rejects an in-workspace cache, with mutation tests for both configuration
+points. Pin Cosign to patched v3.1.3 as part of the release-tooling repair;
+Sigstore advisory GHSA-fx35-mq7g-6g98 concerns legacy blob bundles, while
+the default modern bundle format is unaffected. The signed draft, anonymous
+image pulls and final publication still require a new reviewed source commit,
+protected merge, exact-main CI and successful release workflow.
+
+Local repair validation: 72 focused release-contract tests passed, including
+both cache mutation cases. `scripts/check_ci.py`, local
+`scripts/check_release.py --version 0.1.0`, `scripts/check_context.py` (37
+required files, 59 active guides, 756 links), and `git diff --check` passed.
+The next evidence boundary is hosted PR CI followed by exact-main CI and a
+fresh release run; these local checks do not establish publication.

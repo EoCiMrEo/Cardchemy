@@ -379,6 +379,7 @@ def test_unique_release_tag_must_resolve_to_signed_manifest(package, monkeypatch
     "ci-write", "preflight-write", "release-extra-write", "unguarded-release", "pr-trigger",
     "unreviewed-cosign", "cosign-version", "missing-cosign", "extra-stable-push",
     "premature-push", "missing-run-attempt", "draft-before-sign", "missing-final-tag-guard",
+    "in-workspace-trivy-cache", "unshared-trivy-cache",
 ])
 def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     document = yaml.load((REPO / ".github/workflows/release-sbom.yml").read_text(), Loader=yaml.BaseLoader)
@@ -391,6 +392,12 @@ def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     elif mutation == "release-extra-write": document["jobs"]["release"]["permissions"]["issues"] = "write"
     elif mutation == "unguarded-release": document["jobs"]["release"].pop("needs")
     elif mutation == "pr-trigger": document["on"]["pull_request"] = {}
+    elif mutation == "in-workspace-trivy-cache":
+        step = next(step for step in document["jobs"]["release"]["steps"]
+                    if step.get("name") == "Audit default backend and install the pinned scanner")
+        step["with"]["cache-dir"] = "${{ github.workspace }}/.cache/trivy"
+    elif mutation == "unshared-trivy-cache":
+        document["jobs"]["release"]["env"]["TRIVY_CACHE_DIR"] = "${{ github.workspace }}/.cache/trivy"
     elif mutation in {"extra-stable-push", "missing-run-attempt"}:
         step = next(step for step in document["jobs"]["release"]["steps"]
                     if step.get("name") == "Publish unique release tags and verify keyless image signatures")
