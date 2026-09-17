@@ -151,3 +151,24 @@ job and rejects an additional stable-tag push spelling. Focused release
 contracts passed (69 tests), as did `scripts/check_ci.py`, local
 `scripts/check_release.py --version 0.1.0`, `scripts/check_context.py` and
 `git diff --check`. Hosted PR and exact-main CI remain pending for this patch.
+
+## First hosted release preflight and correction
+
+PR #15 merged through the protected flow as
+`46025690dd8ffa2ee53d9ab8d74877a64cb7bc53`; exact-main CI run
+`35252195174` passed, including `ci-required`. The repository was made
+public only after those checks, and anonymous reads of the repository and root
+`.env.example` succeeded. GitHub private vulnerability reporting was enabled
+and its authenticated status returned `enabled: true`. Branch protection and
+the presence (not value) of `CARDCHEMY_RELEASE_READINESS_TOKEN` were rechecked.
+
+Release run `35252710598` failed in read-only preflight, before any image push,
+source tag, draft or release publication. The validator's root repository GET
+used a trailing slash; GitHub returned HTTP 404 for that URL and HTTP 200 for
+the canonical URL without it. A focused fix removes the slash for the root
+endpoint and adds a regression test. Using the existing maintainer credential
+only for a read-only rehearsal, all remote preflight endpoints then passed for
+the exact CI-passed main SHA. The focused release suite passed (70 tests), as
+did the CI, local release and context validators. A new protected PR and its
+exact-main CI are required before another release dispatch. This rehearsal
+does not validate the Actions secret value or substitute for the hosted gate.

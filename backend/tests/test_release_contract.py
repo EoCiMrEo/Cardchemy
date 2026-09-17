@@ -301,6 +301,17 @@ def test_protection_read_uses_separate_readonly_token_without_logging_it(monkeyp
     assert requests[0].get_header("Authorization") == "Bearer unit-administration-read-token"
 
 
+def test_repository_read_uses_canonical_api_url_without_trailing_slash(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "unit-workflow-token")
+    requests = []
+    def read(request, **_):
+        requests.append(request)
+        return io.BytesIO(b"{}")
+    monkeypatch.setattr(release.urllib.request, "urlopen", read)
+    assert release.github_get("") == {}
+    assert requests[0].full_url == f"https://api.github.com/repos/{release.REPOSITORY}"
+
+
 @pytest.mark.parametrize("mutation", [None, "ambiguous-digest", "wrong-manifest"])
 def test_registry_capture_checks_raw_digest_and_inventory_before_recording(package, monkeypatch, mutation):
     metadata = json.loads((package / "backend.build.json").read_text())
