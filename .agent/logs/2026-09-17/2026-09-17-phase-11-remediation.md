@@ -172,3 +172,84 @@ the exact CI-passed main SHA. The focused release suite passed (70 tests), as
 did the CI, local release and context validators. A new protected PR and its
 exact-main CI are required before another release dispatch. This rehearsal
 does not validate the Actions secret value or substitute for the hosted gate.
+
+## Second hosted release attempt and scanner-cache repair
+
+PR #16 merged as `50c4fdd653d5454ce27d82e8a0fe55c0921b5d2a`; exact-main
+CI run `35253753500` passed. GitHub dependency graph and Dependabot alerts
+were enabled after the public transition; the native dependency-review job
+passed on its rerun. Release run `35254026625` passed protected-main preflight,
+built and probed all three Linux/amd64 images, and passed each HIGH/CRITICAL
+Trivy gate. It pushed three unique `v0.1.0-<source>-35254026625-1` GHCR tags,
+then stopped before signing any image or checksum, creating a Git tag, or
+drafting/publishing a GitHub Release. These partial tags must not be described
+as a signed release or removed without separately reviewing their consumers.
+
+The second `--remote` readiness gate failed because the job checkout was
+dirty. The Trivy action's log puts its vulnerability database at
+`$GITHUB_WORKSPACE/.cache/trivy`, which `.gitignore` does not exclude; its
+temporary `trivy/` checkout and environment file were removed by the action.
+The workflow did not print the exact `git status` paths, so the database is
+the evidence-backed cause, not a captured path list. Relocate its cache to
+`${{ runner.temp }}/cardchemy-trivy-cache` for both the action and direct
+CLI calls, preserving the strict clean-tree gate. The workflow contract now
+rejects an in-workspace cache, with mutation tests for both configuration
+points. Pin Cosign to patched v3.1.3 as part of the release-tooling repair;
+Sigstore advisory GHSA-fx35-mq7g-6g98 concerns legacy blob bundles, while
+the default modern bundle format is unaffected. The signed draft, anonymous
+image pulls and final publication still require a new reviewed source commit,
+protected merge, exact-main CI and successful release workflow.
+
+Local repair validation: 72 focused release-contract tests passed, including
+both cache mutation cases. `scripts/check_ci.py`, local
+`scripts/check_release.py --version 0.1.0`, `scripts/check_context.py` (37
+required files, 59 active guides, 756 links), and `git diff --check` passed.
+The next evidence boundary is hosted PR CI followed by exact-main CI and a
+fresh release run; these local checks do not establish publication.
+
+PR #17 automated review identified that `runner.temp` is unavailable in a
+job-level `env` expression. The direct CLI cache variable was moved to that
+Trivy step's `env`; the action input remains step-scoped. A workflow guard and
+negative contract case now reject a future job-level placement. The first PR
+CI pass predates this correction and must not be counted for the final head.
+The corrected head passed 73 focused release tests, `scripts/check_ci.py`,
+`scripts/check_context.py` and `git diff --check` locally.
+
+The corrected PR head's PostgreSQL migration job failed twice before running
+migrations: first with a connection reset, then with `CannotConnectNowError`
+while the database system was starting. The harness's container-local
+Unix-socket `pg_isready` can report success against the official PostgreSQL
+image's temporary initialization server, which does not yet accept the
+host-mapped TCP connection used by Alembic. The same wait existed in the
+packaged journey. Both harnesses now wait up to 60 seconds for an authenticated
+loopback TCP query of their exact generated test database, retrying only
+startup/connection errors and keeping credential values out of logs. A
+wrong-database response fails rather than quietly passing readiness. Focused
+offline harness tests passed (4); the disposable local PostgreSQL suite passed
+(34 passed, 3 skipped, 344 deselected), including head/drift and
+downgrade/re-upgrade. The packaged Chromium journey passed (1) with its
+database proof. Both harnesses reported cleanup of unique containers,
+temporary data and generated credentials. These local passes do not replace
+the next exact-head hosted CI gate.
+
+The next PR head passed hosted PostgreSQL migrations but its three container
+jobs failed before image probes: `check_images.py` imports `system_environment`
+from `test_services.py` in a minimal host Python without backend packages, and
+the new module-level `asyncpg` import made that import fail. Load `asyncpg`
+only inside the PostgreSQL readiness function so the image checker retains its
+stdlib-only import boundary. An isolated `python -S` image-checker import
+regression now passes without site packages, alongside all five focused harness
+tests, `scripts/check_ci.py` and `git diff --check`. A new hosted head is
+required; the failed container run is not release evidence.
+
+Final-head review further identified an overly broad readiness retry:
+`asyncpg.PostgresError` also catches invalid credentials and missing database.
+The wait now retries only OS/timeouts, PostgreSQL connection/startup errors
+and asyncpg interface failures. A negative test proves invalid credentials
+fail on the first attempt; all six harness safety tests passed. The first
+local rerun used system Python, which lacks the development Alembic CLI; it
+stopped before migrations and cleaned its disposable service. The corrected
+run with `backend/venv/Scripts/python.exe` passed PostgreSQL integrations
+(34 passed, 3 skipped, 346 deselected), head/drift and full downgrade/re-upgrade,
+and reported complete disposable cleanup. The final hosted head remains
+pending after this review-driven change.

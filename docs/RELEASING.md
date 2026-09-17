@@ -114,7 +114,7 @@ an unauthenticated client with a new empty Docker configuration, then remove
 that temporary configuration. [GitHub documents the initial visibility and anonymous public pulls](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 Download **all** draft attachments into a new empty directory; do not mix them
-with a previous run. With independently installed, verified Cosign 3.0.6, run
+with a previous run. With independently installed, verified Cosign 3.1.3, run
 the following from that directory in a POSIX shell, replacing the source value
 with the independently reviewed SHA, not a value accepted solely from a download:
 
@@ -171,8 +171,8 @@ cosign verify --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISS
 Repeat for `backend-ocr` and `frontend` using their own digests. Run Cosign
 with no registry credentials when establishing public access to signatures.
 Use the flags documented for the pinned
-[Cosign blob verifier](https://github.com/sigstore/cosign/blob/v3.0.6/doc/cosign_verify-blob.md)
-and [image verifier](https://github.com/sigstore/cosign/blob/v3.0.6/doc/cosign_verify.md).
+[Cosign blob verifier](https://github.com/sigstore/cosign/blob/v3.1.3/doc/cosign_verify-blob.md)
+and [image verifier](https://github.com/sigstore/cosign/blob/v3.1.3/doc/cosign_verify.md).
 
 Independently fetch the version tag and confirm its peeled commit equals
 `SOURCE_SHA`; verify its annotation names the SHA256 hash of the downloaded,

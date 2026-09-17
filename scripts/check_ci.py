@@ -40,6 +40,14 @@ def validate_workflow(document: dict, filename: str) -> None:
         require(any(step.get("uses") == COSIGN_INSTALLER for step in document["jobs"]["release"].get("steps", [])),
                 "Signed release must install the reviewed Cosign bootstrap")
         steps = document["jobs"]["release"].get("steps", [])
+        scanner = next((step for step in steps if step.get("name") == "Audit default backend and install the pinned scanner"), None)
+        require(scanner is not None and scanner.get("with", {}).get("cache-dir")
+                == "${{ runner.temp }}/cardchemy-trivy-cache",
+                "Trivy action must not write its database under the checkout")
+        inventory = next((step for step in steps if step.get("name") == "Audit remaining runtimes and inventory all exact images"), None)
+        require(inventory is not None and inventory.get("env", {}).get("TRIVY_CACHE_DIR")
+                == "${{ runner.temp }}/cardchemy-trivy-cache",
+                "Direct Trivy scans must reuse the runner-temporary database cache")
         ordered = (
             "Publish unique release tags and verify keyless image signatures",
             "Prepare source, notes and provenance",
@@ -73,6 +81,8 @@ def validate_workflow(document: dict, filename: str) -> None:
         require("continue-on-error" not in job, f"{filename}/{name}: cannot ignore job failures")
         permissions = job.get("permissions", {})
         if filename == "release-sbom.yml" and name == "release":
+            require("TRIVY_CACHE_DIR" not in job.get("env", {}),
+                    "Runner temp must be resolved in a Trivy step, not job-level env")
             require(permissions == RELEASE_PERMISSIONS,
                     "Only the guarded release job may write approved contents/packages and obtain signing identity")
             require(job.get("needs") == "preflight"
@@ -90,7 +100,7 @@ def validate_workflow(document: dict, filename: str) -> None:
                 require(action.split("/")[0] in trusted or (filename == "release-sbom.yml" and name == "release" and action == COSIGN_INSTALLER),
                         f"{filename}/{name}: unreviewed action")
                 if action == COSIGN_INSTALLER:
-                    require(step.get("with", {}).get("cosign-release") == "v3.0.6",
+                    require(step.get("with", {}).get("cosign-release") == "v3.1.3",
                             "Cosign binary must use the reviewed version")
 
 
