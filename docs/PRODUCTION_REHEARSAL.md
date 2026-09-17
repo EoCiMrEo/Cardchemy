@@ -12,6 +12,10 @@ bootstrap, and builds the unchanged application Dockerfiles. It starts the
 base Compose plus the production override, with the API/database unpublished,
 Mailpit excluded, debug/docs disabled, independent generated keys, and secure
 refresh cookies. A temporary TLS edge publishes only on IPv4 loopback. The
+edge retains the frontend image's real healthcheck using a dedicated
+container-loopback-only `/healthz` listener; that HTTP listener has no published
+port. This avoids disabled inherited healthchecks failing older Compose wait
+contracts. Application requests still use certificate-validating HTTPS.
 reserved `cards.rehearsal.test` name resolves inside the harness to loopback;
 a generated CA issues a separate server certificate with explicit constraints,
 key usages, identity extensions and SAN, including Python 3.13 strict TLS
@@ -37,7 +41,7 @@ image ownership before removing only generated resources. The real root
 `.env`, databases and Docker volumes remain outside the rehearsal.
 
 The workflow retains one content-free JSON summary for 90 days, containing
-the source SHA, schema head, archive checksum, aggregate counts, completed
+the source SHA, Compose version, schema head, archive checksum, aggregate counts, completed
 checks and verified cleanup. It never uploads the environment, certificates,
 backup archive, credentials, cookies, tokens or raw service/build logs. A
 failed run provides no passing evidence.

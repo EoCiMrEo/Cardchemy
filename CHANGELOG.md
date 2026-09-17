@@ -9,6 +9,8 @@ and the Keep a Changelog structure.
   and a clean-machine production-profile installation/backup/restore rehearsal.
 - Made the database healthcheck use internal TCP so the official PostgreSQL
   image's temporary socket-only initialization server cannot release migrations early.
+- Kept a real internal health probe on the rehearsal TLS edge for older Compose
+  wait compatibility, while preserving certificate-validating HTTPS checks.
 
 ## [0.1.0] - 2026-09-17
 

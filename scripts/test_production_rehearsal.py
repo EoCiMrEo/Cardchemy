@@ -44,6 +44,7 @@ def failure_category(output: bytes) -> str:
     """Classify private command output without echoing any captured text."""
     lowered = output[-128 * 1024:].lower()
     rules = (
+        ("healthcheck_missing", (b"has no healthcheck configured",)),
         ("database_starting", (b"cannotconnectnowerror", b"database system is starting up")),
         ("connection_reset", (b"connectionreseterror",)),
         ("connection_refused", (b"connectionrefusederror",)),
@@ -208,7 +209,7 @@ class Stack:
         services["frontend"] = {"image": frontend_image, "build": {"labels": labels}}
         services["tls-edge"] = {
             "image": frontend_image, "profiles": ["production"],
-            "ports": [f"127.0.0.1:{tls_port}:8443"], "healthcheck": {"disable": True},
+            "ports": [f"127.0.0.1:{tls_port}:8443"],
             "depends_on": {"frontend": {"condition": "service_healthy"}},
             "volumes": [f"{workspace / 'tls-nginx.conf'}:/etc/nginx/conf.d/default.conf:ro",
                         f"{workspace / 'certificate.pem'}:/etc/nginx/rehearsal.crt:ro",
@@ -373,6 +374,18 @@ def generate_tls_certificate(workspace: Path, system: dict[str, str]) -> None:
     (workspace / "key.pem").chmod(0o644)
 
 
+def tls_nginx_configuration() -> str:
+    # Preserve the image's real health probe on a container-loopback-only HTTP
+    # listener. The public fixture port is HTTPS; Application validates its CA.
+    return ("server { listen 127.0.0.1:8080; server_name _; access_log off; error_log /dev/null; "
+            "location = /healthz { default_type text/plain; return 200 \"ok\\n\"; } }\n"
+            "server { listen 8443 ssl; server_name " + HOST + "; "
+            "ssl_certificate /etc/nginx/rehearsal.crt; ssl_certificate_key /etc/nginx/rehearsal.key; "
+            "access_log off; error_log /dev/null; add_header Strict-Transport-Security \"max-age=300\" always; "
+            "location / { proxy_pass http://frontend:8080; proxy_set_header Host $http_host; "
+            "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto https; } }\n")
+
+
 def create_fixture(stack: Stack, app: Application, accounts: dict) -> dict:
     stack.compose("exec", "-T", "backend", "python", "-m", "app.cli", "create-instructor",
                   "--email", accounts["instructor_email"], input_data=(accounts["instructor_password"] + "\n").encode() * 2)
@@ -442,10 +455,17 @@ def main() -> int:
     daemon = json.loads(run(["docker", "info", "--format", "{{json .}}"], cwd=ROOT, environment=system, stage="docker_host"))
     if daemon.get("OSType") != "linux" or daemon.get("Architecture") not in {"x86_64", "amd64"}:
         raise RehearsalError("linux_amd64_daemon_required")
+    compose_version = run(["docker", "compose", "version", "--short"], cwd=ROOT,
+                          environment=system, stage="compose_version").decode().strip()
+    if not re.fullmatch(r"v?\d+\.\d+\.\d+", compose_version):
+        raise RehearsalError("compose_version_contract")
+    compose_version = compose_version.removeprefix("v")
+    print(json.dumps({"rehearsal_compose_version": compose_version}), flush=True)
     suffix = uuid4().hex[:16]
     stacks: list[Stack] = []
     images: list[str] = []
-    evidence = {"source_sha": source_sha, "host": "linux/amd64", "utc": datetime.now(timezone.utc).isoformat(), "external_ai_calls": 0, "external_smtp_messages": 0}
+    evidence = {"source_sha": source_sha, "host": "linux/amd64", "compose_version": compose_version,
+                "utc": datetime.now(timezone.utc).isoformat(), "external_ai_calls": 0, "external_smtp_messages": 0}
     with tempfile.TemporaryDirectory(prefix=PREFIX) as directory:
         workspace = Path(directory).resolve()
         if workspace.parent != Path(tempfile.gettempdir()).resolve() or not workspace.name.startswith(PREFIX):
@@ -460,7 +480,7 @@ def main() -> int:
             generated = dict(line.split("=", 1) for line in (checkout / ".env").read_text().splitlines() if line and not line.startswith("#") and "=" in line)
             shared = {key: generated[key] for key in ("POSTGRES_PASSWORD", "SECRET_KEY", "GENERATION_SOURCE_ENCRYPTION_KEY")}
             generate_tls_certificate(workspace, system)
-            (workspace / "tls-nginx.conf").write_text("server { listen 8443 ssl; server_name " + HOST + "; ssl_certificate /etc/nginx/rehearsal.crt; ssl_certificate_key /etc/nginx/rehearsal.key; access_log off; error_log /dev/null; add_header Strict-Transport-Security \"max-age=300\" always; location / { proxy_pass http://frontend:8080; proxy_set_header Host $http_host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto https; } }\n", encoding="utf-8")
+            (workspace / "tls-nginx.conf").write_text(tls_nginx_configuration(), encoding="utf-8")
             backend_image, frontend_image = f"{PREFIX}{suffix}-backend:tested", f"{PREFIX}{suffix}-frontend:tested"
             images = [backend_image, frontend_image]
             source = Stack(checkout, workspace, f"{PREFIX}{suffix}-source", port(), backend_image, frontend_image, shared)
