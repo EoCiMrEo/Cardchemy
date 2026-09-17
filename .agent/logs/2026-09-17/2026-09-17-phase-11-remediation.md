@@ -214,3 +214,20 @@ negative contract case now reject a future job-level placement. The first PR
 CI pass predates this correction and must not be counted for the final head.
 The corrected head passed 73 focused release tests, `scripts/check_ci.py`,
 `scripts/check_context.py` and `git diff --check` locally.
+
+The corrected PR head's PostgreSQL migration job failed twice before running
+migrations: first with a connection reset, then with `CannotConnectNowError`
+while the database system was starting. The harness's container-local
+Unix-socket `pg_isready` can report success against the official PostgreSQL
+image's temporary initialization server, which does not yet accept the
+host-mapped TCP connection used by Alembic. The same wait existed in the
+packaged journey. Both harnesses now wait up to 60 seconds for an authenticated
+loopback TCP query of their exact generated test database, retrying only
+startup/connection errors and keeping credential values out of logs. A
+wrong-database response fails rather than quietly passing readiness. Focused
+offline harness tests passed (4); the disposable local PostgreSQL suite passed
+(34 passed, 3 skipped, 344 deselected), including head/drift and
+downgrade/re-upgrade. The packaged Chromium journey passed (1) with its
+database proof. Both harnesses reported cleanup of unique containers,
+temporary data and generated credentials. These local passes do not replace
+the next exact-head hosted CI gate.

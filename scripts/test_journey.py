@@ -24,7 +24,7 @@ import time
 from urllib.request import urlopen
 from uuid import uuid4
 
-from test_services import ROOT, docker, port, system_environment, wait_ready
+from test_services import ROOT, docker, port, system_environment, wait_postgres_ready, wait_ready
 
 
 class PackagedDemoUnavailable(RuntimeError):
@@ -257,7 +257,8 @@ def main() -> int:
             names.append(database)
             docker("run", "--rm", "-d", "--name", database, "--env-file", str(env_file),
                    "-p", "127.0.0.1::5432", "postgres:16")
-            wait_ready(database, ["pg_isready", "-U", "qa", "-d", "journey_test"])
+            database_port = port(database, 5432)
+            wait_postgres_ready(database_port, password, "journey_test")
             mailpit = f"cardchemy-journey-mailpit-{suffix}"
             names.append(mailpit)
             docker("run", "--rm", "-d", "--name", mailpit, "-p", "127.0.0.1::8025",
@@ -296,7 +297,7 @@ def main() -> int:
             backend_environment = system_environment() | {
                 "ENVIRONMENT": "test", "RUN_JOURNEY_TESTS": "1", "PYTHONUTF8": "1",
                 "PYTHONPATH": str(ROOT / "backend"),
-                "DATABASE_URL": f"postgresql+asyncpg://qa:{password}@127.0.0.1:{port(database, 5432)}/journey_test",
+                "DATABASE_URL": f"postgresql+asyncpg://qa:{password}@127.0.0.1:{database_port}/journey_test",
                 "SECRET_KEY": secrets.token_urlsafe(48),
                 "GENERATION_SOURCE_ENCRYPTION_KEY": secrets.token_urlsafe(32),
                 "FRONTEND_BASE_URL": app_origin, "CORS_ORIGINS": app_origin,

@@ -6,6 +6,7 @@ Containers have unique names, generated credentials, and no persistent volumes.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 from pathlib import Path
 import secrets
@@ -13,6 +14,8 @@ import subprocess
 import tempfile
 import time
 from uuid import uuid4
+
+import asyncpg
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +44,31 @@ def wait_ready(name: str, command: list[str]) -> None:
     raise RuntimeError("Disposable test service did not become ready")
 
 
+def wait_postgres_ready(tcp_port: int, password: str, database_name: str) -> None:
+    """Wait for the final server via authenticated host TCP, not its init socket."""
+
+    async def probe() -> None:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                connection = await asyncpg.connect(
+                    host="127.0.0.1", port=tcp_port, user="qa", password=password,
+                    database=database_name, timeout=2, command_timeout=2,
+                )
+                try:
+                    actual_database = await connection.fetchval("SELECT current_database()")
+                finally:
+                    await connection.close(timeout=2)
+                if actual_database != database_name:
+                    raise RuntimeError("Disposable PostgreSQL readiness reached an unexpected database")
+                return
+            except (OSError, TimeoutError, asyncpg.PostgresError, asyncpg.InterfaceError):
+                await asyncio.sleep(0.5)
+        raise RuntimeError("Disposable PostgreSQL did not become ready")
+
+    asyncio.run(probe())
+
+
 def port(name: str, internal_port: int) -> int:
     address = docker("port", name, f"{internal_port}/tcp")
     return int(address.rsplit(":", 1)[1])
@@ -65,8 +93,9 @@ def main() -> int:
             names.append(database)
             docker("run", "--rm", "-d", "--name", database,
                    "--env-file", str(environment_file), "-p", "127.0.0.1::5432", "postgres:16")
-            wait_ready(database, ["pg_isready", "-U", "qa", "-d", "regression_test"])
-            database_url = f"postgresql+asyncpg://qa:{password}@127.0.0.1:{port(database, 5432)}/regression_test"
+            database_port = port(database, 5432)
+            wait_postgres_ready(database_port, password, "regression_test")
+            database_url = f"postgresql+asyncpg://qa:{password}@127.0.0.1:{database_port}/regression_test"
             environment = system_environment() | {
                 "ENVIRONMENT": "test",
                 "DATABASE_URL": database_url,
