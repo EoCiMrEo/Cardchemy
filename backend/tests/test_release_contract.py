@@ -29,6 +29,8 @@ release = load_script("check_release")
 ci = load_script("check_ci")
 VERSION = "0.1.0"
 SHA = "a" * 40
+RUN_ID = 33
+RUN_ATTEMPT = 1
 
 
 @pytest.fixture
@@ -131,13 +133,15 @@ def checksums(directory: Path):
     (directory / "SHA256SUMS").write_text("".join(f"{release.file_digest(directory / name)}  {name}\n" for name in names), encoding="utf-8")
 
 
-def image_files(directory: Path, sha: str):
+def image_files(directory: Path, sha: str, *, run_id: int = RUN_ID, run_attempt: int = RUN_ATTEMPT):
     images = []
     for index, variant in enumerate(release.VARIANTS):
         image_id = "sha256:" + str(index) * 64
         manifest = json.dumps({"schemaVersion": 2, "config": {"digest": image_id}, "layers": []}).encode()
         (directory / f"{variant}.manifest.json").write_bytes(manifest)
-        record = {"image": f"ghcr.io/eocimreo/cardchemy-{variant}", "image_id": image_id,
+        record = {"image": f"ghcr.io/eocimreo/cardchemy-{variant}",
+                  "tag": f"ghcr.io/eocimreo/cardchemy-{variant}:v{VERSION}-{sha}-{run_id}-{run_attempt}",
+                  "run_id": run_id, "run_attempt": run_attempt, "image_id": image_id,
                   "digest": "sha256:" + hashlib.sha256(manifest).hexdigest(), "source_sha": sha,
                   "version": VERSION, "platform": "linux/amd64"}
         write_json(directory / f"{variant}.build.json", record)
@@ -163,7 +167,9 @@ def package(tmp_path):
     write_json(tmp_path / "source-provenance.json", {"version": VERSION, "tag": f"v{VERSION}",
         "source_sha": SHA, "repository": release.REPOSITORY, "certificate_identity": release.CERTIFICATE_IDENTITY,
         "oidc_issuer": release.OIDC_ISSUER, "ci_run_id": 22, "schema_version": 1, "platform": "linux/amd64",
-        "workflow_ref": release.WORKFLOW_REF, "run_url": f"https://github.com/{release.REPOSITORY}/actions/runs/33", "images": images})
+        "workflow_ref": release.WORKFLOW_REF,
+        "run_url": f"https://github.com/{release.REPOSITORY}/actions/runs/{RUN_ID}",
+        "run_attempt": RUN_ATTEMPT, "images": images})
     checksums(tmp_path)
     return tmp_path
 
@@ -181,7 +187,9 @@ def test_downloaded_package_rejects_unlisted_files(package):
 
 
 @pytest.mark.parametrize("mutation", ["checksum", "omitted", "unsafe-path", "different-config", "different-sbom",
-    "manifest-bytes", "vulnerable", "empty-audit", "wrong-source-label", "wrong-platform", "provenance-image", "archive-source", "archive-secret", "archive-traversal"])
+    "manifest-bytes", "vulnerable", "empty-audit", "wrong-source-label", "wrong-platform",
+    "provenance-image", "provenance-run", "provenance-attempt", "wrong-tag", "tag-other-attempt",
+    "archive-source", "archive-secret", "archive-traversal"])
 def test_package_rejects_tampering_even_with_recomputed_inventory(package, mutation):
     if mutation == "checksum":
         (package / "release-notes.md").write_text("modified", encoding="utf-8")
@@ -212,6 +220,22 @@ def test_package_rejects_tampering_even_with_recomputed_inventory(package, mutat
             data = json.loads(path.read_text())
             data["images"][0]["digest"] = "sha256:" + "f" * 64
             write_json(path, data)
+        elif mutation in {"provenance-run", "provenance-attempt"}:
+            path = package / "source-provenance.json"
+            data = json.loads(path.read_text())
+            if mutation == "provenance-run":
+                data["run_url"] = f"https://github.com/{release.REPOSITORY}/actions/runs/{RUN_ID + 1}"
+            else:
+                data["run_attempt"] = RUN_ATTEMPT + 1
+            write_json(path, data)
+        elif mutation in {"wrong-tag", "tag-other-attempt"}:
+            path = package / "backend.build.json"
+            data = json.loads(path.read_text())
+            if mutation == "wrong-tag":
+                data["tag"] = data["image"] + ":" + VERSION
+            else:
+                data["tag"] = f'{data["image"]}:v{VERSION}-{SHA}-{RUN_ID}-{RUN_ATTEMPT + 1}'
+            write_json(path, data)
         elif mutation == "archive-source": write_archive(package, "b" * 40)
         elif mutation == "archive-secret": write_archive(package, SHA, member=".env")
         elif mutation == "archive-traversal": write_archive(package, SHA, member="../secret")
@@ -234,7 +258,8 @@ def test_prepare_package_archives_exact_git_commit_and_excludes_operator_env(tmp
     sha = git("rev-parse", "HEAD")
     monkeypatch.setattr(release, "ROOT", tmp_path)
     monkeypatch.setenv("GITHUB_WORKFLOW_REF", release.WORKFLOW_REF)
-    monkeypatch.setenv("GITHUB_RUN_ID", "33")
+    monkeypatch.setenv("GITHUB_RUN_ID", str(RUN_ID))
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", str(RUN_ATTEMPT))
     directory = tmp_path / "artifacts"
     directory.mkdir()
     image_files(directory, sha)
@@ -279,6 +304,8 @@ def test_protection_read_uses_separate_readonly_token_without_logging_it(monkeyp
 @pytest.mark.parametrize("mutation", [None, "ambiguous-digest", "wrong-manifest"])
 def test_registry_capture_checks_raw_digest_and_inventory_before_recording(package, monkeypatch, mutation):
     metadata = json.loads((package / "backend.build.json").read_text())
+    monkeypatch.setenv("GITHUB_RUN_ID", str(RUN_ID))
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", str(RUN_ATTEMPT))
     raw = (package / "backend.manifest.json").read_bytes()
     reference = metadata["image"] + "@" + metadata["digest"]
     digests = [reference]
@@ -293,15 +320,34 @@ def test_registry_capture_checks_raw_digest_and_inventory_before_recording(packa
     monkeypatch.setattr(release.subprocess, "run", run)
     if mutation:
         with pytest.raises(release.ReleaseContractError):
-            release.record_registry_image(package, "backend", VERSION, SHA)
+            release.record_registry_image(package, "backend", VERSION, SHA, metadata["tag"])
     else:
-        release.record_registry_image(package, "backend", VERSION, SHA)
+        release.record_registry_image(package, "backend", VERSION, SHA, metadata["tag"])
         assert commands[1][-1] == reference
         assert (package / "backend.manifest.json").read_bytes() == raw
-        assert json.loads((package / "backend.build.json").read_text())["digest"] == metadata["digest"]
+        captured = json.loads((package / "backend.build.json").read_text())
+        assert captured["digest"] == metadata["digest"]
+        assert captured["tag"] == metadata["tag"]
+        assert captured["run_id"] == RUN_ID
+        assert captured["run_attempt"] == RUN_ATTEMPT
 
 
-def test_version_tag_must_resolve_to_signed_candidate_manifest(package, monkeypatch):
+@pytest.mark.parametrize("bad_tag", [
+    f"ghcr.io/eocimreo/cardchemy-backend:{VERSION}",
+    f"ghcr.io/eocimreo/cardchemy-backend:v{VERSION}-{SHA}-{RUN_ID}-{RUN_ATTEMPT + 1}",
+    f"ghcr.io/eocimreo/cardchemy-backend:v{VERSION}-{'b' * 40}-{RUN_ID}-{RUN_ATTEMPT}",
+])
+def test_registry_capture_rejects_unapproved_or_other_attempt_tag_before_docker(package, monkeypatch, bad_tag):
+    monkeypatch.setenv("GITHUB_RUN_ID", str(RUN_ID))
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", str(RUN_ATTEMPT))
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Unapproved tag should be rejected before registry commands")
+    monkeypatch.setattr(release.subprocess, "run", forbidden)
+    with pytest.raises(release.ReleaseContractError):
+        release.record_registry_image(package, "backend", VERSION, SHA, bad_tag)
+
+
+def test_unique_release_tag_must_resolve_to_signed_manifest(package, monkeypatch):
     metadata = json.loads((package / "backend.build.json").read_text())
     raw = (package / "backend.manifest.json").read_bytes()
     commands = []
@@ -309,16 +355,20 @@ def test_version_tag_must_resolve_to_signed_candidate_manifest(package, monkeypa
         commands.append(command)
         return subprocess.CompletedProcess(command, 0, raw + b"\n", b"")
     monkeypatch.setattr(release.subprocess, "run", run)
-    release.verify_version_tag(package, "backend", VERSION, SHA)
-    assert commands[0][-1] == metadata["image"] + ":" + VERSION
+    release.verify_release_tag(package, "backend", VERSION, SHA)
+    assert commands[0][-1] == metadata["tag"]
     def altered(command, **_):
         return subprocess.CompletedProcess(command, 0, b'{"other": true}', b"")
     monkeypatch.setattr(release.subprocess, "run", altered)
     with pytest.raises(release.ReleaseContractError, match="digest"):
-        release.verify_version_tag(package, "backend", VERSION, SHA)
+        release.verify_release_tag(package, "backend", VERSION, SHA)
 
 
-@pytest.mark.parametrize("mutation", ["ci-write", "preflight-write", "release-extra-write", "unguarded-release", "pr-trigger", "unreviewed-cosign", "cosign-version", "missing-cosign", "early-version-push", "version-before-sign"])
+@pytest.mark.parametrize("mutation", [
+    "ci-write", "preflight-write", "release-extra-write", "unguarded-release", "pr-trigger",
+    "unreviewed-cosign", "cosign-version", "missing-cosign", "extra-stable-push",
+    "premature-push", "missing-run-attempt", "draft-before-sign", "missing-final-tag-guard",
+])
 def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     document = yaml.load((REPO / ".github/workflows/release-sbom.yml").read_text(), Loader=yaml.BaseLoader)
     filename = "release-sbom.yml"
@@ -330,14 +380,27 @@ def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     elif mutation == "release-extra-write": document["jobs"]["release"]["permissions"]["issues"] = "write"
     elif mutation == "unguarded-release": document["jobs"]["release"].pop("needs")
     elif mutation == "pr-trigger": document["on"]["pull_request"] = {}
-    elif mutation == "early-version-push":
-        step = next(step for step in document["jobs"]["release"]["steps"] if step.get("name") == "Stage candidate digests and verify keyless image signatures")
-        step["run"] += '\ndocker push "$image:$VERSION"\n'
-    elif mutation == "version-before-sign":
+    elif mutation in {"extra-stable-push", "missing-run-attempt"}:
+        step = next(step for step in document["jobs"]["release"]["steps"]
+                    if step.get("name") == "Publish unique release tags and verify keyless image signatures")
+        if mutation == "extra-stable-push":
+            step["run"] += '\ndocker push "$image:${VERSION}"\n'
+        else:
+            step["run"] = step["run"].replace(
+                'release_tag="$image:v$VERSION-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"',
+                'release_tag="$image:v$VERSION-$SOURCE_SHA-$GITHUB_RUN_ID"')
+    elif mutation == "premature-push":
+        document["jobs"]["release"]["steps"].insert(0, {
+            "name": "Push before signing", "run": 'docker push "$image:${VERSION}"'})
+    elif mutation == "draft-before-sign":
         steps = document["jobs"]["release"]["steps"]
-        version = next(step for step in steps if step.get("name") == "Publish only the verified draft's version image tags")
-        steps.remove(version)
-        steps.insert(0, version)
+        draft = next(step for step in steps if step.get("name") == "Create annotated version tag and verified draft release")
+        steps.remove(draft)
+        steps.insert(0, draft)
+    elif mutation == "missing-final-tag-guard":
+        step = next(step for step in document["jobs"]["release"]["steps"]
+                    if step.get("name") == "Final main/CI/registry-tag guard before creating the signed draft")
+        step["run"] = step["run"].replace('--verify-release-tag "$variant"', '--verify-package "$variant"')
     else:
         step = next(step for step in document["jobs"]["release"]["steps"] if step.get("uses") == ci.COSIGN_INSTALLER)
         if mutation == "unreviewed-cosign": step["uses"] = "sigstore/cosign-installer@" + "a" * 40

@@ -118,3 +118,36 @@ passes, the repository/reporting channel is public and enabled, the draft assets
 and images verify anonymously, and the release is published. The user-reported
 manual Chrome/Narrator pass is recorded above. This log should be updated with those
 final results instead of treating a prepared workflow as a published release.
+
+## Follow-up release identity correction
+
+The stable GHCR tag plan described in the preceding remote-state paragraph is
+superseded. Review of PR #15 identified that checking for `:0.1.0` absence
+before pushing it does not prevent another writer from creating the tag in
+between; the earlier workflow contract also recognized only one literal push
+spelling. The review additionally found that a GHCR package already made
+public exposes future candidate tags immediately, a rerun needs a distinct
+attempt identifier, and a failure after annotated Git tag creation can leave
+that tag without a draft release. The first PR #15 CI pass predates these
+findings and is not evidence for the corrected workflow.
+
+The owner approved unique GHCR tags of the form
+`v0.1.0-<source SHA>-<workflow run ID>-<run attempt>` and signed image digests
+as supported pull identities; the Git tag and GitHub Release remain `v0.1.0`.
+No short `:0.1.0` GHCR tag is to be pushed. The unique tag names reduce
+accidental reuse, but GHCR tags remain mutable, so the verified signed digest
+and signed release inventory bind the actual image. `docs/RELEASING.md`,
+`docs/CI.md` and `docs/VERSIONING.md` now describe visibility and tag-only
+failure states. Source changes, new CI results, protected merge and publication
+must be recorded separately when completed.
+
+The follow-up now publishes one `v<version>-<source>-<run>-<attempt>` tag per
+image and stores its exact tag, run identity and manifest digest in each build
+record and signed provenance. It verifies the remote tag's manifest bytes both
+after the push and just before creating the draft. No short version tag is
+pushed; the supported pull reference is the signed digest. The CI validator
+permits only the reviewed `docker push "$release_tag"` command in the release
+job and rejects an additional stable-tag push spelling. Focused release
+contracts passed (69 tests), as did `scripts/check_ci.py`, local
+`scripts/check_release.py --version 0.1.0`, `scripts/check_context.py` and
+`git diff --check`. Hosted PR and exact-main CI remain pending for this patch.

@@ -133,13 +133,15 @@ unavailable to the ordinary workflow token. See [the release procedure](RELEASIN
 and revocation; tokens do not belong in source, settings files or logs.
 
 The job builds/probes/scans all three final Linux/amd64 runtimes, rejects
-HIGH/CRITICAL findings, and creates CycloneDX SBOMs. It stages private
-candidate GHCR tags with immutable digest records, keylessly signs/verifies
-those image digests, packages exact-commit source, notes and provenance, and
-signs the complete checksum manifest with a Sigstore bundle. It creates an
-annotated version tag and attaches verified files to a **draft** GitHub
-Release before pushing versioned image tags; each tag must match its signed
-candidate digest. The
+HIGH/CRITICAL findings, and creates CycloneDX SBOMs. It pushes one unique
+`v<version>-<source SHA>-<run ID>-<attempt>` GHCR tag per image, records each
+manifest digest, and keylessly signs/verifies those digests. The tags may be
+immediately visible on later releases once the GHCR packages are public; the
+signed digests are the supported pull identities. The workflow packages
+exact-commit source, notes and provenance, signs the complete checksum manifest
+with a Sigstore bundle, verifies the remote tags against its digest inventory,
+then creates an annotated Git version tag and attaches verified files to a
+**draft** GitHub Release. It never pushes a short `:<version>` GHCR tag. The
 maintainer verifies downloaded artifacts, source/tag bindings and anonymous
 access to all three GHCR packages/signatures before publishing the draft.
 

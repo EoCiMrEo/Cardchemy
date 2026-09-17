@@ -173,6 +173,15 @@ def file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def release_image_tag(variant: str, version: str, source_sha: str, run_id: str, run_attempt: str) -> str:
+    require(variant in VARIANTS and bool(VERSION_PATTERN.fullmatch(version))
+            and bool(SHA_PATTERN.fullmatch(source_sha))
+            and bool(re.fullmatch(r"[1-9][0-9]*", run_id))
+            and bool(re.fullmatch(r"[1-9][0-9]*", run_attempt)),
+            "Release image tag identity is invalid")
+    return f"ghcr.io/eocimreo/cardchemy-{variant}:v{version}-{source_sha}-{run_id}-{run_attempt}"
+
+
 def image_record(directory: Path, variant: str, version: str, source_sha: str) -> dict:
     """Bind inventory, audit, image config and exact registry manifest bytes."""
     metadata = json.loads((directory / f"{variant}.build.json").read_text(encoding="utf-8"))
@@ -181,6 +190,9 @@ def image_record(directory: Path, variant: str, version: str, source_sha: str) -
     require(bool(DIGEST_PATTERN.fullmatch(metadata.get("image_id", ""))), "Immutable image config identity is missing")
     require(metadata.get("source_sha") == source_sha and metadata.get("version") == version
             and metadata.get("platform") == "linux/amd64", "Image source/version/platform provenance disagrees")
+    require(metadata.get("tag") == release_image_tag(variant, version, source_sha,
+            str(metadata.get("run_id", "")), str(metadata.get("run_attempt", ""))),
+            "Image tag does not bind the source and unique workflow attempt")
     manifest_path = directory / f"{variant}.manifest.json"
     require(f"sha256:{file_digest(manifest_path)}" == metadata["digest"], "Registry manifest bytes do not match the signed image digest")
     manifest = json.loads(manifest_path.read_bytes())
@@ -210,10 +222,14 @@ def image_record(directory: Path, variant: str, version: str, source_sha: str) -
     return {"variant": variant, **metadata}
 
 
-def record_registry_image(directory: Path, variant: str, version: str, source_sha: str) -> None:
+def record_registry_image(directory: Path, variant: str, version: str, source_sha: str, image_tag: str) -> None:
     """Capture a pushed manifest by digest; never print registry/tool errors."""
     require(variant in VARIANTS and bool(VERSION_PATTERN.fullmatch(version))
             and bool(SHA_PATTERN.fullmatch(source_sha)), "Image recording requires approved variant/version/source")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    require(image_tag == release_image_tag(variant, version, source_sha, run_id, run_attempt),
+            "Image recording tag does not match this workflow attempt")
     image = f"ghcr.io/eocimreo/cardchemy-{variant}"
     result = subprocess.run(["docker", "image", "inspect", f"{image}:{version}"], capture_output=True, timeout=30)
     require(result.returncode == 0, "Pushed image identity could not be read")
@@ -223,7 +239,9 @@ def record_registry_image(directory: Path, variant: str, version: str, source_sh
     raw = registry_manifest_bytes(f"{image}@{digests[0]}", digests[0])
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{variant}.manifest.json").write_bytes(raw)
-    metadata = {"image": image, "digest": digests[0], "image_id": inspected.get("Id"), "source_sha": source_sha, "version": version, "platform": "linux/amd64"}
+    metadata = {"image": image, "tag": image_tag, "run_id": int(run_id), "run_attempt": int(run_attempt),
+                "digest": digests[0], "image_id": inspected.get("Id"), "source_sha": source_sha,
+                "version": version, "platform": "linux/amd64"}
     (directory / f"{variant}.build.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     image_record(directory, variant, version, source_sha)
 
@@ -240,13 +258,13 @@ def registry_manifest_bytes(reference: str, expected_digest: str) -> bytes:
     return raw
 
 
-def verify_version_tag(directory: Path, variant: str, version: str, source_sha: str) -> None:
-    """Require a public version tag to resolve to the already signed candidate bytes."""
+def verify_release_tag(directory: Path, variant: str, version: str, source_sha: str) -> None:
+    """Require the unique versioned tag to resolve to the inventoried digest bytes."""
     require(variant in VARIANTS, "Unexpected release image variant")
     record = image_record(directory, variant, version, source_sha)
-    raw = registry_manifest_bytes(f"{record['image']}:{version}", record["digest"])
+    raw = registry_manifest_bytes(record["tag"], record["digest"])
     require(raw == (directory / f"{variant}.manifest.json").read_bytes(),
-            "Version tag does not resolve to the signed candidate manifest")
+            "Release tag does not resolve to the inventoried manifest")
 
 
 def prepare_package(directory: Path, version: str, source_sha: str, preflight: dict) -> None:
@@ -257,9 +275,14 @@ def prepare_package(directory: Path, version: str, source_sha: str, preflight: d
     require(preflight.get("repository") == REPOSITORY and preflight.get("tag") == f"v{version}"
             and preflight.get("certificate_identity") == CERTIFICATE_IDENTITY
             and preflight.get("oidc_issuer") == OIDC_ISSUER, "Package signing identity disagrees")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
     require(os.environ.get("GITHUB_WORKFLOW_REF") == WORKFLOW_REF
-            and os.environ.get("GITHUB_RUN_ID", "").isdigit(), "Release workflow/run provenance is missing")
+            and bool(re.fullmatch(r"[1-9][0-9]*", run_id))
+            and bool(re.fullmatch(r"[1-9][0-9]*", run_attempt)), "Release workflow/run provenance is missing")
     images = [image_record(directory, variant, version, source_sha) for variant in VARIANTS]
+    require(all(image["run_id"] == int(run_id) and image["run_attempt"] == int(run_attempt)
+                for image in images), "Release images must belong to this workflow attempt")
     tracked = git("ls-tree", "-r", "--name-only", source_sha).splitlines()
     require(not any(any(part.casefold().startswith(".env") and part != ".env.example" for part in PurePosixPath(path).parts)
                     or path.casefold().endswith((".key", ".pem", ".p12", ".pfx", ".jks", ".keystore"))
@@ -272,7 +295,10 @@ def prepare_package(directory: Path, version: str, source_sha: str, preflight: d
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 compressed.write(chunk)
     tar_path.unlink()
-    provenance = {**preflight, "schema_version": 1, "platform": "linux/amd64", "workflow_ref": os.environ.get("GITHUB_WORKFLOW_REF"), "run_url": f"https://github.com/{REPOSITORY}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}", "images": images}
+    provenance = {**preflight, "schema_version": 1, "platform": "linux/amd64",
+                  "workflow_ref": os.environ.get("GITHUB_WORKFLOW_REF"),
+                  "run_url": f"https://github.com/{REPOSITORY}/actions/runs/{run_id}",
+                  "run_attempt": int(run_attempt), "images": images}
     (directory / "source-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     release = re.search(rf"(?ms)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)", changelog)
@@ -314,13 +340,18 @@ def verify_package(directory: Path, version: str, source_sha: str, *, signed: bo
     provenance = json.loads((directory / "source-provenance.json").read_text(encoding="utf-8"))
     require(provenance.get("source_sha") == source_sha and provenance.get("version") == version and provenance.get("tag") == f"v{version}", "Signed source/version metadata disagrees")
     require(provenance.get("repository") == REPOSITORY and provenance.get("certificate_identity") == CERTIFICATE_IDENTITY and provenance.get("oidc_issuer") == OIDC_ISSUER, "Signing provenance disagrees")
+    run_match = re.fullmatch(rf"https://github.com/{re.escape(REPOSITORY)}/actions/runs/([1-9][0-9]*)", provenance.get("run_url", ""))
     require(provenance.get("schema_version") == 1 and provenance.get("platform") == "linux/amd64"
             and provenance.get("workflow_ref") == WORKFLOW_REF
             and type(provenance.get("ci_run_id")) is int and provenance["ci_run_id"] > 0
-            and re.fullmatch(rf"https://github.com/{re.escape(REPOSITORY)}/actions/runs/[1-9][0-9]*", provenance.get("run_url", "")) is not None,
+            and run_match is not None and type(provenance.get("run_attempt")) is int
+            and provenance["run_attempt"] > 0,
             "Hosted workflow/CI provenance disagrees")
     images = provenance.get("images", [])
     require(len(images) == len(VARIANTS) and {image.get("variant") for image in images} == set(VARIANTS), "Image inventory disagrees")
+    require(all(image.get("run_id") == int(run_match.group(1))
+                and image.get("run_attempt") == provenance["run_attempt"] for image in images),
+            "Image inventory belongs to another workflow attempt")
     require(images == [image_record(directory, variant, version, source_sha) for variant in VARIANTS], "Published image artifacts and signed provenance disagree")
     with tarfile.open(directory / f"cardchemy-{version}-source.tar.gz", "r:gz") as archive:
         prefix = f"cardchemy-{version}/"
@@ -347,12 +378,13 @@ def main() -> int:
     parser.add_argument("--preflight", type=Path)
     parser.add_argument("--verify-package", type=Path)
     parser.add_argument("--record-image", choices=VARIANTS)
-    parser.add_argument("--verify-version-tag", choices=VARIANTS)
+    parser.add_argument("--image-tag")
+    parser.add_argument("--verify-release-tag", choices=VARIANTS)
     args = parser.parse_args()
     try:
-        require(sum(bool(item) for item in (args.remote, args.package_dir and not (args.record_image or args.verify_version_tag), args.verify_package, args.record_image, args.verify_version_tag)) <= 1, "Choose one release operation")
+        require(sum(bool(item) for item in (args.remote, args.package_dir and not (args.record_image or args.verify_release_tag), args.verify_package, args.record_image, args.verify_release_tag)) <= 1, "Choose one release operation")
         local = {"version": args.version} if args.verify_package else validate_local(args.version)
-        if args.remote or args.package_dir or args.verify_package or args.record_image or args.verify_version_tag:
+        if args.remote or args.package_dir or args.verify_package or args.record_image or args.verify_release_tag:
             require(bool(args.source_sha) and bool(SHA_PATTERN.fullmatch(args.source_sha)), "Exact source SHA is required")
         if args.remote:
             require(git("status", "--porcelain") == "", "Remote release requires a clean committed checkout")
@@ -362,10 +394,11 @@ def main() -> int:
             args.output.write_text(json.dumps(local, indent=2) + "\n", encoding="utf-8")
         if args.record_image:
             require(args.package_dir is not None, "Image metadata requires an artifact directory")
-            record_registry_image(args.package_dir, args.record_image, args.version, args.source_sha)
-        elif args.verify_version_tag:
-            require(args.package_dir is not None, "Version tag verification requires an artifact directory")
-            verify_version_tag(args.package_dir, args.verify_version_tag, args.version, args.source_sha)
+            require(args.image_tag is not None, "Image recording requires the exact release tag")
+            record_registry_image(args.package_dir, args.record_image, args.version, args.source_sha, args.image_tag)
+        elif args.verify_release_tag:
+            require(args.package_dir is not None, "Release tag verification requires an artifact directory")
+            verify_release_tag(args.package_dir, args.verify_release_tag, args.version, args.source_sha)
         elif args.package_dir:
             require(args.preflight is not None, "Verified preflight file is required")
             prepare_package(args.package_dir, args.version, args.source_sha, json.loads(args.preflight.read_text(encoding="utf-8")))
