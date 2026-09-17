@@ -77,6 +77,9 @@ def test_recovered_set_verification_uses_computed_collection_counts():
     (b"pull access denied for image, secret=sentinel-never-expose", "image_pull_access_denied"),
     (b"failed to solve: password=sentinel-never-expose", "image_build_failed"),
     (b"container unhealthy token=sentinel-never-expose", "service_unhealthy"),
+    (b"asyncpg.CannotConnectNowError: database system is starting up secret=sentinel-never-expose", "database_starting"),
+    (b"ConnectionResetError password=sentinel-never-expose", "connection_reset"),
+    (b"ConnectionRefusedError address=sentinel-never-expose", "connection_refused"),
     (b"internal exception secret=sentinel-never-expose", "command_failed"),
 ])
 def test_command_failures_emit_only_closed_diagnostics(monkeypatch, capsys, private_output, category):
@@ -96,3 +99,38 @@ def test_shared_images_are_built_before_startup_considers_image_pull():
     stack.start(build=True)
     assert calls[0] == ("build",)
     assert calls[1] == ("up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
+
+
+def diagnostic_fixture():
+    return {"Name": f"/{PROJECT}-backend-1", "Config": {"Env": ["SECRET_KEY=sentinel-never-expose"],
+            "Cmd": ["sentinel-never-expose"], "Labels": {"com.docker.compose.project": PROJECT,
+            "com.docker.compose.service": "backend", "private-label": "sentinel-never-expose"}},
+            "State": {"Status": "running", "ExitCode": 0, "Error": "sentinel-never-expose",
+                      "Health": {"Status": "healthy", "Log": [{"Output": "sentinel-never-expose"}]}},
+            "Id": "sentinel-never-expose"}
+
+
+def test_container_diagnostic_excludes_all_private_inspect_fields():
+    result = rehearsal.container_diagnostic(diagnostic_fixture(), PROJECT)
+    assert result == {"service": "backend", "status": "running", "health": "healthy", "exit_code": 0}
+    assert "sentinel-never-expose" not in str(result)
+
+
+@pytest.mark.parametrize("mutation", ["project", "service", "name", "status", "health", "exit_code"])
+def test_container_diagnostic_rejects_unowned_or_untrusted_fields(mutation):
+    document = diagnostic_fixture()
+    if mutation == "project":
+        document["Config"]["Labels"]["com.docker.compose.project"] = "operator-production"
+    elif mutation == "service":
+        document["Config"]["Labels"]["com.docker.compose.service"] = "unowned-service"
+    elif mutation == "name":
+        document["Name"] = "/unowned-operator-container"
+    elif mutation == "status":
+        document["State"]["Status"] = "sentinel-never-expose"
+    elif mutation == "health":
+        document["State"]["Health"]["Status"] = "sentinel-never-expose"
+    else:
+        document["State"]["ExitCode"] = "sentinel-never-expose"
+    with pytest.raises(rehearsal.RehearsalError) as failure:
+        rehearsal.container_diagnostic(document, PROJECT)
+    assert "sentinel-never-expose" not in str(failure.value)

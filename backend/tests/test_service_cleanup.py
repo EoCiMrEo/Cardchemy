@@ -26,7 +26,8 @@ def test_tls_smtp_cleanup_refuses_success_when_an_owned_container_remains(monkey
     ]
 
 
-def test_service_failure_output_preserves_exit_and_identity_without_private_details(monkeypatch, capsys):
+@pytest.mark.parametrize("duration", ["1.23s", "64.23s (0:01:04)"])
+def test_service_failure_output_preserves_exit_and_identity_without_private_details(monkeypatch, capsys, duration):
     script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
     namespace = runpy.run_path(str(script))
     command = ["python", "-m", "pytest", "--tb=short"]
@@ -37,14 +38,14 @@ def test_service_failure_output_preserves_exit_and_identity_without_private_deta
             arguments, 1,
             stdout=(f"fixture_repr=({private})\n"
                     f"FAILED tests/integration/test_smtp_tls.py::test_authenticated_tls_delivers_and_commits_once[{private}] - {private}\n"
-                    "1 failed, 11 passed in 1.23s\n"),
+                    f"1 failed, 11 passed in {duration}\n"),
             stderr=private,
         )
 
     monkeypatch.setattr(subprocess, "run", run)
     assert namespace["run_service_tests"](command, cwd=script.parent, environment={}) == 1
     output = capsys.readouterr().out
-    assert "1 failed, 11 passed in 1.23s" in output
+    assert f"1 failed, 11 passed in {duration}" in output
     assert "tests/integration/test_smtp_tls.py::test_authenticated_tls_delivers_and_commits_once" in output
     assert "withheld" in output
     for sensitive in private.split():

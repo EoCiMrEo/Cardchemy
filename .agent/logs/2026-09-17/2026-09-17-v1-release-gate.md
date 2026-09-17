@@ -77,3 +77,70 @@ contract verifies the separate build precedes startup. All 24 production,
 service cleanup/privacy and harness safety contracts passed locally. A new
 protected source/CI checkpoint and a successful fresh-machine rerun remain
 required; this correction alone is not deployment/recovery evidence.
+
+
+## Corrected-source checkpoint and second rehearsal
+
+PR #19 head `dce396fdcd408f107aa49bdaf41fb0b7e5f6fd0a` passed all
+[required CI 35262902520](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35262902520),
+then merged as `0b94b4bdfcffb4a27583fcb56ff2fae6cab8b9f4`.
+[Exact-main CI 35263203750](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35263203750)
+passed every required job, including actual TLS email and real Chromium journey.
+The operator's reported spoken Chrome/Narrator pass remains accurately recorded
+at 1920×1080 with unknown versions. Application/migration/frontend runtime files
+are unchanged from signed release source `8ced522`; source comparison confirms
+there is no UI change invalidating that reported pass.
+
+[Second production rehearsal 35263203886](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35263203886)
+built the images successfully, then failed at `compose_up:command_failed` before
+fixtures/backup/restore. It reported owned-resource cleanup. The initial missing
+shared-image pull candidate is not the confirmed original cause; the startup
+failure persists after explicit build. Do not infer a successful-migration wait
+bug from the generic category alone. Add validated owned-service status/health/
+exit-code diagnostics before teardown to establish the actual failing service.
+No deployment/recovery threshold is relaxed. The local dry-run timed out after
+60 seconds; its exact matching process and owned temporary fixture are gone.
+
+Nine of eleven readiness items are now marked verified from passing core CI,
+published release/governance and local SMTP/manual-accessibility evidence.
+The combined database-backup/restore/upgrade and fresh-clean-machine deployment
+items stay unchecked until the actual recovery rehearsal succeeds. No operator
+relay/DNS/inbox delivery, paid model success or live hosted production service
+is asserted by these supported local application transport checks.
+
+## PostgreSQL bootstrap readiness and safe startup diagnostics
+
+Independent review identified a real initialization race in the canonical
+database probe. The [official PostgreSQL image entrypoint](https://raw.githubusercontent.com/docker-library/postgres/master/16/bookworm/docker-entrypoint.sh)
+starts a socket-only temporary server before executing initialization scripts,
+then stops it and starts the final server. The old socket probe could report
+healthy during that window. `docker-compose.yml` now probes `127.0.0.1` TCP
+inside the database container; no database host port is introduced. Deployment
+guidance and the Unreleased changelog document this readiness boundary.
+
+The new `backend/tests/postgres/test_postgres_startup_probe.py` launches its own
+network-isolated PostgreSQL 16 container with a public bounded delayed-init
+script. It executes the actual maintained Compose health command: the socket
+probe accepts initialization, the canonical TCP probe rejects it, then the TCP
+probe accepts the final server. Credentials stay in an ephemeral private file;
+exact-container removal and successful absence inventory are required. The
+first Windows run exposed CRLF in the generated public shell script and failed
+only this case; it cleaned up. Explicit LF output corrected the fixture.
+The final full disposable PostgreSQL harness passed **35 tests**, with three
+intentional skips and 386 deselections; migration heads/drift and complete
+downgrade-to-base/re-upgrade passed. This is independently proven startup
+hardening, not proof of the earlier hosted failure's exact cause.
+
+Rehearsal failures now diagnose only exactly owned containers before cleanup.
+Output is restricted to closed service/status/health/exit-code fields, known
+lifecycle event names and fixed failure categories. Raw inspect configuration,
+IDs, logs, exception text and generated credentials remain private. Ownership
+and secret-sentinel regressions passed. The service pytest reporter also accepts
+the strictly numeric extended duration suffix, preserving safe test totals.
+
+Before the reviewed checkpoint, **117 focused release/harness/privacy/production
+contracts passed**, and CI/context/release-metadata/whitespace checks passed.
+The initial metadata-check invocation omitted its required version and is not
+passing evidence; the corrected `--version 0.1.0` command passed. A fresh hosted
+production-profile rehearsal remains required before checking the final two
+gate items. No migration wait, security or cleanup threshold was relaxed.
