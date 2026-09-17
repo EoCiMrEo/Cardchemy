@@ -96,6 +96,22 @@ def test_postgres_readiness_refuses_a_different_database(monkeypatch):
     assert closed == [2]
 
 
+def test_postgres_readiness_does_not_retry_invalid_credentials(monkeypatch):
+    import asyncpg
+    script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
+    namespace = runpy.run_path(str(script))
+    attempts = []
+
+    async def connect(**_options):
+        attempts.append(True)
+        raise asyncpg.InvalidPasswordError("invalid generated credential")
+
+    monkeypatch.setattr(asyncpg, "connect", connect)
+    with pytest.raises(asyncpg.InvalidPasswordError):
+        namespace["wait_postgres_ready"](54321, "generated-test-secret", "regression_test")
+    assert len(attempts) == 1
+
+
 async def test_private_journey_worker_refuses_an_ordinary_application_database(monkeypatch):
     script = Path(__file__).resolve().parent / "support/journey_runtime.py"
     namespace = runpy.run_path(str(script))

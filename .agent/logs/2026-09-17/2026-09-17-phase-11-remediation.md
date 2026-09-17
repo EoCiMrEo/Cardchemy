@@ -241,3 +241,15 @@ stdlib-only import boundary. An isolated `python -S` image-checker import
 regression now passes without site packages, alongside all five focused harness
 tests, `scripts/check_ci.py` and `git diff --check`. A new hosted head is
 required; the failed container run is not release evidence.
+
+Final-head review further identified an overly broad readiness retry:
+`asyncpg.PostgresError` also catches invalid credentials and missing database.
+The wait now retries only OS/timeouts, PostgreSQL connection/startup errors
+and asyncpg interface failures. A negative test proves invalid credentials
+fail on the first attempt; all six harness safety tests passed. The first
+local rerun used system Python, which lacks the development Alembic CLI; it
+stopped before migrations and cleaned its disposable service. The corrected
+run with `backend/venv/Scripts/python.exe` passed PostgreSQL integrations
+(34 passed, 3 skipped, 346 deselected), head/drift and full downgrade/re-upgrade,
+and reported complete disposable cleanup. The final hosted head remains
+pending after this review-driven change.

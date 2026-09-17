@@ -61,7 +61,8 @@ def wait_postgres_ready(tcp_port: int, password: str, database_name: str) -> Non
                 if actual_database != database_name:
                     raise RuntimeError("Disposable PostgreSQL readiness reached an unexpected database")
                 return
-            except (OSError, TimeoutError, asyncpg.PostgresError, asyncpg.InterfaceError):
+            except (OSError, TimeoutError, asyncpg.CannotConnectNowError,
+                    asyncpg.PostgresConnectionError, asyncpg.InterfaceError):
                 await asyncio.sleep(0.5)
         raise RuntimeError("Disposable PostgreSQL did not become ready")
 
