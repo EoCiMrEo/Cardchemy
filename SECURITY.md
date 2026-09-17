@@ -24,7 +24,7 @@ avoid accessing other users' data or disrupting a deployment.
 
 | Version | Security support |
 | --- | --- |
-| 0.1.0, once published | First supported release; best-effort fixes through the latest patched release |
+| 0.1.0 | First supported release; best-effort fixes through the latest patched release |
 | Latest published release | Active best-effort support; install the latest patch |
 | Superseded releases | No backport commitment; upgrade |
 | Development `main` | Report reproducible issues; not a stable release guarantee |

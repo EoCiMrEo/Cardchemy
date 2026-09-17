@@ -75,6 +75,7 @@ def test_recovered_set_verification_uses_computed_collection_counts():
 
 @pytest.mark.parametrize("private_output,category", [
     (b"pull access denied for image, secret=sentinel-never-expose", "image_pull_access_denied"),
+    (b"container sentinel-never-expose has no healthcheck configured", "healthcheck_missing"),
     (b"failed to solve: password=sentinel-never-expose", "image_build_failed"),
     (b"container unhealthy token=sentinel-never-expose", "service_unhealthy"),
     (b"asyncpg.CannotConnectNowError: database system is starting up secret=sentinel-never-expose", "database_starting"),
@@ -134,3 +135,16 @@ def test_container_diagnostic_rejects_unowned_or_untrusted_fields(mutation):
     with pytest.raises(rehearsal.RehearsalError) as failure:
         rehearsal.container_diagnostic(document, PROJECT)
     assert "sentinel-never-expose" not in str(failure.value)
+
+
+def test_tls_edge_retains_a_real_loopback_image_probe(tmp_path):
+    stack = rehearsal.Stack(Path("."), tmp_path, PROJECT, 62119, "fixture-backend:tested", "fixture-frontend:tested", {})
+    import json
+    edge = json.loads(stack.config.read_text())["services"]["tls-edge"]
+    assert "healthcheck" not in edge
+    assert edge["ports"] == ["127.0.0.1:62119:8443"]
+    configuration = rehearsal.tls_nginx_configuration()
+    assert "listen 127.0.0.1:8080;" in configuration
+    assert "location = /healthz" in configuration
+    assert "listen 8443 ssl;" in configuration
+    assert "listen 8080;" not in configuration
