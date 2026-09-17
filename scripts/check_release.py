@@ -220,19 +220,33 @@ def record_registry_image(directory: Path, variant: str, version: str, source_sh
     inspected = json.loads(result.stdout)[0]
     digests = [item.partition("@")[2] for item in inspected.get("RepoDigests", []) if item.startswith(image + "@")]
     require(len(digests) == 1 and bool(DIGEST_PATTERN.fullmatch(digests[0])), "Pushed registry image digest is ambiguous or missing")
-    result = subprocess.run(["docker", "buildx", "imagetools", "inspect", "--raw", f"{image}@{digests[0]}"], capture_output=True, timeout=60)
-    require(result.returncode == 0, "Immutable registry manifest could not be read")
-    raw = result.stdout
-    # buildx may append a display newline. Remove it only when the exact
-    # content hash then equals the immutable registry manifest digest.
-    if f"sha256:{hashlib.sha256(raw).hexdigest()}" != digests[0] and raw.endswith(b"\n"):
-        raw = raw[:-1]
-    require(f"sha256:{hashlib.sha256(raw).hexdigest()}" == digests[0], "Registry manifest digest could not be verified")
+    raw = registry_manifest_bytes(f"{image}@{digests[0]}", digests[0])
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{variant}.manifest.json").write_bytes(raw)
     metadata = {"image": image, "digest": digests[0], "image_id": inspected.get("Id"), "source_sha": source_sha, "version": version, "platform": "linux/amd64"}
     (directory / f"{variant}.build.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     image_record(directory, variant, version, source_sha)
+
+
+def registry_manifest_bytes(reference: str, expected_digest: str) -> bytes:
+    result = subprocess.run(["docker", "buildx", "imagetools", "inspect", "--raw", reference], capture_output=True, timeout=60)
+    require(result.returncode == 0, "Immutable registry manifest could not be read")
+    raw = result.stdout
+    # buildx may append a display newline. Remove it only when the exact
+    # content hash then equals the immutable registry manifest digest.
+    if f"sha256:{hashlib.sha256(raw).hexdigest()}" != expected_digest and raw.endswith(b"\n"):
+        raw = raw[:-1]
+    require(f"sha256:{hashlib.sha256(raw).hexdigest()}" == expected_digest, "Registry manifest digest could not be verified")
+    return raw
+
+
+def verify_version_tag(directory: Path, variant: str, version: str, source_sha: str) -> None:
+    """Require a public version tag to resolve to the already signed candidate bytes."""
+    require(variant in VARIANTS, "Unexpected release image variant")
+    record = image_record(directory, variant, version, source_sha)
+    raw = registry_manifest_bytes(f"{record['image']}:{version}", record["digest"])
+    require(raw == (directory / f"{variant}.manifest.json").read_bytes(),
+            "Version tag does not resolve to the signed candidate manifest")
 
 
 def prepare_package(directory: Path, version: str, source_sha: str, preflight: dict) -> None:
@@ -333,11 +347,12 @@ def main() -> int:
     parser.add_argument("--preflight", type=Path)
     parser.add_argument("--verify-package", type=Path)
     parser.add_argument("--record-image", choices=VARIANTS)
+    parser.add_argument("--verify-version-tag", choices=VARIANTS)
     args = parser.parse_args()
     try:
-        require(sum(bool(item) for item in (args.remote, args.package_dir and not args.record_image, args.verify_package, args.record_image)) <= 1, "Choose one release operation")
+        require(sum(bool(item) for item in (args.remote, args.package_dir and not (args.record_image or args.verify_version_tag), args.verify_package, args.record_image, args.verify_version_tag)) <= 1, "Choose one release operation")
         local = {"version": args.version} if args.verify_package else validate_local(args.version)
-        if args.remote or args.package_dir or args.verify_package or args.record_image:
+        if args.remote or args.package_dir or args.verify_package or args.record_image or args.verify_version_tag:
             require(bool(args.source_sha) and bool(SHA_PATTERN.fullmatch(args.source_sha)), "Exact source SHA is required")
         if args.remote:
             require(git("status", "--porcelain") == "", "Remote release requires a clean committed checkout")
@@ -348,6 +363,9 @@ def main() -> int:
         if args.record_image:
             require(args.package_dir is not None, "Image metadata requires an artifact directory")
             record_registry_image(args.package_dir, args.record_image, args.version, args.source_sha)
+        elif args.verify_version_tag:
+            require(args.package_dir is not None, "Version tag verification requires an artifact directory")
+            verify_version_tag(args.package_dir, args.verify_version_tag, args.version, args.source_sha)
         elif args.package_dir:
             require(args.preflight is not None, "Verified preflight file is required")
             prepare_package(args.package_dir, args.version, args.source_sha, json.loads(args.preflight.read_text(encoding="utf-8")))

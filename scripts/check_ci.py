@@ -39,6 +39,29 @@ def validate_workflow(document: dict, filename: str) -> None:
                 "Release preflight permissions must remain narrowly read-only")
         require(any(step.get("uses") == COSIGN_INSTALLER for step in document["jobs"]["release"].get("steps", [])),
                 "Signed release must install the reviewed Cosign bootstrap")
+        steps = document["jobs"]["release"].get("steps", [])
+        ordered = (
+            "Stage candidate digests and verify keyless image signatures",
+            "Prepare source, notes and provenance",
+            "Sign and verify the checksum manifest",
+            "Create annotated version tag and verified draft release",
+            "Publish only the verified draft's version image tags",
+        )
+        positions = [next((index for index, step in enumerate(steps) if step.get("name") == name), -1)
+                     for name in ordered]
+        require(all(position >= 0 and sum(step.get("name") == name for step in steps) == 1
+                    for name, position in zip(ordered, positions))
+                and positions == sorted(positions),
+                "Signed release must stage, sign and draft before version tags")
+        require(not any('docker push "$image:$VERSION"' in step.get("run", "")
+                        for step in steps[:positions[-1]])
+                and "cosign sign --yes" in steps[positions[0]].get("run", "")
+                and "cosign verify-blob" in steps[positions[2]].get("run", "")
+                and "gh release create" in steps[positions[3]].get("run", "")
+                and "--draft" in steps[positions[3]].get("run", "")
+                and 'docker push "$image:$VERSION"' in steps[positions[-1]].get("run", "")
+                and "--verify-version-tag" in steps[positions[-1]].get("run", ""),
+                "Version tags require signed assets, a draft and exact digest verification")
     for name, job in document["jobs"].items():
         require("timeout-minutes" in job, f"{filename}/{name}: missing timeout")
         require("continue-on-error" not in job, f"{filename}/{name}: cannot ignore job failures")

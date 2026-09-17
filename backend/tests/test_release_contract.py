@@ -301,7 +301,24 @@ def test_registry_capture_checks_raw_digest_and_inventory_before_recording(packa
         assert json.loads((package / "backend.build.json").read_text())["digest"] == metadata["digest"]
 
 
-@pytest.mark.parametrize("mutation", ["ci-write", "preflight-write", "release-extra-write", "unguarded-release", "pr-trigger", "unreviewed-cosign", "cosign-version", "missing-cosign"])
+def test_version_tag_must_resolve_to_signed_candidate_manifest(package, monkeypatch):
+    metadata = json.loads((package / "backend.build.json").read_text())
+    raw = (package / "backend.manifest.json").read_bytes()
+    commands = []
+    def run(command, **_):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, raw + b"\n", b"")
+    monkeypatch.setattr(release.subprocess, "run", run)
+    release.verify_version_tag(package, "backend", VERSION, SHA)
+    assert commands[0][-1] == metadata["image"] + ":" + VERSION
+    def altered(command, **_):
+        return subprocess.CompletedProcess(command, 0, b'{"other": true}', b"")
+    monkeypatch.setattr(release.subprocess, "run", altered)
+    with pytest.raises(release.ReleaseContractError, match="digest"):
+        release.verify_version_tag(package, "backend", VERSION, SHA)
+
+
+@pytest.mark.parametrize("mutation", ["ci-write", "preflight-write", "release-extra-write", "unguarded-release", "pr-trigger", "unreviewed-cosign", "cosign-version", "missing-cosign", "early-version-push", "version-before-sign"])
 def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     document = yaml.load((REPO / ".github/workflows/release-sbom.yml").read_text(), Loader=yaml.BaseLoader)
     filename = "release-sbom.yml"
@@ -313,6 +330,14 @@ def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
     elif mutation == "release-extra-write": document["jobs"]["release"]["permissions"]["issues"] = "write"
     elif mutation == "unguarded-release": document["jobs"]["release"].pop("needs")
     elif mutation == "pr-trigger": document["on"]["pull_request"] = {}
+    elif mutation == "early-version-push":
+        step = next(step for step in document["jobs"]["release"]["steps"] if step.get("name") == "Stage candidate digests and verify keyless image signatures")
+        step["run"] += '\ndocker push "$image:$VERSION"\n'
+    elif mutation == "version-before-sign":
+        steps = document["jobs"]["release"]["steps"]
+        version = next(step for step in steps if step.get("name") == "Publish only the verified draft's version image tags")
+        steps.remove(version)
+        steps.insert(0, version)
     else:
         step = next(step for step in document["jobs"]["release"]["steps"] if step.get("uses") == ci.COSIGN_INSTALLER)
         if mutation == "unreviewed-cosign": step["uses"] = "sigstore/cosign-installer@" + "a" * 40

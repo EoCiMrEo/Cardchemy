@@ -69,13 +69,17 @@ absent exact-commit mandatory CI, an existing
 version tag/release, or an unverifiable registry-version absence. Its checks
 repeat before privileged work and tagging. It builds and probes backend,
 backend-ocr and frontend, rejects HIGH/CRITICAL vulnerabilities including
-unfixed findings, creates CycloneDX SBOMs, pushes versioned GHCR images and
-signs each immutable digest with Cosign using GitHub Actions OIDC.
+unfixed findings, and creates CycloneDX SBOMs. It first pushes uniquely named
+**private candidate tags**, records their immutable digests, and signs/verifies
+each digest with Cosign using GitHub Actions OIDC. It does not push stable
+version tags at this stage.
 
 It archives the exact Git commit, prepares notes and image/source provenance,
 hashes the complete attachment inventory, then keylessly signs `SHA256SUMS`
 with a Sigstore verification bundle. It verifies those signatures before
-creating an annotated `v0.1.0` tag and a **draft** GitHub Release. The tag records
+creating an annotated `v0.1.0` tag and a **draft** GitHub Release. Only after
+the complete signed draft exists does it push the three `0.1.0` image tags;
+each must resolve to the exact signed candidate manifest bytes. The tag records
 the signed manifest's hash and points to the reviewed source; it is an
 annotated Git tag, **not a GPG-signed Git tag**. Cryptographic release trust
 comes from the keyless artifact/image signatures and their source binding.
@@ -182,6 +186,13 @@ Deploy by verified digest using [DEPLOYMENT.md](DEPLOYMENT.md). A later rebuild
 from the same source can differ because base-image tags are mutable. Keep the
 inventory belonging to the exact deployed digest. Never overwrite a published
 version tag or versioned image, force-push history, or delete deployment data to
-repair a failed release. If a workflow fails after pushing images/tagging,
-inspect its retained evidence and partial state before deciding a reviewed
-recovery or a new version; an automatic retry deliberately refuses identity reuse.
+repair a failed release. GitHub Releases and GHCR do not provide one atomic
+cross-service transaction. A failure before the draft leaves only private
+candidate image tags; a failure after the draft may leave a source tag/draft and
+some or all signed version-image tags. **Do not make packages public or publish
+the draft after a failed workflow.** Inspect the retained Actions evidence,
+draft inventory, tag target, candidate signatures and every version-tag digest.
+The normal workflow deliberately refuses identity reuse on retry. A maintainer
+must document and review an exact-digest completion of the existing draft, or
+choose a new version after accounting for the partial state. Do not overwrite
+an existing tag or image to make a rerun appear successful.

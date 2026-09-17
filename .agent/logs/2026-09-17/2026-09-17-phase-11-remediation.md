@@ -96,8 +96,22 @@ its value was never requested or recorded. Paid AI/live SMTP was not authorized.
 ## Remote state and remaining gates
 
 The canonical remote is `https://github.com/EoCiMrEo/Cardchemy.git`; the local
-release branch is `codex/phase-11-release`. Protected `main` was verified with
+first release branch was `codex/phase-11-release`. PR #13 passed every required
+job and merged as `b839469bfddd20686e194e7aa4a3252ae387a614`; the exact
+post-merge `main` CI and `ci-required` passed too. Protected `main` was verified with
 strict current-base CI, PR/conversation/admin enforcement and no force/delete.
+An automated review completed after the first merge and identified a genuine
+ordering risk: stable GHCR version tags were pushed before image/checksum
+signing and creation of the draft release. The follow-up
+`codex/phase-11-release-hardening` branch stages and signs private candidate
+digests first, signs the checksum package, creates the draft, then pushes the
+stable tags only if each resolves to the exact signed candidate manifest. The
+workflow contract rejects moving stable tag pushes earlier, and the release
+guide describes partial-state recovery without pretending that GHCR and GitHub
+Releases form one atomic transaction. Focused release tests passed (59), as did
+CI-workflow, local metadata and context validators. This follow-up requires its
+own protected merge and exact-main CI before publication.
+
 The repository was private at preparation time. Do not mark private reporting,
 publication or signed release complete until the PR is merged, exact main CI
 passes, the repository/reporting channel is public and enabled, the draft assets
