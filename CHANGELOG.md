@@ -5,10 +5,14 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Added actual authenticated local STARTTLS/implicit-TLS email verification
+  and a clean-machine production-profile installation/backup/restore rehearsal.
+
 ## [0.1.0] - 2026-09-17
 
-First publication candidate. The earlier prototype date did not identify a
-published Git tag or release.
+First published release, with keyless-signed GHCR image digests and a signed
+checksum inventory covering source, provenance, notes, audits and SBOMs.
+The earlier prototype date did not identify a published Git tag or release.
 
 ### Cardchemy identity and release readiness
 

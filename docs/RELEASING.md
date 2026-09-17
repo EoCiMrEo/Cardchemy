@@ -107,8 +107,10 @@ checks to broad owner/identity patterns or disable transparency verification.
 
 ## Verify downloads and public image access
 
-GHCR packages initially default to private. In each package's Settings, make
-`cardchemy-backend`, `cardchemy-backend-ocr` and `cardchemy-frontend` public.
+GHCR packages initially default to private, though linked packages can inherit
+repository visibility. Check `cardchemy-backend`, `cardchemy-backend-ocr` and
+`cardchemy-frontend` individually. After readiness passes, make any private
+package public using its Settings.
 Repository visibility alone does not establish image visibility. Verify using
 an unauthenticated client with a new empty Docker configuration, then remove
 that temporary configuration. [GitHub documents the initial visibility and anonymous public pulls](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).

@@ -253,3 +253,100 @@ run with `backend/venv/Scripts/python.exe` passed PostgreSQL integrations
 (34 passed, 3 skipped, 346 deselected), head/drift and full downgrade/re-upgrade,
 and reported complete disposable cleanup. The final hosted head remains
 pending after this review-driven change.
+
+
+## Successful public v0.1.0 publication and separate readiness work
+
+PR #17 merged as `8ced5229407de660c2f8035b61459bf4c3470de6` after final-head
+CI run `35258223986` passed. Exact-main CI run `35258496025` passed every
+required gate. Release run [35258820641](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35258820641)
+succeeded for that exact source: protected-main preflight, all three builds/
+runtime probes and HIGH/CRITICAL scans, unique image pushes, keyless image
+signing/verification, complete packaging and checksum signing/verification,
+final registry/source/CI guard, annotated `v0.1.0` tag and a 17-asset draft.
+
+Independently downloaded every draft attachment into a new ignored directory.
+The trusted source's package validator passed complete filename/checksum/
+source/config/manifest/audit/SBOM/provenance bindings. Official Cosign v3.1.3
+Windows binary SHA256 `9fe59be0eca1271873ce019061335eb1ac419b7059202e797828467ddabe33be`
+verified the modern v0.3 checksum bundle with exact workflow identity, GitHub
+OIDC issuer and reviewed source SHA. All three images pulled anonymously
+using a new empty Docker configuration, and independent Cosign image
+verification passed certificate, claims and transparency checks with those
+same exact constraints. No registry credential was used for these pulls.
+
+Verified release digests:
+
+| Image | Signed pull digest |
+| --- | --- |
+| backend | `sha256:020db87b7b244512b39cdcdef429ea6cc865a7742de805df8760487f4f7a7582` |
+| backend-ocr | `sha256:8f2f7b5d413f7d93165a9e084fa6c0758080510093ae81e7047ea5fe9a533348` |
+| frontend | `sha256:7a4c4aecc24cf1c78c02c0452b0113fbcf210b109c5e7395ddbcfe6bcd5272ed` |
+
+Each unique image tag is
+`v0.1.0-8ced5229407de660c2f8035b61459bf4c3470de6-35258820641-1`;
+the signed digest remains the supported pull identity. The annotated Git tag
+peels to the reviewed source and its message binds the independently hashed
+SHA256SUMS (`27654e9f84ca40d6081f8a6614518ced929ab1871a733335c4e94ae6340c59a1`).
+Published the user-authorized [v0.1.0 release](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0)
+at 2026-09-17 18:41:23 UTC after every publication prerequisite passed.
+The unsigned unique tags from failed run `35254026625` remain partial
+historical state and are not supported signed release identities.
+
+The subsequent user request separately authorizes completing the v1.0
+readiness checklist; it does not authorize a v1.0 version/tag/publication.
+Read-only audit found remaining current-head backup/restore and clean-machine
+production-profile gaps, plus actual encrypted SMTP delivery/recovery absent
+from prior fake-TLS unit coverage. The operator clarified the product is
+self-hosted and SMTP is local. An online relay is unnecessary: actual local
+certificate-validating STARTTLS and implicit-TLS capture/recovery verifies
+the application's supported production transport with no external messages.
+See the [12-test SMTP evidence](2026-09-17-local-smtp-tls-verification.md).
+The new clean Ubuntu production rehearsal builds an exact fresh clone with
+production Compose/private services/trusted HTTPS, then drains writers,
+checksums a custom-format current-head backup and restores it into a distinct
+empty volume before upgrade/head/drift and instructor/student receipt/progress
+checks. Its SMTP setup is validated but sends no mail; delivery is covered by
+the separate actual TLS harness. Hosted rehearsal and final-source CI remain
+pending, so the v1.0 gate is not yet marked complete. Operator configuration,
+database and populated volumes are preserved; all rehearsal cleanup checks
+ownership before removing its own generated resources.
+
+
+Post-publication verification fetched all 17 assets anonymously into another
+new empty directory; complete package/checksum bindings passed again, as did
+independent exact-identity/issuer/source Cosign verification of its checksum
+bundle. Public downloads therefore match the verified draft, rather than
+merely relying on authenticated draft access. The temporary empty Docker
+configuration used for anonymous pulls contained no login credentials.
+
+Readiness integration adds actual TLS SMTP verification to the required
+`mailpit` CI job and prevents its opt-in tests from being mistaken for the
+separate PostgreSQL/Mailpit suite. The manual production workflow has pinned
+read-only actions, a fixed main/repository guard, a bounded timeout and no
+repository-secret injection. Maintained testing/email/deployment navigation
+and context maps now distinguish local transport evidence, clean deployment
+recovery and site-specific operator responsibilities.
+
+Independent source review caught that the single-set API defaults computed
+`approved_count` to zero; only the set collection populates those counts.
+The rehearsal must use that implemented collection contract. It also noted
+Python 3.13 strict certificate extensions, now required in generated rehearsal
+certificates rather than relaxing trust. These source checks do not replace
+actual hosted execution. Initial targeted invocations from the wrong working
+directory and with guessed filenames ran no tests; corrected invocation from
+`backend` using the actual filenames passed 88 release/harness/ownership tests.
+CI/context/release metadata validators and whitespace checks passed locally.
+
+
+Final pre-PR harness corrections passed 89 focused release/readiness/ownership
+contracts. The production verifier now selects the exact fixture set from the
+computed collection response, protected by a regression with an unrelated
+first entry. Its generated HTTPS trust uses a separate CA and server leaf with
+CA/leaf constraints, KeyUsage, SKI/AKI, leaf EKU and DNS SAN. An actual Python
+3.13.7 strict certificate-validating HTTPS handshake passed without disabling
+any validation flags. Compose rendering confirms seven intended services,
+private API/database and loopback frontend/TLS only. The CI, context (37
+required files/61 active guides/780 links), release metadata and whitespace
+validators passed. An unrelated untracked subject-scoped RAG planning document
+appeared during this task and is preserved/excluded from the release PR.

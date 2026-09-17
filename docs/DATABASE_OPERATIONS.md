@@ -136,3 +136,9 @@ error output, confirm `alembic current`, correct the migration or environment,
 and retry. Do not use `alembic stamp` to bypass a failed migration. If a change
 was non-transactional in a future revision, follow that revision's explicit
 recovery notes or restore the pre-upgrade backup.
+
+The [production recovery rehearsal](PRODUCTION_REHEARSAL.md) automates the
+current-head custom backup/checksum, separate empty-volume restore, upgrade,
+head/drift and representative instructor/student receipt/progress checks on a
+fresh runner. It uses generated fixtures and removes only resources whose
+rehearsal ownership is verified.

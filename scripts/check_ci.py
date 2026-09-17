@@ -28,6 +28,14 @@ def validate_workflow(document: dict, filename: str) -> None:
             f"{filename}: privileged pull_request_target is forbidden")
     require(document.get("permissions") == {"contents": "read"},
             f"{filename}: workflow token must remain read-only")
+    if filename == "production-rehearsal.yml":
+        require(set(document["on"]) == {"workflow_dispatch"}
+                and set(document["jobs"]) == {"clean-install-recovery"},
+                "Production rehearsal must remain a single manually dispatched job")
+        rehearsal = document["jobs"]["clean-install-recovery"]
+        require(rehearsal.get("if") == "github.repository == 'EoCiMrEo/Cardchemy' && github.ref == 'refs/heads/main'"
+                and "secrets." not in json.dumps(document),
+                "Production rehearsal must run only approved main without repository secrets")
     if filename == "release-sbom.yml":
         require(set(document["on"]) == {"workflow_dispatch"}
                 and set(document["jobs"]) == {"preflight", "release"},
@@ -126,6 +134,9 @@ def main() -> None:
             "Backend CI must validate redistributed code and brand notices")
     mandatory = {"backend-offline", "postgres-migrations", "mailpit", "frontend", "journey",
                  "dependency-audit", "secret-scan", "containers"}
+    require(any(step.get("run") == "python scripts/test_smtp_tls.py"
+                for step in jobs["mailpit"]["steps"]),
+            "Mandatory email CI must verify actual authenticated TLS delivery and recovery")
     require(mandatory <= set(jobs), "A mandatory CI gate is missing")
     require(set(jobs["ci-required"]["needs"]) == set(jobs) - {"ci-required"},
             "ci-required must depend on every mandatory job")

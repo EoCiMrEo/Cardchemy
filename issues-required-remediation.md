@@ -683,12 +683,12 @@ and contribute to.
 - [x] **P0** Add a root README containing product scope, screenshots, architecture,
   prerequisites, quick start, configuration, upgrades, backups, limitations,
   privacy notes, and troubleshooting.
-- [ ] **P0** Publish and verify the single root `.env.example` and configuration
+- [x] **P0** Publish and verify the single root `.env.example` and configuration
   guidance completed in Phase 9A; do not reintroduce backend/frontend examples
   or a second user-managed `.env` file.
 - [x] **P1** Add `CONTRIBUTING.md`, `SECURITY.md`, Code of Conduct, pull-request
   template, and issue templates.
-- [ ] **P1** Document a responsible vulnerability-reporting channel and supported
+- [x] **P1** Document a responsible vulnerability-reporting channel and supported
   release versions.
 - [x] **P1** remove stale `idea.md` claims about Instructor Toolkits,
   RAG/pgvector, Redis/Celery, OCR, PWA/offline, testing, and CI; move unfinished
@@ -704,19 +704,19 @@ and contribute to.
   social handles, and trademarks before adopting it.
 - [x] **P1** Add sample data or a demo path that does not require spending real AI
   quota.
-- [ ] **P1** Publish signed/tagged releases with release notes, checksums, images,
+- [x] **P1** Publish signed/tagged releases with release notes, checksums, images,
   and SBOMs.
 - [x] **P2** Add a public roadmap that clearly distinguishes shipped features
   from planned work.
 
 ### Brand assets and UI rollout
 
-Asset review (2026-09-16): the supplied files are in `frontend/public/` but are
-not wired into the UI. Both dashboard headers still render
-`copy.common.appName = 'Flashcard Generator'`; `frontend/index.html` uses
-`/cards.svg` (not `/card.svg`) as its favicon and already has the title
-`Cardchemy`. This checklist plans the rollout; adding the assets does not
-complete the rebrand.
+Historical pre-implementation asset review (2026-09-16): the supplied files were in `frontend/public/` but were
+not wired into the UI. Both dashboard headers rendered
+`copy.common.appName = 'Flashcard Generator'`; `frontend/index.html` used
+`/cards.svg` (not `/card.svg`) as its favicon and already had the title
+`Cardchemy`. The completed checklist below records the subsequent rollout;
+the shared wordmark and `/favicon.ico` are now implemented and verified.
 
 | Asset | Intended role |
 | --- | --- |
@@ -763,6 +763,13 @@ complete the rebrand.
 operate, upgrade, and contribute to the project using only repository
 documentation, and the packaged UI/browser tab consistently use the approved
 Cardchemy branding without accessibility or responsive-layout regressions.
+
+Completion evidence (2026-09-17): the repository and root template are public,
+private vulnerability reporting is enabled, and [v0.1.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0)
+publishes all 17 verified attachments and three independently verified signed
+GHCR image digests. Anonymous asset downloads/image pulls passed. See the
+[Phase 11 closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+The separate v1.0 operational readiness checklist below remains independently gated.
 
 ---
 

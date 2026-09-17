@@ -125,7 +125,7 @@ def main() -> int:
                     "MAILPIT_SMTP_PORT": str(port(mailpit, 1025)),
                 }
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-m", arguments.suite],
+                [sys.executable, "-m", "pytest", "-q", "-m", arguments.suite + " and not smtp_tls"],
                 cwd=ROOT / "backend", env=environment,
             )
             if result.returncode:

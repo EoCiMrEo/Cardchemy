@@ -10,7 +10,7 @@ bounded timeouts and fresh dependency installations. Paid AI requests are exclud
 | --- | --- |
 | `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow and repository-context/link validation |
 | `postgres-migrations` | Disposable PostgreSQL; constraints, transactions and concurrency; Alembic head and drift checks; full downgrade to base and upgrade to head |
-| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts |
+| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts; authenticated local STARTTLS/implicit-TLS, certificate rejection and failure recovery |
 | `frontend` | `npm run check`: types, lint, unit tests, component coverage, production build and Chromium browser contracts; emitted bundle budgets |
 | `journey` | `python scripts/test_journey.py`: real instructor creation, PDF generation with an offline provider, review/publication, invitation, student study and persisted progress |
 | `dependency-audit` | Fresh `pip-audit --require-hashes --strict` against the complete development lock; `npm audit --audit-level=low` across all npm scopes, plus explicit shipped-dependency audit |
@@ -44,10 +44,18 @@ documentation links (external URLs and historical bodies are excluded),
 `python scripts/check_coverage.py backend/coverage.json`,
 `python scripts/test_services.py postgres`,
 `python scripts/test_services.py mailpit`,
+`python scripts/test_smtp_tls.py`,
 `python scripts/test_journey.py` and `python scripts/check_ci.py`.
 From `frontend`, `npm run check` is the authoritative frontend gate; run
 `node ../scripts/check_bundle.mjs` after its production build. See
 [AI evaluation](AI_EVALUATION.md) for explicit opt-in live-provider validation.
+
+The manual read-only [production recovery rehearsal](PRODUCTION_REHEARSAL.md)
+runs on a fresh Ubuntu runner from protected main. It separately verifies a
+clean clone, strict production Compose, trusted HTTPS edge and a checksummed
+backup restored into a second empty volume. It is release evidence rather than
+part of the required per-PR aggregator. No operator secrets or external AI/mail
+services are injected.
 
 Backend coverage includes every application module, including operational
 entry points; only `TYPE_CHECKING` guards are excluded. The Phase 9 measured

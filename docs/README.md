@@ -25,6 +25,7 @@ them for operational detail rather than copying their setting tables/commands.
 | [Configuration](CONFIGURATION.md) | Root settings, ranges, precedence, service consumers and applying changes |
 | [Runtimes](RUNTIMES.md) | Supported runtime/platform versions |
 | [Deployment](DEPLOYMENT.md) | Compose variants, TLS/edge, draining, volumes, image/recovery procedures |
+| [Production rehearsal](PRODUCTION_REHEARSAL.md) | Clean-machine production installation, TLS and separate-volume backup/restore checks |
 | [Database operations](DATABASE_OPERATIONS.md) | Migration chain, backup/restore and safe rollback |
 | [Observability](OBSERVABILITY.md) | Safe logs/errors/correlation, retained metrics, worker health, privileged audits and optional numeric reporting |
 | [Privacy](PRIVACY.md) | Provider disclosure, data lifecycle, operator export/deletion and bounded metadata retention |
@@ -34,6 +35,7 @@ them for operational detail rather than copying their setting tables/commands.
 | [AI providers](AI_PROVIDERS.md) | Provider configuration, retry/error and request governance |
 | [AI evaluation](AI_EVALUATION.md) | Fixed corpus, thresholds and explicitly opted-in paid evaluation |
 | [Email delivery](EMAIL_DELIVERY.md) | SMTP, Mailpit, outbox retry/ambiguity and operator recovery |
+| [SMTP verification](SMTP-VERIFICATION.md) | Actual authenticated local TLS delivery, certificate rejection and durable failure recovery |
 | [Testing](TESTING.md) | Maintained suites, safe harnesses and live/gated boundaries |
 | [CI](CI.md) | Mandatory jobs, budget/scanning/protection contracts and recorded baselines |
 | [Dependencies](DEPENDENCIES.md) | Dependency/hashed-lock policy and tooling |
