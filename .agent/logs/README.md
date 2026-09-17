@@ -17,7 +17,8 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
-| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity and artwork, verification, release pipeline, and outstanding publication gates. |
+| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity, signed public v0.1.0 publication and separate v1.0 readiness work. |
+| 2026-09-17 | [Local encrypted SMTP verification](2026-09-17/2026-09-17-local-smtp-tls-verification.md) | Actual authenticated STARTTLS/implicit-TLS delivery, certificate rejection, durable retry and guarded recovery with disposable local capture. |
 | 2026-09-17 | [Phase 11 demo](2026-09-17/2026-09-17-phase-11-demo.md) | Bounded disposable production-build/Nginx demonstration, private generated sign-in, no provider calls and verified cleanup. |
 | 2026-09-17 | [Phase 11 readiness audit](2026-09-17/2026-09-17-phase-11-readiness-audit.md) | Read-only release/governance, branding and documentation/demo audits; verified remote identity and recorded required owner decisions before implementation. |
 | 2026-09-17 | [Phase 10 remediation](2026-09-17/2026-09-17-phase-10-remediation.md) | Safe structured logging/correlation, operational metrics and worker health, transactional audit, provider disclosure and guarded retention/export/deletion; isolated verification and limits. |

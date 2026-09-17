@@ -195,3 +195,9 @@ docker run --rm cardchemy-backend:0.1.0 sh -c "! command -v gcc && ! command -v 
 
 The release image check should confirm that neither runtime contains build
 toolchains or test material, and record the optional OCR image size separately.
+
+The [clean-machine production rehearsal](PRODUCTION_REHEARSAL.md) verifies
+this production profile with a trusted local HTTPS edge and a current-head
+backup restored into a separate empty volume. Pair it with
+[actual local encrypted SMTP verification](SMTP-VERIFICATION.md).
+Deployment operators still verify their own TLS edge, relay and recovery goals.

@@ -10,6 +10,8 @@ repository root unless a working directory is specified.
 | Backend offline | `python -m pytest -q` from `backend` | Core test configuration is injected; PostgreSQL and Mailpit cases skip without their dedicated process values; live AI is deselected. |
 | PostgreSQL and migration chain | `python scripts/test_services.py postgres` | Docker running. Creates a randomly addressed loopback PostgreSQL container and a disposable `regression_test` database, waits for an authenticated TCP query on that database, migrates/checks heads and drift, tests constraints/transactions/races, then rehearses downgrade to base/re-upgrade. |
 | Mailpit request/delivery | `python scripts/test_services.py mailpit` | Docker running. Creates disposable PostgreSQL and Mailpit containers; verifies request/outbox/SMTP capture, invitation/password semantics and delivery retry. No production relay. |
+| Local encrypted SMTP/recovery | `python scripts/test_smtp_tls.py` | Backend development Python and Docker. Actual authenticated STARTTLS/implicit-TLS delivery, certificate/hostname rejection, durable retry and guarded operator recovery on disposable local capture. See [SMTP verification](SMTP-VERIFICATION.md). Required email CI. |
+| Clean production installation/restore | `python scripts/test_production_rehearsal.py --evidence /private/path/result.json` | Clean committed checkout on Linux/amd64 with Docker Compose/OpenSSL. Fresh clone, generated settings, production profile, trusted loopback HTTPS, current-head backup and restore into a separate empty volume, upgrade and recovered application checks. Also manually dispatch [production rehearsal](PRODUCTION_REHEARSAL.md) on protected main. |
 | Frontend offline browser/components and build | `npm run check` from `frontend` | Typecheck, test typecheck, lint, unit/component tests, production build and maintained browser regressions. The separately configured password-reset live case remains gated. |
 | Full real application browser journey | `python scripts/test_journey.py` | Docker and installed Playwright Chromium. Starts a fresh migrated database, real API/generation/email workers and browser frontend; uses a private deterministic AI provider with no provider SDK/network request. |
 | Release metadata/workflow contracts | `python scripts/check_release.py --version 0.1.0` and `python scripts/check_ci.py` | Maintained source/templates only. Remote preflight, signatures and publication require the separate [release procedure](RELEASING.md). |
@@ -25,7 +27,10 @@ development/build commands retain the normal root configuration contract.
 The service/journey harnesses ignore operator application environment values
 and root `.env`, generate credentials in private temporary storage, bind
 services to loopback with random ports, and remove their containers, data,
-processes and credentials even on failure. Host-run PostgreSQL fixtures require
+processes and credentials even on failure. Cleanup claims require successful
+Docker inventories confirming generated services are absent. Service/browser
+failures emit safe test identities or fixed diagnostics; raw traces may contain
+generated credentials and are withheld. Host-run PostgreSQL fixtures require
 `postgresql+asyncpg` on loopback and a database named `*_test`; controlled CI
 service hosts are allowed explicitly. They verify the connected database
 identity and the dynamically resolved Alembic head before any write/cleanup.

@@ -24,7 +24,7 @@ import time
 from urllib.request import urlopen
 from uuid import uuid4
 
-from test_services import ROOT, docker, port, system_environment, wait_postgres_ready, wait_ready
+from test_services import ROOT, cleanup_containers, docker, port, system_environment, wait_postgres_ready, wait_ready
 
 
 class PackagedDemoUnavailable(RuntimeError):
@@ -374,10 +374,13 @@ def main() -> int:
             }
             result = subprocess.run([node, "node_modules/@playwright/test/cli.js", "test",
                                      "--config", "playwright.journey.config.ts"],
-                                    cwd=ROOT / "frontend", env=browser_environment)
+                                    cwd=ROOT / "frontend", env=browser_environment,
+                                    capture_output=True, text=True)
             if result.returncode:
+                print("Browser journey contract failed; private browser diagnostics omitted.")
                 failure_summary(workspace, processes)
                 return result.returncode
+            print("Browser journey contract passed.")
             if any(process.poll() is not None for process in processes):
                 raise RuntimeError("A required application process exited during the journey")
             if frontend_container is not None and not containers_running(names):
@@ -402,10 +405,12 @@ def main() -> int:
                     process.wait(timeout=5)
             for handle in handles:
                 handle.close()
-            for name in reversed(names):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            cleanup_containers(names)
             for name in reversed(networks):
                 subprocess.run(["docker", "network", "rm", name], capture_output=True)
+            remaining_networks = set(docker("network", "ls", "--format", "{{.Name}}").splitlines())
+            if remaining_networks.intersection(networks):
+                raise RuntimeError("Owned disposable journey networks could not be removed")
             print("Disposable journey processes, containers, data, fixture and generated credentials cleaned up.")
 
 

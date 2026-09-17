@@ -63,6 +63,11 @@ give the next level of detail.
   [coverage](scripts/check_coverage.py), [bundle](scripts/check_bundle.mjs),
   [security](scripts/test_security.py) and [images](scripts/check_images.py)
   validate distinct gates. See [testing](docs/TESTING.md).
+- [TLS SMTP verifier](scripts/test_smtp_tls.py) and
+  [production recovery rehearsal](scripts/test_production_rehearsal.py) verify
+  local encrypted email and fresh production-profile backup/restore respectively.
+  Their guides are [SMTP verification](docs/SMTP-VERIFICATION.md) and
+  [production rehearsal](docs/PRODUCTION_REHEARSAL.md).
 - [Release validator](scripts/check_release.py), [notice synchronization](scripts/prepare_release_notices.py)
   and [brand preparation](scripts/prepare_brand_assets.py) own exact release
   provenance and distribution notices/exports. See [releasing](docs/RELEASING.md)
