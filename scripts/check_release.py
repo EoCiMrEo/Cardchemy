@@ -107,8 +107,9 @@ def github_get(path: str, *, missing_ok: bool = False):
     protection_read = path == "branches/main/protection"
     token = os.environ.get("RELEASE_READINESS_TOKEN" if protection_read else "GH_TOKEN")
     require(bool(token), "Protection verification requires RELEASE_READINESS_TOKEN" if protection_read else "Remote release verification requires an explicit GH_TOKEN")
+    repository_url = f"https://api.github.com/repos/{REPOSITORY}"
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{REPOSITORY}/{path}",
+        repository_url + (f"/{path}" if path else ""),
         headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Cardchemy-release-preflight"},
     )
     try:
