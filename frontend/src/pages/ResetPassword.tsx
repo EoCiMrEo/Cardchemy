@@ -1,3 +1,4 @@
+import { BrandWordmark } from '@/components/BrandWordmark'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -36,6 +37,7 @@ export default function ResetPassword() {
     <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <BrandWordmark className="mx-auto mb-3" />
           <CardTitle>{copy.auth.chooseNewPassword}</CardTitle>
           <CardDescription>{copy.auth.resetLinkDescription}</CardDescription>
         </CardHeader>

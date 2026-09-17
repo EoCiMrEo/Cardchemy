@@ -89,9 +89,10 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
         env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
-    app_name: str = Field(default="Flashcard Generator", min_length=1, max_length=128)
+    app_name: str = Field(default="Cardchemy", min_length=1, max_length=128)
     app_version: str = "0.1.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
@@ -99,24 +100,37 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     worker_shutdown_grace_seconds: float = Field(default=30, ge=0, le=7_200)
 
+    # Diagnostics contain only approved operational metadata. Business content
+    # and account deletion remain explicit operator actions.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    request_retention_days: int = Field(default=7, ge=1, le=365)
+    generation_job_retention_days: int = Field(default=30, ge=1, le=3_650)
+    database_metadata_retention_days: int = Field(default=30, ge=1, le=3_650)
+    audit_retention_days: int = Field(default=90, ge=1, le=3_650)
+    retention_batch_size: int = Field(default=500, ge=1, le=10_000)
+    worker_health_stale_seconds: int = Field(default=60, ge=10, le=3_600)
+    telemetry_enabled: bool = False
+    telemetry_endpoint: AnyHttpUrl | None = None
+    telemetry_timeout_seconds: float = Field(default=5, ge=1, le=30)
+
     # Compose injects DATABASE_URL with its internal ``db`` host. Native
     # processes derive a localhost URL from the same root PostgreSQL settings.
     database_url: str = ""
-    postgres_db: str = Field(default="flashcard_gen", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    postgres_db: str = Field(default="cardchemy", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     postgres_user: str = Field(default="admin", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     postgres_password: SecretStr | None = None
     postgres_port: int = Field(default=5432, ge=1, le=65535)
 
     secret_key: SecretStr = Field(min_length=32)
     algorithm: Literal["HS256"] = "HS256"
-    jwt_issuer: str = "flashcard-generator-api"
-    jwt_audience: str = "flashcard-generator-web"
+    jwt_issuer: str = "cardchemy-api"
+    jwt_audience: str = "cardchemy-web"
     jwt_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
     access_token_expire_minutes: int = Field(default=15, ge=1, le=60)
     refresh_token_expire_days: int = Field(default=7, ge=1, le=30)
     refresh_session_expire_days: int = Field(default=30, ge=1, le=90)
 
-    refresh_cookie_name: str = "flashcard_refresh"
+    refresh_cookie_name: str = "cardchemy_refresh"
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: Literal["lax", "strict"] = "lax"
     refresh_cookie_domain: str | None = None
@@ -448,6 +462,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":
+        if self.telemetry_endpoint is not None:
+            endpoint = urlsplit(str(self.telemetry_endpoint))
+            if (endpoint.scheme != "https" or endpoint.username or endpoint.password
+                    or endpoint.query or endpoint.fragment):
+                raise ValueError("TELEMETRY_ENDPOINT must use HTTPS without credentials, query or fragment")
+        if self.telemetry_enabled and self.telemetry_endpoint is None:
+            raise ValueError("Enabled telemetry requires TELEMETRY_ENDPOINT")
+        if self.worker_health_stale_seconds < 2 * max(
+            self.generation_worker_poll_seconds, self.email_worker_poll_seconds, 5
+        ):
+            raise ValueError("Worker health stale threshold must cover two scheduling poll intervals")
         if not self.database_url:
             if not self.postgres_password or not self.postgres_password.get_secret_value():
                 raise ValueError("DATABASE_URL or POSTGRES_PASSWORD is required")

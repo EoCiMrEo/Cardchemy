@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,7 @@ def run(*command: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(command, cwd=ROOT, env=system_environment(), check=check)
 
 
-def scan_workspace() -> int:
+def scan_workspace(image_tag: str = "phase9-ci") -> int:
     workspace = (ROOT / ".agent/.verification/security").resolve()
     if not workspace.is_relative_to(ROOT / ".agent/.verification"):
         raise RuntimeError("Security workspace must stay within the repository verification directory")
@@ -85,7 +86,7 @@ def scan_workspace() -> int:
             failures.append("worktree-secrets")
         identities = {}
         for image in IMAGES:
-            image_ref = f"cardchemy-{image}:phase9-ci"
+            image_ref = f"cardchemy-{image}:{image_tag}"
             archive = workspace / f"{image}.tar"
             identities[image] = subprocess.check_output(
                 ["docker", "image", "inspect", "--format", "{{.Id}}", image_ref],
@@ -116,6 +117,7 @@ def scan_workspace() -> int:
                 [*exported_git, "rev-parse", "HEAD"], cwd=ROOT, env=system_environment(),
             ).decode().strip(),
             "image_ids": identities,
+            "image_tag": image_tag,
             "scanners": {"gitleaks": GITLEAKS, "trivy": TRIVY}, "failed_gates": failures,
         }
         (reports / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -142,4 +144,11 @@ def scan_workspace() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(scan_workspace())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image-tag", default="phase9-ci",
+                        help="Tag of the three already-built cardchemy runtime images")
+    arguments = parser.parse_args()
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", arguments.image_tag):
+        parser.error("Invalid local image tag")
+    raise SystemExit(scan_workspace(arguments.image_tag))

@@ -47,6 +47,7 @@ WORKDIR /app
 COPY --chown=app:app alembic.ini ./
 COPY --chown=app:app alembic ./alembic
 COPY --chown=app:app app ./app
+COPY --chown=app:app legal ./legal
 
 USER app
 EXPOSE 8000
@@ -55,4 +56,4 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=5 \
     CMD python -m app.healthcheck || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-access-log"]

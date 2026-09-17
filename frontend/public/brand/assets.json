@@ -1,0 +1,36 @@
+{
+  "license": "LicenseRef-Cardchemy-Brand-Assets",
+  "terms": "/legal/BRANDING.md",
+  "exports": [
+    {
+      "source": "cardchemy-text-icon.png",
+      "source_sha256": "3ff43ff2c906edf2b8f758e1b4da77523ef507f0f2562cc612d7633fefa80106",
+      "alpha_bounds": [
+        162,
+        39,
+        2075,
+        700
+      ],
+      "file": "cardchemy-wordmark.png",
+      "width": 480,
+      "height": 166,
+      "bytes": 54784,
+      "sha256": "3da3f748f5145a0a2edf015cb0fcbbdbbe5a512d829c32742a3331acbfdd90eb"
+    },
+    {
+      "source": "cardchemy-logo.png",
+      "source_sha256": "37c24218da9741eaac433d5f3033f27ad2be23f6b9438b4151561d3a06196b3b",
+      "alpha_bounds": [
+        206,
+        21,
+        2114,
+        705
+      ],
+      "file": "cardchemy-lockup.png",
+      "width": 960,
+      "height": 344,
+      "bytes": 188938,
+      "sha256": "53949b931681a2386c56e6714656f78c5994b72e6a8f2ec57c35a607f9eae2b4"
+    }
+  ]
+}

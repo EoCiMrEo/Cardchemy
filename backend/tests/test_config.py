@@ -109,7 +109,7 @@ def test_root_loader_is_cwd_independent_and_process_environment_wins(tmp_path, m
         secret_key=test_secret,
         generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     )
-    assert isolated.app_name == "Flashcard Generator"
+    assert isolated.app_name == "Cardchemy"
 
 
 def test_root_example_covers_application_and_compose_settings():
@@ -147,7 +147,7 @@ def test_bootstrap_template_validates_without_operator_environment_and_never_ove
     assert loaded.smtp_port == 1025
     assert loaded.smtp_security == "none"
     assert loaded.database_url.startswith("postgresql+asyncpg://admin:")
-    assert "@127.0.0.1:5432/flashcard_gen" in loaded.database_url
+    assert "@127.0.0.1:5432/cardchemy" in loaded.database_url
     monkeypatch.setattr(bootstrap, "OUTPUT", temporary_env)
     before = temporary_env.read_bytes()
     with pytest.raises(SystemExit, match="Refusing to overwrite"):

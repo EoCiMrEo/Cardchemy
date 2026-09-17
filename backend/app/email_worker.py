@@ -4,18 +4,17 @@ import asyncio
 import logging
 import signal
 
-from app.config import get_settings
-from app.database import close_database, verify_database_revision
-from app.workers.email import EmailWorker
+from app.observability import configure_logging
 
 
 async def run_email_worker() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging()
+    from app.config import get_settings
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    from app.database import close_database, verify_database_revision
+    from app.workers.email import EmailWorker
     try:
-        settings = get_settings()
         settings.require_email_delivery_config()
         await verify_database_revision()
         stop_event = asyncio.Event()
@@ -31,4 +30,8 @@ async def run_email_worker() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(run_email_worker())
+    try:
+        asyncio.run(run_email_worker())
+    except Exception:
+        logging.getLogger(__name__).critical("process_failed", extra={"kind": "email"})
+        raise SystemExit(1) from None

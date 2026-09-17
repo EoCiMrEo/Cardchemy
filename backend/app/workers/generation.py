@@ -22,9 +22,11 @@ from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings, get_settings
 from app.database import async_session_maker
 from app.models.generation import GenerationJob, GenerationJobSource, GenerationJobStatus
+from app.observability import job_context, safe_error_code
 from app.schemas.subject import FlashcardSetCreate
 from app.services.flashcard import FlashcardService
 from app.services.generation import GenerationJobService
+from app.services.operations import pulse_worker
 from app.services.pdf_processor import PDFProcessingError, PDFProcessor
 from app.services.source_storage import SourceStorage, SourceStorageError
 from app.services.subject import SubjectService
@@ -74,15 +76,25 @@ class GenerationWorker:
         """Poll with bounded local concurrency until shutdown is requested."""
 
         if not self.settings.ai_provider_enabled:
-            logger.info("AI generation is disabled; worker will not claim jobs")
-            await stop_event.wait()
+            logger.info("worker_disabled", extra={"kind": "generation"})
+            try:
+                while not stop_event.is_set():
+                    await self._pulse("disabled")
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=min(5, self.settings.worker_health_stale_seconds / 3))
+                    except TimeoutError:
+                        pass
+            finally:
+                await self._pulse("draining")
             return
 
         tasks: set[asyncio.Task[None]] = set()
         last_cleanup = 0.0
         loop = asyncio.get_running_loop()
+        logger.info("worker_started", extra={"kind": "generation"})
         try:
             while not stop_event.is_set():
+                await self._pulse("running")
                 now_monotonic = loop.time()
                 if now_monotonic - last_cleanup >= self.settings.generation_cleanup_interval_seconds:
                     await self.recover_and_cleanup()
@@ -122,14 +134,19 @@ class GenerationWorker:
                     except TimeoutError:
                         pass
         finally:
+            await self._pulse("draining")
             forced_cancellations = await drain_active_tasks(
                 tasks, self.settings.worker_shutdown_grace_seconds
             )
             if forced_cancellations:
                 logger.warning(
-                    "Generation worker shutdown grace expired; cancelled active_jobs=%s",
-                    forced_cancellations,
+                    "worker_shutdown_expired",
+                    extra={"kind": "generation", "active_count": forced_cancellations},
                 )
+            logger.info("worker_stopped", extra={"kind": "generation"})
+
+    async def _pulse(self, status: str) -> None:
+        await pulse_worker(self.session_factory, worker_id=self.worker_id, kind="generation", status=status, stale_seconds=self.settings.worker_health_stale_seconds)
 
     async def claim_next(self) -> tuple[UUID, str] | None:
         async with self.session_factory() as db:
@@ -218,6 +235,7 @@ class GenerationWorker:
                 job.stage = stage
                 job.progress = progress
                 job.updated_at = utcnow()
+        logger.info("generation_stage", extra={"stage": stage})
 
     async def _heartbeat(
         self,
@@ -258,9 +276,21 @@ class GenerationWorker:
             except Exception:
                 # Finalization also verifies the unexpired lease, so a database
                 # outage cannot let stale work commit.
-                logger.warning("Generation heartbeat failed", exc_info=True)
+                logger.warning("generation_heartbeat_failed")
 
     async def process_claim(self, job_id: UUID, claim_token: str) -> None:
+        origin = None
+        try:
+            async with asyncio.timeout(0.25):
+                async with self.session_factory() as db:
+                    origin = await db.scalar(select(GenerationJob.request_id).where(GenerationJob.id == job_id))
+        except Exception:
+            pass
+        with job_context(job_id, request_id=origin):
+            logger.info("generation_started")
+            await self._process_claim(job_id, claim_token)
+
+    async def _process_claim(self, job_id: UUID, claim_token: str) -> None:
         user_cancelled = asyncio.Event()
         stop_heartbeat = asyncio.Event()
         pipeline = asyncio.create_task(self._pipeline(job_id, claim_token))
@@ -283,6 +313,7 @@ class GenerationWorker:
         except JobCancellationRequested:
             await self._finish_cancelled(job_id, claim_token)
         except LeaseLost:
+            logger.warning("generation_lease_lost")
             return
         except PDFProcessingError as exc:
             await self._finish_failure(
@@ -358,7 +389,7 @@ class GenerationWorker:
                 retryable=False,
             )
         except Exception:
-            logger.warning("Generation job failed unexpectedly", exc_info=True)
+            logger.warning("generation_failed", extra={"error_code": "generation_internal_error"})
             await self._finish_failure(
                 job_id,
                 claim_token,
@@ -491,6 +522,8 @@ class GenerationWorker:
                 job.error_retryable = False
                 job.updated_at = now
 
+        logger.info("generation_completed", extra={"job_id": job_id, "card_count": len(created_cards), "input_tokens": int((telemetry or {}).get("actual_input_tokens") or 0), "output_tokens": int((telemetry or {}).get("actual_output_tokens") or 0), "cost_microusd": int((telemetry or {}).get("actual_cost_microusd") or 0)})
+
     async def _finish_cancelled(self, job_id: UUID, claim_token: str) -> None:
         async with self.session_factory() as db:
             async with db.begin():
@@ -519,6 +552,8 @@ class GenerationWorker:
                 job.error_message = None
                 job.error_retryable = False
                 job.updated_at = now
+
+        logger.info("generation_cancelled", extra={"job_id": job_id})
 
     async def _finish_failure(
         self,
@@ -606,6 +641,8 @@ class GenerationWorker:
                 job.worker_id = None
                 job.claim_token = None
                 job.updated_at = utcnow()
+
+        logger.warning("generation_failed", extra={"job_id": job_id, "error_code": safe_error_code(code)})
 
     @staticmethod
     def _apply_telemetry(job: GenerationJob, telemetry: dict) -> None:

@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "cardchemy-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -66,5 +66,6 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vitest": "4.1.11"
-  }
+  },
+  "license": "Apache-2.0"
 }

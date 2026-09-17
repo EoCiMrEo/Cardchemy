@@ -56,6 +56,23 @@ the production profile; see [EMAIL_DELIVERY.md](EMAIL_DELIVERY.md).
 
 ## Applying changes
 
+### Existing installations and Cardchemy defaults
+
+The v0.1.0 template names new installations `cardchemy`. Preserve an existing
+Compose project name and `POSTGRES_DB` (previous default: `flashcard_gen`);
+changing either may select a different
+volume/database. Keep the existing root `.env` and installation secrets.
+Do not copy the new `COMPOSE_PROJECT_NAME` into an existing deployment unless
+it matches the project already owning its volumes. Check the existing
+container/volume Compose labels privately before changing that identity.
+
+If previously omitted, explicitly retain `JWT_ISSUER=flashcard-generator-api`,
+`JWT_AUDIENCE=flashcard-generator-web` and `REFRESH_COOKIE_NAME=flashcard_refresh` when
+upgrading an older installation that used those defaults. New defaults are
+`cardchemy-api`, `cardchemy-web` and `cardchemy_refresh`. A coordinated switch
+requires users to sign in again and old refresh cookies to expire/be removed.
+`APP_NAME=Cardchemy` changes display/API metadata without renaming stored data.
+
 After editing root .env, run docker compose config --quiet (or the corresponding
 development/production override command) before recreating containers. Compose
 substitutes settings when containers are created; a plain process restart does
@@ -83,14 +100,15 @@ trusted loopback without a separate network-security design.
 
 | Setting and template default | Purpose, bounds, and required condition | Consumer |
 | --- | --- | --- |
+| COMPOSE_PROJECT_NAME=cardchemy | Installation namespace for Compose networks/volumes. Keep an existing installation's namespace during upgrades; changing it selects different resources. | Compose |
 | APP_PORT=8080 | Host loopback port for the built frontend. | Compose |
 | API_PORT=8000 | Host API port in the development override; Vite's /api proxy target. | Compose, Vite |
 | POSTGRES_PORT=5432 | Host database port in the development override; native derived URL. | Compose, backend |
 | MAILPIT_UI_PORT=8025; MAILPIT_SMTP_PORT=1025 | Host loopback UI and optional development SMTP ports. SMTP remains internal in the base stack. | Compose |
-| POSTGRES_DB=flashcard_gen; POSTGRES_USER=admin | Database and login identifiers, letters/digits/underscore and leading letter or underscore. | Compose, native backend |
+| POSTGRES_DB=cardchemy; POSTGRES_USER=admin | Database and login identifiers, letters/digits/underscore and leading letter or underscore. | Compose, native backend |
 | POSTGRES_PASSWORD=empty | Required generated database password. Empty is invalid for Compose startup and for a native derived URL. Keep secret. | Compose, native backend |
 | DATABASE_URL=empty | Native backend derives localhost URL when empty; explicit value selects a separately managed database. Compose injects its internal db URL regardless. This URL can contain a password and must stay private. | Native backend; Compose injection |
-| APP_NAME=Flashcard Generator; APP_VERSION=0.1.0 | Display identity and image/version metadata. Name is 1–128 characters. | API, Compose |
+| APP_NAME=Cardchemy; APP_VERSION=0.1.0 | Display identity and image/version metadata. Name is 1–128 characters. | API, Compose |
 | ENVIRONMENT=development | development, test, or production. Production enforces stronger cookie, origin, SMTP, and secret checks. | API, workers, Compose |
 | DEBUG=false; API_DOCS_ENABLED=empty | Debug is disabled by default. Empty docs flag uses validated environment-specific behavior; limit public API docs intentionally. | API |
 | API_ROOT_PATH=empty | Native API path prefix, empty by default; Compose injects /api for its edge proxy. | API, Compose |
@@ -98,6 +116,28 @@ trusted loopback without a separate network-security design.
 | VITE_API_URL=/api | Public browser API base; same-origin /api is the supported Compose route. Must be an absolute HTTP(S) URL or root-relative path. Rebuild frontend image after changing it. | Vite build, browser |
 | FORWARDED_ALLOW_IPS=empty | Compose's private API uses a proxy-trust fallback; narrow to exact trusted proxy addresses if changing the network exposure. | Compose/Uvicorn |
 | WORKER_SHUTDOWN_GRACE_SECONDS=30 | Drain time in seconds, 0–7200; coordinate with Compose stop grace period. | Workers |
+
+## Diagnostics, telemetry and metadata retention
+
+These settings reach the API and both workers through the core Compose
+environment. They contain no provider/SMTP credentials. See
+[observability](OBSERVABILITY.md) for fields, metric limits and health
+semantics, and [privacy](PRIVACY.md) for lifecycle/commands. Changes require
+process restart/container recreation. Cleanup is operator-run, dry-run by
+default; stdout/proxy/backup/provider expiry is separately configured.
+
+| Setting and default | Bounds and behavior |
+| --- | --- |
+| `LOG_LEVEL=INFO` | DEBUG, INFO, WARNING, ERROR or CRITICAL; redaction applies at every level. SQL echo stays disabled. |
+| `REQUEST_RETENTION_DAYS=7` | 1–365 days; database request metadata eligibility/window. |
+| `GENERATION_JOB_RETENTION_DAYS=30` | 1–3650 days; terminal source-free job history; result sets survive. |
+| `DATABASE_METADATA_RETENTION_DAYS=30` | 1–3650 days; grace for expired auth/reset/invite, stale rate buckets and past quota windows. Does not expire accounts, content, progress or study receipts. |
+| `AUDIT_RETENTION_DAYS=90` | 1–3650 days; fixed-field privileged audit history. |
+| `RETENTION_BATCH_SIZE=500` | 1–10000 rows per metadata category per cleanup command; apply skips locked candidates. |
+| `WORKER_HEALTH_STALE_SECONDS=60` | 10–3600 seconds; must cover at least twice the greater worker poll interval (and at least 10 seconds). |
+| `TELEMETRY_ENABLED=false` | Optional aggregate reporting enablement; enabling alone sends nothing. |
+| `TELEMETRY_ENDPOINT=empty` | Operator-owned HTTPS collector, no embedded credentials/query/fragment; required when enabled. Never exposed to the browser. |
+| `TELEMETRY_TIMEOUT_SECONDS=5` | 1–30 seconds; one explicit `report-telemetry` call, no automatic retry or redirect. |
 
 ## Authentication and session settings
 
@@ -110,11 +150,11 @@ cookies, trusted origins, and strong generated secret material.
 | SECRET_KEY=empty | Required generated JWT signing secret, at least 32 characters; rotation invalidates active sessions. |
 | GENERATION_SOURCE_ENCRYPTION_KEY=empty | Required independent 32-byte URL-safe base64 key for temporary PDF ciphertext; rotation requires draining retained sources. |
 | ALGORITHM=HS256 | The only supported JWT signing algorithm. |
-| JWT_ISSUER=flashcard-generator-api; JWT_AUDIENCE=flashcard-generator-web | Exact token issuer and audience. Change only with a coordinated client/session rollout. |
+| JWT_ISSUER=cardchemy-api; JWT_AUDIENCE=cardchemy-web | Exact token issuer and audience. Change only with a coordinated client/session rollout. |
 | JWT_CLOCK_SKEW_SECONDS=30 | Token clock tolerance, 0–300 seconds. |
 | ACCESS_TOKEN_EXPIRE_MINUTES=15 | Access-token lifetime, 1–60 minutes. |
 | REFRESH_TOKEN_EXPIRE_DAYS=7; REFRESH_SESSION_EXPIRE_DAYS=30 | Refresh-token and server-session lifetimes, 1–30 and 1–90 days. |
-| REFRESH_COOKIE_NAME=flashcard_refresh; REFRESH_COOKIE_DOMAIN=empty | Cookie name and optional domain; empty domain makes a host-only cookie. |
+| REFRESH_COOKIE_NAME=cardchemy_refresh; REFRESH_COOKIE_DOMAIN=empty | Cookie name and optional domain; empty domain makes a host-only cookie. |
 | REFRESH_COOKIE_SECURE=false; REFRESH_COOKIE_SAMESITE=lax | Cookie transport and SameSite mode (lax or strict). Production requires secure transport. |
 | INVITATION_MIN_HOURS=1; INVITATION_MAX_HOURS=720 | Allowed invitation TTL bounds, each 1–720 hours and minimum no greater than maximum. |
 | PASSWORD_RESET_EXPIRE_MINUTES=30 | Password-reset token lifetime, 5–120 minutes. |

@@ -14,21 +14,21 @@ x-backend-build: &backend-build
     INSTALL_OCR: ${PDF_OCR_ENABLED:-false}
 
 x-core-environment: &core-environment
-  APP_NAME: ${APP_NAME:-Flashcard Generator}
+  APP_NAME: ${APP_NAME:-Cardchemy}
   APP_VERSION: ${APP_VERSION:-0.1.0}
-  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}@db:5432/${POSTGRES_DB:-flashcard_gen}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}@db:5432/${POSTGRES_DB:-cardchemy}
   SECRET_KEY: ${SECRET_KEY:?Run python scripts/bootstrap_env.py}
   GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Run python scripts/bootstrap_env.py}
   ENVIRONMENT: ${ENVIRONMENT:-development}
   DEBUG: ${DEBUG:-false}
   ALGORITHM: ${ALGORITHM:-HS256}
-  JWT_ISSUER: ${JWT_ISSUER:-flashcard-generator-api}
-  JWT_AUDIENCE: ${JWT_AUDIENCE:-flashcard-generator-web}
+  JWT_ISSUER: ${JWT_ISSUER:-cardchemy-api}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-cardchemy-web}
   JWT_CLOCK_SKEW_SECONDS: ${JWT_CLOCK_SKEW_SECONDS:-30}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
   REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
   REFRESH_SESSION_EXPIRE_DAYS: ${REFRESH_SESSION_EXPIRE_DAYS:-30}
-  REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-flashcard_refresh}
+  REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-cardchemy_refresh}
   REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
   REFRESH_COOKIE_SAMESITE: ${REFRESH_COOKIE_SAMESITE:-lax}
   REFRESH_COOKIE_DOMAIN: ${REFRESH_COOKIE_DOMAIN:-}
@@ -41,6 +41,16 @@ x-core-environment: &core-environment
   INVITATION_MAX_HOURS: ${INVITATION_MAX_HOURS:-720}
   PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
   WORKER_SHUTDOWN_GRACE_SECONDS: ${WORKER_SHUTDOWN_GRACE_SECONDS:-30}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  REQUEST_RETENTION_DAYS: ${REQUEST_RETENTION_DAYS:-7}
+  GENERATION_JOB_RETENTION_DAYS: ${GENERATION_JOB_RETENTION_DAYS:-30}
+  DATABASE_METADATA_RETENTION_DAYS: ${DATABASE_METADATA_RETENTION_DAYS:-30}
+  AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-90}
+  RETENTION_BATCH_SIZE: ${RETENTION_BATCH_SIZE:-500}
+  WORKER_HEALTH_STALE_SECONDS: ${WORKER_HEALTH_STALE_SECONDS:-60}
+  TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
+  TELEMETRY_ENDPOINT: ${TELEMETRY_ENDPOINT:-}
+  TELEMETRY_TIMEOUT_SECONDS: ${TELEMETRY_TIMEOUT_SECONDS:-5}
 
 x-generation-environment: &generation-environment
   # This non-secret admission switch is shared with the API. Provider
@@ -134,7 +144,7 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-flashcard_gen}
+      POSTGRES_DB: ${POSTGRES_DB:-cardchemy}
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}
     expose:
@@ -151,7 +161,7 @@ services:
     stop_grace_period: 1m
 
   migrate:
-    image: flashcard-generator-backend:${APP_VERSION:-local}
+    image: cardchemy-backend:${APP_VERSION:-local}
     build: *backend-build
     environment:
       <<: *core-environment
@@ -164,7 +174,7 @@ services:
     restart: "no"
 
   backend:
-    image: flashcard-generator-backend:${APP_VERSION:-local}
+    image: cardchemy-backend:${APP_VERSION:-local}
     build: *backend-build
     environment:
       <<: [*core-environment, *generation-environment]
@@ -183,7 +193,7 @@ services:
     stop_grace_period: 45s
 
   worker:
-    image: flashcard-generator-backend:${APP_VERSION:-local}
+    image: cardchemy-backend:${APP_VERSION:-local}
     build: *backend-build
     environment:
       <<: [*core-environment, *generation-environment]
@@ -194,7 +204,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "-m", "app.worker"]
     healthcheck:
-      test: ["CMD", "python", "-m", "app.healthcheck"]
+      test: ["CMD", "python", "-m", "app.healthcheck", "--worker-kind", "generation"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -203,7 +213,7 @@ services:
     stop_grace_period: 45s
 
   email-worker:
-    image: flashcard-generator-backend:${APP_VERSION:-local}
+    image: cardchemy-backend:${APP_VERSION:-local}
     build: *backend-build
     environment:
       <<: [*core-environment, *email-environment]
@@ -212,7 +222,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "-m", "app.email_worker"]
     healthcheck:
-      test: ["CMD", "python", "-m", "app.healthcheck"]
+      test: ["CMD", "python", "-m", "app.healthcheck", "--worker-kind", "email"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -249,7 +259,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: flashcard-generator-frontend:${APP_VERSION:-local}
+    image: cardchemy-frontend:${APP_VERSION:-local}
     build:
       context: ./frontend
       dockerfile: Dockerfile

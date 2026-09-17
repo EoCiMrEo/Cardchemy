@@ -28,11 +28,11 @@ settings = get_settings()
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 # Create async engine
-# - echo=True logs all SQL statements (useful for debugging)
 # - pool_pre_ping=True checks connections before using them (handles stale connections)
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,  # Log SQL in debug mode
+    echo=False,          # SQL and bind values may contain private user content.
+    hide_parameters=True,
     pool_pre_ping=True,   # Verify connection is alive before using
 )
 

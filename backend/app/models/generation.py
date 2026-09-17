@@ -44,6 +44,7 @@ class GenerationJob(Base):
     __tablename__ = "generation_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_id = Column(UUID(as_uuid=True), nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     subject_id = Column(
         UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False
@@ -220,6 +221,7 @@ class GenerationJob(Base):
         Index("ix_generation_jobs_user_created", "user_id", "created_at", "id"),
         Index("ix_generation_jobs_subject_created", "subject_id", "created_at", "id"),
         Index("ix_generation_jobs_created", "created_at", "id"),
+        Index("ix_generation_jobs_retention", "completed_at", "id", postgresql_where=text("status IN ('completed','failed','cancelled')")),
         Index(
             "ix_generation_jobs_queue",
             "available_at",

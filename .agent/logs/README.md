@@ -1,8 +1,15 @@
 # Agent Logs
 
-Last Updated: 2026-09-16
+Last Updated: 2026-09-17
 
 This directory records agent-visible development history for Cardchemy: what changed, why the work was needed, what problems appeared, how they were solved, and how the result was verified.
+
+Start with [canonical orientation](../../docs/00-START-HERE.md),
+[current state](../../docs/development/CURRENT-STATE.md), and the
+[project map](../../PROJECT-MAP.md) for current truth. Dated logs are historical
+snapshots: later source/closure evidence supersedes old paths, failures and
+phase-status notes. Logs are stored under date folders; preserve those moves.
+Follow [agent rules](../../AGENTS.md) when adding scope/decision/check evidence.
 
 Do not store secrets, environment values, passwords, or long-lived credentials in these logs. Disposable QA credentials may be described only by purpose and cleanup status.
 
@@ -10,15 +17,23 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
-| 2026-09-16 | `2026-09-16-phase-9-remediation.md` | Root configuration, cleanup, consolidated tests and real journey, secure locks, runtime/OCR probes, CI coverage/bundle gates and remote merge protection. |
-| 2026-09-16 | `2026-09-16-ai-request-efficiency-remediation.md` | Evidence packing, direct-generation fast path, multi-card batches, worker-wide RPM/TPM safety governor, durable request/cache telemetry, JSONB migrations, and end-to-end verification. |
-| 2026-09-15 | `2026-09-15-ai-provider-retry-and-error-remediation.md` | Gemini schema compatibility, precise provider/model errors, three fixed-delay retries, stage canaries, fail-fast cancellation, and worker-wide request concurrency. |
-| 2026-09-15 | `2026-09-15-ai-provider-enablement-fix.md` | Non-secret AI enablement shared by API and worker, worker-only provider credentials, fail-fast validation, no-claim kill switch, and runtime verification. |
-| 2026-09-15 | `2026-09-15-phase-8-remediation.md` | Production-shaped self-hosting, generated secrets, multi-stage images, secure SPA edge, readiness/draining, backup/restore rehearsal, and platform evidence. |
-| 2026-09-15 | `2026-09-15-phase-7-remediation.md` | Transactional email outbox, bounded SMTP worker, Mailpit capture/fault tests, reset and invitation delivery, guarded recovery, and live browser verification. |
-| 2026-09-15 | `2026-09-15-phase-6-remediation.md` | Durable study-answer idempotency, valid review-all sessions, keyboard/screen-reader semantics, reduced motion, responsive/touch-safe UI, axe coverage, and 44 browser checks. |
-| 2026-09-15 | `2026-09-15-phase-5-remediation.md` | Typed frontend API architecture, race-safe authentication, guarded routing, resilient join/edit/progress flows, centralized English copy, and 31 browser checks. |
-| 2026-09-14 | `2026-09-14-phase-4-remediation.md` | Strict source-grounded generation, provider portability, hierarchical summaries, deterministic quality/deduplication, token/cost telemetry, operator UI, and fixed-corpus verification. |
-| 2026-09-14 | `2026-09-14-phase-3-remediation.md` | Durable PostgreSQL PDF-generation jobs, bounded worker/extraction, quotas, encrypted source retention, polling/cancel/retry UI, optional OCR, and verification evidence. |
-| 2026-09-14 | `2026-09-14-phase-2-remediation.md` | Clean Alembic baseline, PostgreSQL constraints/cascades/transactions, server-authoritative study contracts, frontend alignment, and migration/restore verification. |
-| 2026-09-14 | `2026-09-14-phase-0-phase-1-remediation.md` | Phase 0 reproducible baseline and Phase 1 authentication/authorization remediation, decisions, implementation map, and verification evidence. |
+| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity and artwork, verification, release pipeline, and outstanding publication gates. |
+| 2026-09-17 | [Phase 11 demo](2026-09-17/2026-09-17-phase-11-demo.md) | Bounded disposable production-build/Nginx demonstration, private generated sign-in, no provider calls and verified cleanup. |
+| 2026-09-17 | [Phase 11 readiness audit](2026-09-17/2026-09-17-phase-11-readiness-audit.md) | Read-only release/governance, branding and documentation/demo audits; verified remote identity and recorded required owner decisions before implementation. |
+| 2026-09-17 | [Phase 10 remediation](2026-09-17/2026-09-17-phase-10-remediation.md) | Safe structured logging/correlation, operational metrics and worker health, transactional audit, provider disclosure and guarded retention/export/deletion; isolated verification and limits. |
+| 2026-09-16 | [Agent guidelines merge](2026-09-16/2026-09-16-agents-guidelines-merge.md) | Merged root and supplied agent guides, reconciled bootstrap/ownership, retained engineering safeguards and verified links. |
+| 2026-09-16 | [Agent context audit](2026-09-16/2026-09-16-agents-context-audit.md) | Supporting repository audit for the supplied detailed operating guide; historical implementation evidence. |
+| 2026-09-16 | [Repository context system](2026-09-16/2026-09-16-repository-context-system.md) | Source audit, canonical navigation, architecture/ADRs, setup/state, historical classification, CI link check and completion evidence. |
+| 2026-09-16 | [Phase 9 merge closure](2026-09-16/2026-09-16-phase-9-merge-closure.md) | Supersedes earlier unmerged checkpoints; records merge and post-merge hosted checks. |
+| 2026-09-16 | [Phase 9 remediation](2026-09-16/2026-09-16-phase-9-remediation.md) | Root configuration, cleanup, consolidated tests and real journey, secure locks, runtime/OCR probes, CI coverage/bundle gates and remote merge protection. |
+| 2026-09-16 | [AI request efficiency](2026-09-16/2026-09-16-ai-request-efficiency-remediation.md) | Evidence packing, direct-generation fast path, multi-card batches, worker-wide RPM/TPM safety governor, durable request/cache telemetry, JSONB migrations, and end-to-end verification. |
+| 2026-09-15 | [Provider retries/errors](2026-09-15/2026-09-15-ai-provider-retry-and-error-remediation.md) | Gemini schema compatibility, precise provider/model errors, bounded retries, stage canaries, cancellation, and worker-wide concurrency. |
+| 2026-09-15 | [Provider enablement](2026-09-15/2026-09-15-ai-provider-enablement-fix.md) | API/worker enablement, worker-only credentials, startup validation, kill switch and verification. |
+| 2026-09-15 | [Phase 8](2026-09-15/2026-09-15-phase-8-remediation.md) | Self-hosting, generated secrets, images, secure edge, readiness/draining and restore rehearsal. |
+| 2026-09-15 | [Phase 7](2026-09-15/2026-09-15-phase-7-remediation.md) | Durable outbox, SMTP/Mailpit delivery, guarded recovery and browser evidence. |
+| 2026-09-15 | [Phase 6](2026-09-15/2026-09-15-phase-6-remediation.md) | Durable study idempotency, review-all, accessibility, responsive UX and browser checks. |
+| 2026-09-15 | [Phase 5](2026-09-15/2026-09-15-phase-5-remediation.md) | Typed frontend API, auth/routing recovery, mutation/progress UX and English copy. |
+| 2026-09-14 | [Phase 4](2026-09-14/2026-09-14-phase-4-remediation.md) | Grounded AI, providers, summaries, deterministic quality and telemetry. |
+| 2026-09-14 | [Phase 3](2026-09-14/2026-09-14-phase-3-remediation.md) | Durable PDF jobs, worker/extraction bounds, quotas, encryption, polling/retry and OCR. |
+| 2026-09-14 | [Phase 2](2026-09-14/2026-09-14-phase-2-remediation.md) | Alembic, PostgreSQL integrity/cascades, authoritative study contracts and restore evidence. |
+| 2026-09-14 | [Phases 0–1](2026-09-14/2026-09-14-phase-0-phase-1-remediation.md) | Reproducible baseline, auth/authorization decisions, implementation and verification. |

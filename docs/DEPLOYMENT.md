@@ -100,7 +100,10 @@ paths are `/api/docs`, `/api/redoc`, and `/api/openapi.json`.
 
 `/api/health/live` is process liveness and `/api/health/ready` checks the
 database. Container readiness uses the database-aware probe. The workers also
-probe the database rather than inheriting an HTTP-only check.
+check their own scheduling-loop heartbeat and the database, so a stalled loop
+cannot remain healthy merely because PostgreSQL answers. Disabled generation
+workers continue pulsing; draining workers stop reporting readiness. See
+[diagnostics and health](OBSERVABILITY.md) and [privacy controls](PRIVACY.md).
 
 SIGTERM stops workers from claiming new work and gives active work 30 seconds
 by default to finish. Compose allows 45 seconds before force-killing them. Tune
@@ -114,8 +117,8 @@ For planned maintenance, stop public admission first, inspect or drain pending
 generation/email work, and then stop workers:
 
 ```text
-docker compose stop -t 45 backend
 docker compose exec backend python -m app.cli email-outbox-status
+docker compose stop -t 45 backend
 docker compose stop -t 45 worker email-worker
 ```
 
@@ -127,6 +130,10 @@ capture only and must not be used or restored in production. The frontend, API,
 and workers are replaceable images and have no durable filesystem state.
 
 Before an upgrade:
+
+Keep existing database/Compose project names and secrets while adopting new
+images. The [configuration upgrade note](CONFIGURATION.md#existing-installations-and-cardchemy-defaults)
+explains legacy authentication defaults and session continuity.
 
 1. Record the current application version and Alembic revision.
 2. Stop the API and gracefully drain/stop both workers so the dump is consistent.
@@ -180,10 +187,10 @@ Dockerfile change. Re-record exact sizes and verify runtime contents for every
 release:
 
 ```text
-docker image inspect flashcard-generator-backend:0.1.0 --format "{{.Os}}/{{.Architecture}} {{.Size}} {{.Config.User}}"
-docker image inspect flashcard-generator-frontend:0.1.0 --format "{{.Os}}/{{.Architecture}} {{.Size}} {{.Config.User}}"
-docker history flashcard-generator-backend:0.1.0
-docker run --rm flashcard-generator-backend:0.1.0 sh -c "! command -v gcc && ! command -v node"
+docker image inspect cardchemy-backend:0.1.0 --format "{{.Os}}/{{.Architecture}} {{.Size}} {{.Config.User}}"
+docker image inspect cardchemy-frontend:0.1.0 --format "{{.Os}}/{{.Architecture}} {{.Size}} {{.Config.User}}"
+docker history cardchemy-backend:0.1.0
+docker run --rm cardchemy-backend:0.1.0 sh -c "! command -v gcc && ! command -v node"
 ```
 
 The release image check should confirm that neither runtime contains build
