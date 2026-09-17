@@ -31,10 +31,12 @@ documentation/screenshots and verifiable release packaging. Its individual
 completion and publishing status belongs to the remediation tracker and
 [releases](https://github.com/EoCiMrEo/Cardchemy/releases).
 
-The separate v1.0 gate includes clean-machine deployment, complete release
-evidence and manual spoken assistive-technology checks. Automated tests and
-documentation alone do not establish live provider quality, production SMTP
-delivery or a production deployment.
+The separate v1.0 readiness gate passed clean-machine production-profile
+deployment/recovery, actual local encrypted SMTP delivery/recovery, complete
+release evidence and a reported human spoken assistive-technology check. See
+[gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+The published version remains 0.1.0. Each operator still verifies provider
+quality, external SMTP/DNS/mailbox delivery and their own hosting/recovery goals.
 
 ## Proposals requiring a decision
 

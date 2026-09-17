@@ -16,7 +16,7 @@ edge retains the frontend image's real healthcheck using a dedicated
 container-loopback-only `/healthz` listener; that HTTP listener has no published
 port. This avoids disabled inherited healthchecks failing older Compose wait
 contracts. Application requests still use certificate-validating HTTPS.
-reserved `cards.rehearsal.test` name resolves inside the harness to loopback;
+The reserved `cards.rehearsal.test` name resolves inside the harness to loopback;
 a generated CA issues a separate server certificate with explicit constraints,
 key usages, identity extensions and SAN, including Python 3.13 strict TLS
 verification support. That CA is trusted only by the harness. It does not change

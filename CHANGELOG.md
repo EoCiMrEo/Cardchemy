@@ -11,6 +11,9 @@ and the Keep a Changelog structure.
   image's temporary socket-only initialization server cannot release migrations early.
 - Kept a real internal health probe on the rehearsal TLS edge for older Compose
   wait compatibility, while preserving certificate-validating HTTPS checks.
+- Completed all eleven v1.0 operational readiness checks, including deployment
+  on a clean machine with the production profile and separate-volume backup recovery.
+  The published version remains 0.1.0.
 
 ## [0.1.0] - 2026-09-17
 
