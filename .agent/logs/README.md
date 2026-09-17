@@ -1,6 +1,6 @@
 # Agent Logs
 
-Last Updated: 2026-09-16
+Last Updated: 2026-09-17
 
 This directory records agent-visible development history for Cardchemy: what changed, why the work was needed, what problems appeared, how they were solved, and how the result was verified.
 
@@ -17,6 +17,12 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity and artwork, verification, release pipeline, and outstanding publication gates. |
+| 2026-09-17 | [Phase 11 demo](2026-09-17/2026-09-17-phase-11-demo.md) | Bounded disposable production-build/Nginx demonstration, private generated sign-in, no provider calls and verified cleanup. |
+| 2026-09-17 | [Phase 11 readiness audit](2026-09-17/2026-09-17-phase-11-readiness-audit.md) | Read-only release/governance, branding and documentation/demo audits; verified remote identity and recorded required owner decisions before implementation. |
+| 2026-09-17 | [Phase 10 remediation](2026-09-17/2026-09-17-phase-10-remediation.md) | Safe structured logging/correlation, operational metrics and worker health, transactional audit, provider disclosure and guarded retention/export/deletion; isolated verification and limits. |
+| 2026-09-16 | [Agent guidelines merge](2026-09-16/2026-09-16-agents-guidelines-merge.md) | Merged root and supplied agent guides, reconciled bootstrap/ownership, retained engineering safeguards and verified links. |
+| 2026-09-16 | [Agent context audit](2026-09-16/2026-09-16-agents-context-audit.md) | Supporting repository audit for the supplied detailed operating guide; historical implementation evidence. |
 | 2026-09-16 | [Repository context system](2026-09-16/2026-09-16-repository-context-system.md) | Source audit, canonical navigation, architecture/ADRs, setup/state, historical classification, CI link check and completion evidence. |
 | 2026-09-16 | [Phase 9 merge closure](2026-09-16/2026-09-16-phase-9-merge-closure.md) | Supersedes earlier unmerged checkpoints; records merge and post-merge hosted checks. |
 | 2026-09-16 | [Phase 9 remediation](2026-09-16/2026-09-16-phase-9-remediation.md) | Root configuration, cleanup, consolidated tests and real journey, secure locks, runtime/OCR probes, CI coverage/bundle gates and remote merge protection. |

@@ -12,6 +12,11 @@ review/publication, invitations, and student study. FastAPI owns authorization,
 durable generation, answer correctness, and persistent progress. Browser guards
 and form checks improve interaction but do not replace server enforcement.
 
+The built Nginx edge emits only numeric status/duration access events and
+suppresses request-bearing error text. It never logs URL paths, queries, IPs,
+headers or bodies. See [observability](../docs/OBSERVABILITY.md); the operator's
+TLS proxy and collector need the same redaction and their own expiry policy.
+
 The stack is React 19, TypeScript, React Router 7, Redux Toolkit, Axios, Tailwind
 CSS 4, Radix primitives, and Framer Motion, built by Vite 7. Supported Node/npm
 versions are maintained in [Runtimes](../docs/RUNTIMES.md); exact dependencies
@@ -29,6 +34,7 @@ are in [package.json](package.json) and [package-lock.json](package-lock.json).
 | Student pages | [src/pages/student/](src/pages/student/) | Enrolled subjects, server-owned set progress, and study interaction. |
 | Public account/join pages | [src/pages/](src/pages/) | Login, invited student registration, recovery/reset, joining, dashboard shell, and not-found handling. |
 | Shared interactions | [src/components/](src/components/) | Generation telemetry, subject/invitation/set/preview dialogs, UI primitives, and failure views. |
+| Brand | [BrandWordmark.tsx](src/components/BrandWordmark.tsx), [public/brand/](public/brand/), [index.html](index.html) | Shared accessible wordmark and supplied ICO; originals preserved under [separate terms](../BRANDING.md). |
 | Job polling | [src/hooks/useGenerationJobs.ts](src/hooks/useGenerationJobs.ts) | Owner-scoped jobs/limits, active-job polling, cancellation/retry, and completion refresh. |
 | Study session state | [src/store/](src/store/), [studySlice.ts](src/store/slices/studySlice.ts) | Current cards/index, server-confirmed answer results, and session completion; no durable browser outbox. |
 | Copy/style | [src/i18n/en.ts](src/i18n/en.ts), [src/index.css](src/index.css), [src/components/ui/](src/components/ui/) | English v1 catalog, Tailwind theme, focus/reduced-motion rules, and shared accessible controls. |

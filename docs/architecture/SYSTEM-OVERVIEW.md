@@ -76,15 +76,20 @@ can be ambiguous, so automatic delivery cannot promise exactly once. Read
 ## Failure and edge cases
 
 Readiness fails when PostgreSQL cannot answer; liveness reports the API process.
-Worker health probes check DB connectivity, not end-to-end queue throughput.
+Worker health probes check their own loop heartbeat and DB connectivity;
+neither establishes end-to-end queue throughput or remote-service availability.
 Leases recover crashed claims; fencing rejects stale writes. SIGTERM stops new
 claims and gives active work bounded drain time. Timeout/provider failure does
 not automatically replay an expensive pipeline. Ambiguous SMTP delivery requires
 operator review. These contracts are explained in the deeper flow/operation docs.
 
-Production deployment is documented, but a live production installation,
-centralized structured logs, complete privacy/export policy and complete
-observability are not established by this documentation. See
+The API and workers use closed structured logs, server-issued correlation,
+safe centralized errors, PostgreSQL request/worker metrics and transactional
+privileged audits. [Observability](../OBSERVABILITY.md) describes diagnostic
+limits and explicitly triggered optional reporting. [Privacy](../PRIVACY.md)
+owns provider disclosures and operator-mediated export/deletion/metadata
+retention. A live production installation and deployment-specific legal
+compliance remain separate from these implemented controls. See
 [current state](../development/CURRENT-STATE.md) and the active roadmap.
 
 ## Relevant source paths

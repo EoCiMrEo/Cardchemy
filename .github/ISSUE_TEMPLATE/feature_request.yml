@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a user need or improvement
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Review the [public roadmap](https://github.com/EoCiMrEo/Cardchemy/blob/main/ROADMAP.md) and accepted decisions first.
+        Keep private documents, account data and secrets out of this report.
+  - type: textarea
+    id: need
+    attributes:
+      label: User and problem
+      description: Explain who needs this and the concrete workflow affected.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed result and alternatives
+      description: Describe the desired behavior without assuming a replacement architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and risks
+      description: Note privacy, accessibility, deployment cost and compatibility concerns where relevant.

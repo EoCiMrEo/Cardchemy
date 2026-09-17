@@ -29,6 +29,8 @@ from app.schemas.flashcard import (
 )
 from app.services.flashcard import FlashcardService
 from app.services.subject import SubjectService
+from app.models.audit import AuditAction
+from app.services.audit import AuditService
 
 router = APIRouter(prefix="/flashcards", tags=["Flashcards"])
 
@@ -102,6 +104,11 @@ async def create_flashcard(
     flashcard = await FlashcardService.create_flashcard(
         db, create_data, quality_score=1.0, is_approved=True
     )
+    AuditService.record(
+        db, action=AuditAction.CARD_APPROVED, actor_id=user.id,
+        target_type="card", target_id=flashcard.id,
+        subject_id=flashcard_set.subject_id, state_before=False, state_after=True,
+    )
     await db.commit()
     return flashcard
 
@@ -161,10 +168,26 @@ async def update_flashcard(
         )
     
     # Verify ownership
-    flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id)
+    # Serializing set review/publication keeps audit transitions accurate when
+    # multiple instructors' browser requests race to approve the same card.
+    flashcard_set = await SubjectService.get_flashcard_set(db, flashcard.set_id, for_update=True)
+    if not flashcard_set:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
-    
+    flashcard = await FlashcardService.get_flashcard(db, flashcard_id)
+    if not flashcard:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
+
+    previous_approval = flashcard.is_approved
     updated = await FlashcardService.update_flashcard(db, flashcard, data)
+    if previous_approval != updated.is_approved:
+        AuditService.record(
+            db,
+            action=AuditAction.CARD_APPROVED if updated.is_approved else AuditAction.CARD_UNAPPROVED,
+            actor_id=user.id, target_type="card", target_id=updated.id,
+            subject_id=flashcard_set.subject_id,
+            state_before=previous_approval, state_after=updated.is_approved,
+        )
     await db.commit()
     return updated
 
@@ -210,7 +233,7 @@ async def approve_all_flashcards(
         Number of cards approved
     """
     # Verify access
-    flashcard_set = await SubjectService.get_flashcard_set(db, set_id)
+    flashcard_set = await SubjectService.get_flashcard_set(db, set_id, for_update=True)
     if not flashcard_set:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -220,5 +243,11 @@ async def approve_all_flashcards(
     await SubjectService.check_subject_access(db, flashcard_set.subject_id, user, require_owner=True)
     
     count = await FlashcardService.approve_all_flashcards(db, set_id)
+    if count:
+        AuditService.record(
+            db, action=AuditAction.CARDS_APPROVED, actor_id=user.id,
+            target_type="set", target_id=set_id,
+            subject_id=flashcard_set.subject_id, affected_count=count,
+        )
     await db.commit()
     return {"approved_count": count}

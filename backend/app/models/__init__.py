@@ -16,6 +16,8 @@ from app.models.generation import (
     GenerationQuotaEvent,
 )
 from app.models.email import EmailMessageType, EmailOutboxMessage, EmailOutboxStatus
+from app.models.audit import AuditAction, AuditEvent
+from app.models.operations import RequestEvent, WorkerHeartbeat
 
 __all__ = [
     "User",
@@ -38,4 +40,8 @@ __all__ = [
     "EmailMessageType",
     "EmailOutboxMessage",
     "EmailOutboxStatus",
+    "AuditAction",
+    "AuditEvent",
+    "RequestEvent",
+    "WorkerHeartbeat",
 ]

@@ -118,3 +118,8 @@ database is not at the current Alembic head.
 The worker's provider-neutral generation, grounding, token/cost budgeting, and
 failure contracts are documented in `AI_GENERATION.md`; provider profiles and
 model lifecycle guidance are documented in `AI_PROVIDERS.md`.
+
+See [privacy](PRIVACY.md) for the provider transfer, temporary source lifetime,
+persisted card quotations and export/deletion limits. Diagnose jobs through
+[safe operational IDs and metrics](OBSERVABILITY.md), never raw PDFs or prompts
+in logs.

@@ -12,7 +12,7 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 | [app/database.py](app/database.py) | Async SQLAlchemy engine/session dependency, rollback cleanup and Alembic-head verification. |
 | [app/worker.py](app/worker.py) | Generation-worker process entry. |
 | [app/email_worker.py](app/email_worker.py) | Email-worker process entry. |
-| [app/cli.py](app/cli.py) | Operator instructor bootstrap, email queue inspection and guarded retry. |
+| [app/cli.py](app/cli.py) | Operator bootstrap/email retry, content-free diagnostics/audits, private export, explicit account deletion, bounded retention and optional aggregate reporting. |
 | [app/config.py](app/config.py) | Validated settings from process environment and the sole root `.env`; test mode suppresses file loading. |
 
 ## Main areas
@@ -22,11 +22,13 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 | [app/routers/](app/routers/) | Auth, subjects/sets/invitations, flashcard CRUD, generation jobs and study HTTP contracts. |
 | [app/services/](app/services/) | Auth/session/invitation logic, content CRUD, progress/idempotency, generation lifecycle/quotas, PDF extraction/storage and email composition. |
 | [app/schemas/](app/schemas/) | Pydantic request/response validation. Student study cards have a separate answer-free response. |
-| [app/models/](app/models/) | Fifteen SQLAlchemy application tables; database constraints and foreign-key ownership. |
+| [app/models/](app/models/) | SQLAlchemy application and operational tables; database constraints and foreign-key ownership. |
+| [app/observability.py](app/observability.py), [app/services/operations.py](app/services/operations.py) | Closed JSON logs/errors, request/job correlation, retained metrics and local/durable loop heartbeats. |
+| [app/services/privacy.py](app/services/privacy.py), [app/services/audit.py](app/services/audit.py) | Consistent allowlisted export, guarded explicit deletion, bounded metadata expiry and fixed-field transactional audits. |
 | [app/workers/](app/workers/) | Generation/email claiming, leases, fencing, retention and graceful shutdown. |
 | [app/ai/](app/ai/) | Provider-neutral pipeline, closed contracts, chunking, grounding, provider adapters and worker-wide quota admission. |
 | [app/agents/graph.py](app/agents/graph.py) | Active `ainvoke` compatibility facade used by the generation worker; delegates to `FlashcardGenerationPipeline`, without LangGraph. |
-| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260916_0007`. |
+| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260917_0008`. |
 
 ## Common change paths
 

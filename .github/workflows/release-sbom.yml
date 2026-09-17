@@ -1,95 +1,210 @@
-name: Release SBOM
+name: Prepare signed release
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Reviewed stable version without v
+        required: true
+        default: "0.1.0"
+        type: string
+      source_sha:
+        description: Exact reviewed main commit with successful ci-required
+        required: true
+        type: string
 permissions:
   contents: read
+concurrency:
+  group: cardchemy-release
+  cancel-in-progress: false
 jobs:
-  release-sbom:
-    name: release-sbom (${{ matrix.image }})
+  preflight:
+    if: github.repository == 'EoCiMrEo/Cardchemy' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: backend
-            context: backend
-            build-arguments: --build-arg INSTALL_OCR=false
-          - image: backend-ocr
-            context: backend
-            build-arguments: --build-arg INSTALL_OCR=true
-          - image: frontend
-            context: frontend
-            build-arguments: --build-arg VITE_API_URL=/api
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Build the final image from the checked-out release commit
+      - name: Verify exact protected public main, versions, CI and unused release identity
         env:
-          IMAGE: ${{ matrix.image }}
-          CONTEXT: ${{ matrix.context }}
-          BUILD_ARGUMENTS: ${{ matrix.build-arguments }}
-        run: docker build --platform linux/amd64 --target runtime $BUILD_ARGUMENTS -t "cardchemy-$IMAGE:release" "$CONTEXT"
-      - name: Verify the final runtime before its release inventory
-        env:
-          IMAGE: ${{ matrix.image }}
-        run: python3 scripts/check_images.py "$IMAGE" --image "cardchemy-$IMAGE:release"
-      - name: Audit the final image
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_READINESS_TOKEN: ${{ secrets.CARDCHEMY_RELEASE_READINESS_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote --output artifacts/release/preflight.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-preflight-${{ github.run_id }}
+          path: artifacts/release/preflight.json
+          retention-days: 14
+          if-no-files-found: error
+  release:
+    needs: preflight
+    if: github.repository == 'EoCiMrEo/Cardchemy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      actions: read
+      checks: read
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_READINESS_TOKEN: ${{ secrets.CARDCHEMY_RELEASE_READINESS_TOKEN }}
+      CERTIFICATE_IDENTITY: https://github.com/EoCiMrEo/Cardchemy/.github/workflows/release-sbom.yml@refs/heads/main
+      OIDC_ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-preflight-${{ github.run_id }}
+          path: artifacts/release
+      - name: Recheck readiness before privileged work
+        run: python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote --output artifacts/release/preflight.json
+      - name: Build and verify every final Linux runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variant in backend backend-ocr frontend; do
+            context=backend
+            licenses=Apache-2.0
+            arguments=(--build-arg INSTALL_OCR=false)
+            if [[ "$variant" == backend-ocr ]]; then arguments=(--build-arg INSTALL_OCR=true); fi
+            if [[ "$variant" == frontend ]]; then
+              context=frontend; arguments=(--build-arg VITE_API_URL=/api)
+              licenses='Apache-2.0 AND LicenseRef-Cardchemy-Brand-Assets'
+            fi
+            docker build --platform linux/amd64 --target runtime "${arguments[@]}" \
+              --label org.opencontainers.image.source=https://github.com/EoCiMrEo/Cardchemy \
+              --label org.opencontainers.image.revision="$SOURCE_SHA" \
+              --label org.opencontainers.image.version="$VERSION" \
+              --label org.opencontainers.image.licenses="$licenses" \
+              -t "ghcr.io/eocimreo/cardchemy-$variant:$VERSION" "$context"
+            python3 scripts/check_images.py "$variant" --image "ghcr.io/eocimreo/cardchemy-$variant:$VERSION"
+          done
+      - name: Audit default backend and install the pinned scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.70.0
-          image-ref: cardchemy-${{ matrix.image }}:release
+          image-ref: ghcr.io/eocimreo/cardchemy-backend:${{ inputs.version }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: "false"
           exit-code: "1"
           format: json
-          output: container-audit.json
+          output: artifacts/release/backend.audit.json
           cache: "false"
-      - name: Generate CycloneDX inventory
-        if: always()
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          version: v0.70.0
-          image-ref: cardchemy-${{ matrix.image }}:release
-          format: cyclonedx
-          output: runtime.sbom.json
-          skip-setup-trivy: true
-          cache: "false"
-      - name: Record source, image identity and artifact checksums
-        if: always()
-        env:
-          IMAGE: ${{ matrix.image }}
-          SOURCE_SHA: ${{ github.sha }}
-          SOURCE_REF: ${{ github.ref }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Audit remaining runtimes and inventory all exact images
+        shell: bash
         run: |
-          export IMAGE_ID="$(docker image inspect --format '{{.Id}}' "cardchemy-$IMAGE:release")"
-          python - <<'PY'
-          import json, os
+          set -euo pipefail
+          for variant in backend-ocr frontend; do
+            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed=false --exit-code 1 \
+              --format json --output "artifacts/release/$variant.audit.json" "ghcr.io/eocimreo/cardchemy-$variant:$VERSION"
+          done
+          for variant in backend backend-ocr frontend; do
+            trivy image --format cyclonedx --output "artifacts/release/$variant.sbom.json" "ghcr.io/eocimreo/cardchemy-$variant:$VERSION"
+          done
+      - name: Install verified Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2; embedded bootstrap checksums
+        with:
+          cosign-release: v3.0.6
+      - name: Check registry versions, publish digest identities and verify keyless signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          # New packages may return access-denied until first creation. Stage
+          # a unique candidate before checking version absence with known access.
+          for variant in backend backend-ocr frontend; do
+            image="ghcr.io/eocimreo/cardchemy-$variant"
+            candidate="$image:candidate-$SOURCE_SHA-$GITHUB_RUN_ID"
+            docker tag "$image:$VERSION" "$candidate"
+            docker push "$candidate"
+            python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
+              --record-image "$variant" --package-dir artifacts/release
+          done
+          python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote
+          for variant in backend backend-ocr frontend; do
+            image="ghcr.io/eocimreo/cardchemy-$variant"
+            if docker manifest inspect "$image:$VERSION" > /dev/null 2> registry-status.txt; then
+              echo 'Release image version already exists; refusing overwrite' >&2
+              exit 1
+            elif ! grep -Eq 'manifest unknown|name unknown|no such manifest' registry-status.txt; then
+              echo 'Registry absence could not be verified; refusing publication' >&2
+              exit 1
+            fi
+          done
+          rm registry-status.txt
+          for variant in backend backend-ocr frontend; do
+            image="ghcr.io/eocimreo/cardchemy-$variant"
+            expected_digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "artifacts/release/$variant.build.json")"
+            docker push "$image:$VERSION"
+            python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
+              --record-image "$variant" --package-dir artifacts/release
+            digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "artifacts/release/$variant.build.json")"
+            if [[ "$digest" != "$expected_digest" ]]; then
+              echo 'Published version differs from the verified candidate; refusing signing' >&2
+              exit 1
+            fi
+            cosign sign --yes "$image@$digest"
+            cosign verify --certificate-identity "$CERTIFICATE_IDENTITY" --certificate-oidc-issuer "$OIDC_ISSUER" \
+              --certificate-github-workflow-sha "$SOURCE_SHA" "$image@$digest" > /dev/null
+          done
+      - name: Prepare source, notes and provenance
+        run: python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --package-dir artifacts/release --preflight artifacts/release/preflight.json
+      - name: Sign and verify the checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --bundle artifacts/release/SHA256SUMS.sigstore.json artifacts/release/SHA256SUMS
+          cosign verify-blob --bundle artifacts/release/SHA256SUMS.sigstore.json --certificate-identity "$CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-github-workflow-sha "$SOURCE_SHA" artifacts/release/SHA256SUMS
+          # The preflight is already retained as a separate Actions artifact;
+          # the signed release directory must contain only public attachments.
+          rm artifacts/release/preflight.json
+          python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --verify-package artifacts/release
+      - name: Final main/CI/tag guard before version tagging
+        run: python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote
+      - name: Create annotated version tag and verified draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
           from datetime import datetime, timezone
-          record = {key.lower(): os.environ[key] for key in (
-              "IMAGE", "IMAGE_ID", "SOURCE_SHA", "SOURCE_REF", "REPOSITORY", "RUN_URL"
-          )}
-          record["created_at"] = datetime.now(timezone.utc).isoformat()
-          record["platform"] = "linux/amd64"
-          with open("build-metadata.json", "w") as output:
-              json.dump(record, output, indent=2)
-              output.write("\n")
+          manifest = hashlib.sha256(open('artifacts/release/SHA256SUMS', 'rb').read()).hexdigest()
+          tag = {'tag': 'v' + os.environ['VERSION'], 'object': os.environ['SOURCE_SHA'], 'type': 'commit',
+                 'message': 'Cardchemy release; keyless-signed SHA256SUMS SHA256=' + manifest,
+                 'tagger': {'name': 'Cardchemy release automation', 'email': '41898282+github-actions[bot]@users.noreply.github.com',
+                            'date': datetime.now(timezone.utc).isoformat()}}
+          with open('tag-request.json', 'w') as output:
+              json.dump(tag, output)
           PY
-          sha256sum runtime.sbom.json container-audit.json build-metadata.json > SHA256SUMS
+          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" --input tag-request.json --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/v$VERSION" -f "sha=$tag_sha" > /dev/null
+          rm tag-request.json
+          gh release create "v$VERSION" --verify-tag --draft --title "Cardchemy $VERSION" \
+            --notes-file artifacts/release/release-notes.md artifacts/release/*.sbom.json artifacts/release/*.audit.json \
+            artifacts/release/*.build.json artifacts/release/*.manifest.json artifacts/release/source-provenance.json artifacts/release/SHA256SUMS \
+            artifacts/release/SHA256SUMS.sigstore.json "artifacts/release/cardchemy-$VERSION-source.tar.gz" artifacts/release/release-notes.md
+          echo 'Draft prepared: verify anonymous GHCR digest access, downloaded signatures/checksums and tag commit before publishing.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: release-sbom-${{ matrix.image }}-${{ github.sha }}
-          path: |
-            runtime.sbom.json
-            container-audit.json
-            build-metadata.json
-            SHA256SUMS
+          name: release-evidence-${{ github.run_id }}
+          path: artifacts/release
           retention-days: 90
           if-no-files-found: error

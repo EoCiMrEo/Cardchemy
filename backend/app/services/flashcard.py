@@ -9,6 +9,7 @@ import re
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from app.observability import sanitize_validation
 from pydantic import ValidationError
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -128,7 +129,10 @@ class FlashcardService:
 
     @staticmethod
     async def get_flashcard(db: AsyncSession, flashcard_id: UUID) -> Flashcard | None:
-        return await db.scalar(select(Flashcard).where(Flashcard.id == flashcard_id))
+        return await db.scalar(
+            select(Flashcard).where(Flashcard.id == flashcard_id)
+            .execution_options(populate_existing=True)
+        )
 
     @staticmethod
     async def get_set_flashcards(
@@ -177,7 +181,7 @@ class FlashcardService:
         except ValidationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=exc.errors(include_url=False),
+                detail=sanitize_validation(exc.errors(include_url=False, include_input=False)),
             ) from exc
         flashcard.front_content = merged.front_content
         flashcard.back_content = merged.back_content
@@ -307,13 +311,15 @@ class FlashcardService:
         selected_option_index: int,
     ) -> tuple[str, str]:
         if not STUDY_IDEMPOTENCY_PATTERN.fullmatch(idempotency_key):
-            raise HTTPException(
+            error = HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": "invalid_idempotency_key",
                     "message": "Idempotency-Key must contain 8 to 128 visible ASCII characters.",
                 },
             )
+            error.safe_detail = error.detail
+            raise error
         key_hash = hashlib.sha256(idempotency_key.encode("ascii")).hexdigest()
         canonical_request = json.dumps(
             {
@@ -381,13 +387,15 @@ class FlashcardService:
         if receipt is None:
             raise RuntimeError("conflicting answer receipt could not be loaded")
         if receipt.request_fingerprint != request_fingerprint:
-            raise HTTPException(
+            error = HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
                     "code": "idempotency_key_reused",
                     "message": "This Idempotency-Key was already used for a different answer.",
                 },
             )
+            error.safe_detail = error.detail
+            raise error
         if not receipt.response_payload:
             raise RuntimeError("completed answer receipt has no response payload")
         return receipt, False

@@ -1,15 +1,15 @@
 # Current Development State
 
-Snapshot: 2026-09-16. Source and roadmap reviewed in this context-system task.
-Phase completion and prior verification below are recorded repository evidence,
-not a fresh execution of every application/hosted/security gate.
+Snapshot: 2026-09-17. Phase 10 controls and Phase 11 source/documentation are
+implemented in this checkout. Publication remains gated on current verification
+and operator release evidence; no published release is asserted by this snapshot.
 
 ## Current phase
 
-The [remediation plan](../../issues-required-remediation.md) records Phases 0–9
-complete. Its next development phase is 10; 11 follows for release/rebranding.
+The [remediation plan](../../issues-required-remediation.md) records Phases 0–10
+complete. Phase 11 implementation and release verification are in progress.
 Current product version is 0.1.0. The repository context system is implemented;
-its [completion checklist](../../repository-context-system-plan.md) records its
+its [completion log](../../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md) records its
 separate documentation scope.
 
 ## Completed major work
@@ -24,6 +24,10 @@ separate documentation scope.
   Compose, migration/backup/restore and graceful shutdown procedures.
 - Phase 9: root-only configuration, source/test cleanup, runtime/dependency
   security, coverage/bundle budgets, isolated journey and mandatory CI gates.
+- Phase 10: allowlisted structured logs and safe correlated errors, private
+  request/job metrics and worker health, transactional privileged audits,
+  provider disclosure, bounded retention and guarded account export/deletion.
+  External numeric telemetry remains disabled by default and explicitly run.
 - Subsequent context work: canonical orientation, navigation/module maps, five
   architecture flows, accepted ADRs, local setup, historical separation and
   automatic context-file/link validation.
@@ -32,20 +36,29 @@ The [Phase 9 closure log](../../.agent/logs/2026-09-16/2026-09-16-phase-9-merge-
 supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
 belong to the roadmap; implementation/check details belong to the
 [dated log index](../../.agent/logs/README.md).
+The [Phase 10 closure log](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
+records current verification and its limits. Alembic head is `20260917_0008`;
+operators must apply the documented upgrade before starting this code.
 
 ## Current focus and known risks
 
-Phase 10 tracks structured logging, correlation/errors, broader metrics,
-privacy disclosure/retention/export and privileged audit/operational controls.
-Readiness/liveness and some queue/usage telemetry already exist in code while
-the broader roadmap gate remains open; this document does not silently complete
-overlapping roadmap items.
+Phase 10 diagnostics are content-free, bounded and best effort. Metrics are
+not a complete provider billing ledger and audits are not tamper-proof. Account
+export/deletion and retention cleanup are operator CLI workflows; no public
+self-service privacy API or automatic external reporting is introduced. See
+[observability](../OBSERVABILITY.md) and [privacy](../PRIVACY.md).
 
-Phase 11 still tracks license choice, contribution/security policy, consistent
-standalone branding, demo/release packaging and final release documentation.
-This task adds a root README and orientation but does not complete Phase 11's
-broader README/release requirements or select a license. Cardchemy is the
-working name; application configuration/package names retain legacy values.
+Phase 11 adds the approved standalone Cardchemy name/tagline and artwork,
+Apache-2.0 code licensing with separate brand terms, contribution/security/
+conduct policies, templates, operating README/screenshots and public roadmap.
+New configuration/package/image defaults use Cardchemy. Existing operators
+retain database/project identities and explicit authentication settings per
+[configuration](../CONFIGURATION.md#existing-installations-and-cardchemy-defaults).
+The [demo](../DEMO.md) uses authored data and an offline provider; the
+[release guide](../RELEASING.md) defines exact-source keyless signing and
+verified draft publication. Name screening and its limits are recorded in
+[name review](../NAME-REVIEW.md). Hosted release, visibility/reporting activation
+and manual spoken accessibility evidence remain completion requirements.
 
 ## Important constraints
 
@@ -53,8 +66,9 @@ working name; application configuration/package names retain legacy values.
   hardened images exist; no live production deployment is asserted here.
 - Study-session payloads hide answers, but other authorized card-read responses
   contain correct answers. See [study flow](../architecture/STUDY-PROGRESS-FLOW.md).
-- Database cascade rules exist; public account deletion/export and a complete
-  privacy policy are not established flows. See [data model](../architecture/DATA-MODEL.md).
+- Account deletion/export is available to authorized operators with documented
+  safeguards. Deployments still need their own privacy notice, provider contract,
+  backup/collector expiry and requester verification. See [privacy](../PRIVACY.md).
 - Provider rate admission is process-wide, not distributed across worker replicas.
   Failed/cancelled/crashed requests can limit completeness of durable usage
   telemetry. Paid provider availability/quality requires explicit live evaluation.
@@ -67,8 +81,9 @@ working name; application configuration/package names retain legacy values.
 
 ## Next and maintenance
 
-Implement Phase 10 only when authorized; then Phase 11 and the v1.0 release
-gate. Update this summary whenever a phase/milestone completes, and retain task
+Finish the authorized v0.1.0 release verification/publication. The separate
+v1.0 release gate remains open. Update this
+summary whenever a phase/milestone completes, and retain task
 detail in the roadmap. For ongoing work read [orientation](../00-START-HERE.md),
 [project map](../../PROJECT-MAP.md), [ADR index](../decisions/ADR-000-INDEX.md)
 and [agent maintenance rules](../../AGENTS.md).

@@ -1,3 +1,4 @@
+import { BrandWordmark } from '@/components/BrandWordmark'
 import { useState } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { authService } from "@/services/auth"
@@ -39,6 +40,8 @@ export default function Login() {
     <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
+          <BrandWordmark className="mx-auto mb-3" />
+          <p className="text-center text-sm text-muted-foreground">{copy.common.tagline}</p>
           <CardTitle className="text-2xl text-center">{copy.auth.welcomeBack}</CardTitle>
           <CardDescription className="text-center">
             {copy.auth.loginDescription}

@@ -163,3 +163,9 @@ sending production mail:
 
 The application supplies standards-compliant multipart messages, but SMTP
 configuration alone cannot create or maintain these DNS and provider controls.
+
+[Privacy controls](PRIVACY.md) cover recipient metadata and account deletion;
+[observability](OBSERVABILITY.md) covers content-free outbox correlation. Mail,
+SMTP replies, recipients and sensitive links must stay out of application and
+operator proxy/collector logs. Delivered mailbox/provider copies have separate
+retention and are outside database deletion.

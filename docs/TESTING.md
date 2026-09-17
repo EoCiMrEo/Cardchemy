@@ -12,6 +12,7 @@ repository root unless a working directory is specified.
 | Mailpit request/delivery | `python scripts/test_services.py mailpit` | Docker running. Creates disposable PostgreSQL and Mailpit containers; verifies request/outbox/SMTP capture, invitation/password semantics and delivery retry. No production relay. |
 | Frontend offline browser/components and build | `npm run check` from `frontend` | Typecheck, test typecheck, lint, unit/component tests, production build and maintained browser regressions. The separately configured password-reset live case remains gated. |
 | Full real application browser journey | `python scripts/test_journey.py` | Docker and installed Playwright Chromium. Starts a fresh migrated database, real API/generation/email workers and browser frontend; uses a private deterministic AI provider with no provider SDK/network request. |
+| Release metadata/workflow contracts | `python scripts/check_release.py --version 0.1.0` and `python scripts/check_ci.py` | Maintained source/templates only. Remote preflight, signatures and publication require the separate [release procedure](RELEASING.md). |
 | Explicit live AI evaluation | `RUN_LIVE_AI_TESTS=1 python -m pytest -q -m ai_live tests/integration/test_live_ai_pipeline.py` from `backend` | Explicitly inject enabled provider/model/key and reviewed prices as described below. One request, two cards, no retries/refills, 8,192 input/2,048 output tokens, USD 0.02 maximum estimated cost. Never runs in normal CI. |
 
 Install the browser once from `frontend` using
@@ -67,3 +68,22 @@ Paid-provider results are distinct from offline provider wire mocks and the
 deterministic journey. Consult [AI evaluation](AI_EVALUATION.md) for the authored
 corpus and release thresholds; no offline pass proves a current remote model's
 behavior.
+
+## Operational and privacy contracts
+
+The offline suite includes structured-log/exception redaction, concurrent
+correlation isolation, safe job metrics, fresh/stale/draining worker probes,
+disabled/explicit numeric telemetry, private exclusive export permissions,
+operator deletion flags and sanitized startup failures. PostgreSQL cases verify
+transactional audit rollback/role triggers, provisioning races, snapshot exports,
+account cascades, bounded retention and protection of retry receipts/sources.
+These fixtures use only guarded disposable databases and synthetic content.
+
+Built images use the probes in [runtime support](RUNTIMES.md). The frontend
+probe also checks that successful requests and rejected static POSTs keep
+private URL queries and body sentinels out of Nginx logs. This proves the shipped
+edge's behavior, not an operator's separate proxy or log collector policy.
+
+On hosts with limited browser capacity, `npm run check -- --workers=2` runs the
+same complete frontend gate with bounded Chromium concurrency; it does not
+change coverage, bundle, accessibility or test thresholds.

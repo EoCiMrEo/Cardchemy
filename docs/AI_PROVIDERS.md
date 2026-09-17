@@ -135,3 +135,7 @@ evaluation described in `AI_EVALUATION.md` before production rollout.
 No embeddings, vector database, retrieval-augmented generation profile, or
 `pgvector` extension is included. Adding one later requires an explicit
 optional dependency profile, migrations, privacy analysis, and tests.
+
+Before enabling a provider, review [the transfer disclosure and operator
+responsibilities](PRIVACY.md). Source encryption in Cardchemy does not prevent
+selected extracted evidence from being sent to the configured provider.

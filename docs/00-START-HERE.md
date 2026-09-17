@@ -1,6 +1,6 @@
 # Cardchemy: Start Here
 
-Current truth, checked against this checkout on 2026-09-16. This is the
+Current truth, checked against this checkout on 2026-09-17. This is the
 canonical orientation; [source navigation](../PROJECT-MAP.md) leads to the
 implementation, which remains the final authority.
 
@@ -34,9 +34,10 @@ application with an online-first study flow.
 ## Current development state
 
 Version 0.1.0; [the roadmap](../issues-required-remediation.md) and dated
-[closure evidence](../.agent/logs/2026-09-16/2026-09-16-phase-9-merge-closure.md)
-record Phases 0–9 complete. Phases 10 (operations/privacy/observability) and 11
-(release/rebranding) remain open. Local development is the reference environment;
+[closure evidence](../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
+record Phases 0–10 complete. Phase 11 source/documentation are implemented;
+release verification and publication remain open. See [release procedures](RELEASING.md).
+Local development is the reference environment;
 production-shaped Compose and production operating guides do not establish a
 live production deployment. Read [current state](development/CURRENT-STATE.md).
 
@@ -70,6 +71,9 @@ workers and a built Nginx frontend; local SMTP is Mailpit. See
   to their workers. Normal tests use injected settings/disposable services.
 - Completion requires durable answer persistence. There is no offline answer
   queue or service worker. English is the supported UI language.
+- Diagnostics use safe codes and opaque correlation IDs. Operator-only
+  [metrics/audits](OBSERVABILITY.md) and [privacy controls](PRIVACY.md) exclude
+  document content from logs; external aggregate reporting is off by default.
 
 Rationale lives in the [accepted ADRs](decisions/ADR-000-INDEX.md).
 
@@ -78,9 +82,11 @@ Rationale lives in the [accepted ADRs](decisions/ADR-000-INDEX.md).
 `backend/` owns HTTP authorization/contracts, persistence and workers.
 `frontend/` consumes those contracts and manages transient UI state.
 `scripts/` owns guarded validation/bootstrap harnesses; `.github/` owns CI and
-budget/protection definitions. This context task documents current behavior;
-it does not implement remaining roadmap phases or settle the unfinished brand
-rollout. Cardchemy is the working product name; legacy runtime names remain.
+budget/protection definitions. Cardchemy is the approved standalone identity;
+code uses Apache-2.0 and supplied artwork has [separate terms](../BRANDING.md).
+New installations use Cardchemy runtime names; existing installation settings
+remain supported. [The public roadmap](../ROADMAP.md) separates proposals from
+implemented behavior.
 
 ## Read in this order
 
@@ -95,6 +101,6 @@ operations use the [guide index](README.md).
 Maps, architecture docs and operational guides describe current behavior.
 The remediation plan owns task status; current state owns the phase summary.
 Dated [agent logs](../.agent/logs/README.md), [archived early ideas](archive/README.md)
-and the completed [context implementation plan](../repository-context-system-plan.md)
+and the completed [context implementation log](../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md)
 are evidence/reference. They may contain superseded paths, baseline failures or
 future ideas. Do not treat them as current instructions or shipped features.

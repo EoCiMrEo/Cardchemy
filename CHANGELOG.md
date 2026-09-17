@@ -5,6 +5,36 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-17
+
+First publication candidate. The earlier prototype date did not identify a
+published Git tag or release.
+
+### Cardchemy identity and release readiness
+
+- Added consistent standalone Cardchemy branding, shared accessible wordmark,
+  supplied ICO favicon and optimized exports with separate artwork/trademark terms.
+- Added Apache-2.0 code licensing, contribution/security/conduct policies,
+  issue/PR templates, public roadmap, product screenshots and operating guidance.
+- Added a disposable no-quota demonstration and guarded release packaging for
+  GitHub Releases and GHCR: scanned Linux/amd64 images, CycloneDX SBOMs,
+  source provenance, checksums and keyless Sigstore signatures.
+- New installations use Cardchemy names. Existing operators must retain their
+  Compose project/database identity, secrets and explicit JWT/cookie settings;
+  changing authentication defaults invalidates existing sessions.
+
+### Phase 10 - observability and privacy controls
+
+- Added content-free JSON logs, server-generated request/job correlation,
+  centralized safe client errors, private request/queue/job/usage/cost metrics
+  and per-worker loop/database health probes.
+- Added transactional fixed-field audits for invitations, approval,
+  publication, instructor provisioning, account deletion and database role
+  changes in Alembic revision `20260917_0008`.
+- Added provider-transfer disclosure, configurable bounded metadata retention,
+  private account exports and explicit drained-writer account deletion.
+  Optional HTTPS aggregate reporting is disabled by default and operator-run.
+
 ### Fixed
 
 - Added an explicit non-secret `AI_PROVIDER_ENABLED` admission switch so the
@@ -118,12 +148,5 @@ and the Keep a Changelog structure.
 - Replaced character-window processing and the LangChain/LangGraph runtime with
   structure-aware token chunks and a small provider-neutral pipeline.
 
-## [0.1.0] - 2026-01-29
-
-### Added
-
-- Initial PDF-to-flashcard instructor workflow.
-- Instructor review and publication, student invitations, study mode, timers, and progress tracking.
-
-[Unreleased]: https://github.com/EoCiMrEo/FlashCardGenerator/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/EoCiMrEo/FlashCardGenerator/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EoCiMrEo/Cardchemy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0

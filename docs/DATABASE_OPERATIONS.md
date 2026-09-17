@@ -4,7 +4,9 @@ The database schema is owned by Alembic. The API never creates or alters tables
 at startup; it refuses to start when the database revision is not at the current
 head. The initial revision, `20260914_0001`, is a clean baseline and is not an
 adoption migration for older development databases. The current head,
-`20260916_0007`, stores the per-stage request map as PostgreSQL JSONB so schema
+`20260917_0008`, adds content-free operational tables, generation request
+correlation, retention indexes and the transactional role-change audit trigger.
+The preceding `20260916_0007` stores the per-stage request map as PostgreSQL JSONB so schema
 drift checks remain comparable. Revision `20260916_0006` adds durable AI
 provider request, retry, quota-wait, cache, and per-stage telemetry. Revision
 `20260915_0005` adds the transactional email
@@ -59,8 +61,8 @@ The custom archive format supports selective inspection and restore:
 
 ```powershell
 New-Item -ItemType Directory -Force backups
-docker compose exec -T db pg_dump -U admin -d flashcard_gen --format=custom --no-owner --file=/tmp/flashcard_gen.dump
-docker compose cp db:/tmp/flashcard_gen.dump backups/flashcard_gen.dump
+docker compose exec -T db pg_dump -U admin -d cardchemy --format=custom --no-owner --file=/tmp/cardchemy.dump
+docker compose cp db:/tmp/cardchemy.dump backups/cardchemy.dump
 ```
 
 Record the application version, Alembic revision, UTC timestamp, and archive
@@ -75,10 +77,10 @@ Test every important backup in a separately named database; do not overwrite the
 active database during a rehearsal:
 
 ```powershell
-docker compose cp backups/flashcard_gen.dump db:/tmp/flashcard_gen.dump
-docker compose exec -T db createdb -U admin flashcard_gen_restore_test
-docker compose exec -T db pg_restore -U admin -d flashcard_gen_restore_test --no-owner --no-privileges /tmp/flashcard_gen.dump
-docker compose exec -T db psql -U admin -d flashcard_gen_restore_test -c "SELECT version_num FROM alembic_version;"
+docker compose cp backups/cardchemy.dump db:/tmp/cardchemy.dump
+docker compose exec -T db createdb -U admin cardchemy_restore_test
+docker compose exec -T db pg_restore -U admin -d cardchemy_restore_test --no-owner --no-privileges /tmp/cardchemy.dump
+docker compose exec -T db psql -U admin -d cardchemy_restore_test -c "SELECT version_num FROM alembic_version;"
 ```
 
 Verify expected table counts and a representative instructor/student journey
@@ -86,7 +88,7 @@ against the restored database before declaring the backup usable. After that
 verification, explicitly remove only the rehearsal database:
 
 ```powershell
-docker compose exec -T db dropdb -U admin flashcard_gen_restore_test
+docker compose exec -T db dropdb -U admin cardchemy_restore_test
 ```
 
 For an actual restore, stop application writers, create a fresh empty target
@@ -107,6 +109,11 @@ docker compose run --rm backend alembic downgrade -1
 docker compose run --rm backend alembic current
 ```
 
+Downgrading `20260917_0008` drops request/heartbeat/audit history, origin request
+correlation and the role audit trigger. Stop writers/workers and preserve
+required audit evidence before an explicitly authorized operational rollback;
+ordinary rehearsal uses only disposable databases. [Privacy controls](PRIVACY.md)
+define account/export/metadata cleanup separately from schema rollback.
 Downgrading `20260916_0007` changes the per-stage request map back to JSON.
 Downgrading `20260916_0006` removes AI request-efficiency telemetry but leaves
 generation jobs and their earlier token/cost telemetry intact. Downgrading

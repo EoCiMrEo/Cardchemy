@@ -18,6 +18,7 @@ changing a decision. Code remains the implementation authority.
 | [008: PostgreSQL durable jobs](ADR-008-postgresql-durable-jobs.md) | Accepted | Bounded asynchronous generation |
 | [009: Session and role boundaries](ADR-009-session-and-role-boundaries.md) | Accepted | Tokens, sessions, signup and authorization |
 | [010: Transactional email](ADR-010-transactional-email.md) | Accepted | Atomic intent and SMTP ambiguity |
+| [011: Operational privacy controls](ADR-011-operational-privacy-controls.md) | Accepted | Content-free diagnostics/audits and operator-mediated lifecycle controls |
 
 ## Maintenance
 

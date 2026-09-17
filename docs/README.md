@@ -26,6 +26,8 @@ them for operational detail rather than copying their setting tables/commands.
 | [Runtimes](RUNTIMES.md) | Supported runtime/platform versions |
 | [Deployment](DEPLOYMENT.md) | Compose variants, TLS/edge, draining, volumes, image/recovery procedures |
 | [Database operations](DATABASE_OPERATIONS.md) | Migration chain, backup/restore and safe rollback |
+| [Observability](OBSERVABILITY.md) | Safe logs/errors/correlation, retained metrics, worker health, privileged audits and optional numeric reporting |
+| [Privacy](PRIVACY.md) | Provider disclosure, data lifecycle, operator export/deletion and bounded metadata retention |
 | [Authentication](AUTHENTICATION.md) | Secrets, instructor bootstrap, browser session and recovery operations |
 | [PDF generation](PDF_GENERATION.md) | Upload contract, bounds, encrypted-source retention, OCR and operations |
 | [AI generation](AI_GENERATION.md) | Grounding, packing, budgets, validation, quality and telemetry contracts |
@@ -36,10 +38,16 @@ them for operational detail rather than copying their setting tables/commands.
 | [CI](CI.md) | Mandatory jobs, budget/scanning/protection contracts and recorded baselines |
 | [Dependencies](DEPENDENCIES.md) | Dependency/hashed-lock policy and tooling |
 | [Versioning](VERSIONING.md) | SemVer and intentional release synchronization |
+| [Releasing](RELEASING.md) | Exact-source readiness, keyless signatures, draft verification and publication |
+| [Demo](DEMO.md) | Disposable authored demonstration without remote provider calls |
+| [Name review](NAME-REVIEW.md) | Dated registry/name screening and its limits |
 | [Accessibility](ACCESSIBILITY.md) | Automated interaction checks and manual release AT pass |
 | [Localization](LOCALIZATION.md) | English catalog and requirements for another language |
 
 [Remediation plan](../issues-required-remediation.md) owns detailed phase tasks;
+[public roadmap](../ROADMAP.md) separates implemented work from proposals.
+[Contribution](../CONTRIBUTING.md), [security](../SECURITY.md),
+[conduct](../CODE_OF_CONDUCT.md) and [brand terms](../BRANDING.md) govern participation.
 [changelog](../CHANGELOG.md) owns release history. Update guides with affected
 code per [AGENTS.md](../AGENTS.md). Run `python scripts/check_context.py` from root
 for active local documentation paths; it does not prove external URLs or claims.
@@ -49,7 +57,7 @@ for active local documentation paths; it does not prove external URLs or claims.
 [Archive](archive/README.md) contains superseded product ideas.
 [Dated agent logs](../.agent/logs/README.md) preserve implementation and verification
 snapshots, including earlier paths/failed baselines; newer evidence supersedes
-them. The completed [context-system plan](../repository-context-system-plan.md)
-is a reusable implementation reference, not a second project orientation.
+them. The completed [context-system log](../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md)
+records historical context work, not a second project orientation.
 Supporting-artifact governance/navigation are in
 [.agent/README.md](../.agent/README.md) and [.agent/MOC.md](../.agent/MOC.md).

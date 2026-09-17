@@ -1,3 +1,4 @@
+import { BrandWordmark } from '@/components/BrandWordmark'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
@@ -26,6 +27,7 @@ export default function Register() {
       <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader>
+            <BrandWordmark className="mx-auto mb-3" />
             <CardTitle className="text-2xl text-center">{copy.auth.invitationRequired}</CardTitle>
             <CardDescription className="text-center">
               {copy.auth.invitationRequiredDescription}
@@ -62,6 +64,7 @@ export default function Register() {
     <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
+          <BrandWordmark className="mx-auto mb-3" />
           <CardTitle className="text-2xl text-center">{copy.auth.joinCourse}</CardTitle>
           <CardDescription className="text-center">{copy.auth.registrationDescription}</CardDescription>
         </CardHeader>

@@ -6,8 +6,8 @@ Current truth verified against code: 2026-09-16.
 
 Explain persisted ownership and integrity across content, study, authentication
 and background work. PostgreSQL is the deployed database; Alembic owns schema
-evolution. This describes database deletion behavior, not a public account
-deletion feature.
+evolution. Account deletion/export are operator CLI controls described in
+[privacy](../PRIVACY.md); there is no public account-deletion API.
 
 ## Key components
 
@@ -18,6 +18,8 @@ deletion feature.
 | [models/flashcard.py](../../backend/app/models/flashcard.py) | `flashcards`, `enrollments`, `study_progress`, `study_answer_submissions`: approved learning content, access, schedules and durable answer receipts. |
 | [models/generation.py](../../backend/app/models/generation.py) | `generation_jobs`, `generation_job_sources`, `generation_quota_events`: durable job state/telemetry, encrypted temporary sources and deletion-resistant daily quota charges. |
 | [models/email.py](../../backend/app/models/email.py) | `email_outbox_messages`: durable email delivery state linked to reset or invitation rows. |
+| [models/operations.py](../../backend/app/models/operations.py) | `request_events`, `worker_heartbeats`: content-free request timing/correlation and worker-loop health. |
+| [models/audit.py](../../backend/app/models/audit.py) | `audit_events`: fixed-field privileged state changes, committed with their domain mutation. |
 
 ## Primary relationships and flow
 
@@ -57,6 +59,7 @@ updates stage the answer receipt and progress in one transaction.
 | Invitation consumer | `invite_links.used_by` becomes null; `used_at` remains, so the invitation stays consumed. |
 | Generation job | Source cascades; result set's `generation_job_id` and quota event's `job_id` become null. Learning content and quota charges survive job-history deletion. |
 | Reset or invitation | Linked outbox messages cascade. |
+| Audit actor account | Actor becomes null; opaque resource/subject IDs and transition history remain until configured audit cleanup. |
 
 Rate-limit buckets have no user foreign key and do not participate in account
 cascades. Quota charges survive subject/job deletion but cascade with their
@@ -67,7 +70,7 @@ alone do not prove them.
 ## Sources, verification and related decisions
 
 The [migration chain](../../backend/alembic/versions/) currently ends at
-`20260916_0007`; [database startup](../../backend/app/database.py) verifies the
+`20260917_0008`; [database startup](../../backend/app/database.py) verifies the
 database matches all configured heads. Never infer the live database revision
 from this code snapshot. See [database operations](../DATABASE_OPERATIONS.md),
 [PostgreSQL integrity tests](../../backend/tests/postgres/test_database_integrity.py),

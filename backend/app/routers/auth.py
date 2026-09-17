@@ -203,7 +203,7 @@ async def forgot_password(
                 await email_outbox.queue_password_reset(db, user=user, reset=reset)
     except (SQLAlchemyError, EmailCompositionError):
         await db.rollback()
-        logger.error("Password-reset email could not be queued")
+        logger.error("password_reset_enqueue_failed")
     finally:
         # Keep the response path substantially less dependent on account
         # existence while leaving SMTP entirely outside the request.

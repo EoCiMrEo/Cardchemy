@@ -14,6 +14,7 @@ from app.config import Settings
 from app.models.email import EmailOutboxMessage, EmailOutboxStatus
 from app.models.subject import Subject
 from app.models.user import PasswordResetToken, User, UserRole
+from app.observability import SafeJsonFormatter
 from app.services.auth import AuthService
 from app.services.email import (
     EmailDeliveryError,
@@ -313,6 +314,7 @@ async def test_worker_logs_exclude_recipient_body_url_and_provider_detail(
         worker_id="email-delivery-safe-logs",
     )
     caplog.set_level("INFO")
+    caplog.handler.setFormatter(SafeJsonFormatter())
     claim = await worker.claim_next()
     assert claim is not None
     await worker.process_claim(*claim)

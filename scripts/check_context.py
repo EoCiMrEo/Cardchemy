@@ -28,6 +28,10 @@ REQUIRED = (
     "docs/decisions/ADR-008-postgresql-durable-jobs.md",
     "docs/decisions/ADR-009-session-and-role-boundaries.md",
     "docs/decisions/ADR-010-transactional-email.md",
+    "docs/decisions/ADR-011-operational-privacy-controls.md",
+    "docs/OBSERVABILITY.md", "docs/PRIVACY.md",
+    "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "BRANDING.md", "ROADMAP.md",
+    "docs/RELEASING.md", "docs/NAME-REVIEW.md", "docs/DEMO.md",
 )
 LINK = re.compile(r"!?\[[^\]\n]*\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)")
 
@@ -70,7 +74,7 @@ def validate(root: Path = ROOT) -> tuple[list[str], int, int]:
     active.update(path for path in (root / "docs").rglob("*.md")
                   if "archive" not in path.relative_to(root / "docs").parts)
     active.update(root / name for name in (
-        "CHANGELOG.md", "issues-required-remediation.md", "repository-context-system-plan.md",
+        "CHANGELOG.md", "issues-required-remediation.md",
         "frontend/README.md", ".agent/logs/README.md",
     ))
     active.update(root / name for name in (".agent/README.md", ".agent/MOC.md")

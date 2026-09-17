@@ -1,6 +1,6 @@
 # Project Map
 
-Current navigation, verified 2026-09-16. Begin with
+Current navigation, verified 2026-09-17. Begin with
 [orientation](docs/00-START-HERE.md); use this map to find the smallest relevant
 source area. [Backend MOC](backend/MOC.md) and [frontend MOC](frontend/MOC.md)
 give the next level of detail.
@@ -21,7 +21,8 @@ give the next level of detail.
 | Study/progress | [study router](backend/app/routers/study.py), [flashcard service](backend/app/services/flashcard.py), [models](backend/app/models/flashcard.py) | Eligibility, due/review-all queries, server grading/scheduling and receipts |
 | Transactional email | [email service](backend/app/services/email.py), [worker entry](backend/app/email_worker.py), [email worker](backend/app/workers/email.py), [outbox model](backend/app/models/email.py) | Atomic enqueue, safe templates, SMTP delivery and ambiguity recovery |
 | Operators | [CLI](backend/app/cli.py), [health probe](backend/app/healthcheck.py), [shutdown](backend/app/workers/shutdown.py) | Instructor bootstrap, queue status/retry and process health/drain |
-| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260916_0007` head; schema constraints/triggers |
+| Diagnostics/privacy/audit | [safe diagnostics](backend/app/observability.py), [operations](backend/app/services/operations.py), [privacy](backend/app/services/privacy.py), [audit](backend/app/services/audit.py) | Correlation/errors, retained aggregate metrics, worker-loop health, operator lifecycle and transactional privileged history |
+| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260917_0008` head; schema constraints/triggers |
 
 ## Frontend
 
@@ -62,6 +63,10 @@ give the next level of detail.
   [coverage](scripts/check_coverage.py), [bundle](scripts/check_bundle.mjs),
   [security](scripts/test_security.py) and [images](scripts/check_images.py)
   validate distinct gates. See [testing](docs/TESTING.md).
+- [Release validator](scripts/check_release.py), [notice synchronization](scripts/prepare_release_notices.py)
+  and [brand preparation](scripts/prepare_brand_assets.py) own exact release
+  provenance and distribution notices/exports. See [releasing](docs/RELEASING.md)
+  and the disposable [demo](docs/DEMO.md).
 - [Workflows](.github/workflows), [coverage budget](.github/coverage-budget.json),
   [bundle budget](.github/bundle-budget.json) and [protection definition](.github/branch-protection.json)
   are explained in [CI](docs/CI.md). A local definition is not a fresh remote-status check.

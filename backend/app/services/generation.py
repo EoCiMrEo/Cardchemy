@@ -12,6 +12,7 @@ import secrets
 from uuid import UUID
 
 from fastapi import HTTPException, Request, status
+from app.observability import current_request_id
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,11 +49,13 @@ IDEMPOTENCY_PATTERN = re.compile(r"^[\x21-\x7e]{8,128}$")
 
 
 def generation_http_error(status_code: int, code: str, message: str, **headers: str) -> HTTPException:
-    return HTTPException(
+    error = HTTPException(
         status_code=status_code,
         detail={"code": code, "message": message},
         headers=headers or None,
     )
+    error.safe_detail = error.detail
+    return error
 
 
 def hash_operation_key(value: str) -> str:
@@ -301,6 +304,7 @@ class GenerationJobService:
         await self._check_reservation_capacity(db, user_id)
         now = utcnow()
         job = GenerationJob(
+            request_id=current_request_id(),
             user_id=user_id,
             subject_id=data.subject_id,
             idempotency_key_hash=key_hash,
