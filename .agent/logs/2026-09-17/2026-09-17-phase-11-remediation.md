@@ -206,3 +206,11 @@ both cache mutation cases. `scripts/check_ci.py`, local
 required files, 59 active guides, 756 links), and `git diff --check` passed.
 The next evidence boundary is hosted PR CI followed by exact-main CI and a
 fresh release run; these local checks do not establish publication.
+
+PR #17 automated review identified that `runner.temp` is unavailable in a
+job-level `env` expression. The direct CLI cache variable was moved to that
+Trivy step's `env`; the action input remains step-scoped. A workflow guard and
+negative contract case now reject a future job-level placement. The first PR
+CI pass predates this correction and must not be counted for the final head.
+The corrected head passed 73 focused release tests, `scripts/check_ci.py`,
+`scripts/check_context.py` and `git diff --check` locally.
