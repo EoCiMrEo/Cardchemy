@@ -231,3 +231,13 @@ downgrade/re-upgrade. The packaged Chromium journey passed (1) with its
 database proof. Both harnesses reported cleanup of unique containers,
 temporary data and generated credentials. These local passes do not replace
 the next exact-head hosted CI gate.
+
+The next PR head passed hosted PostgreSQL migrations but its three container
+jobs failed before image probes: `check_images.py` imports `system_environment`
+from `test_services.py` in a minimal host Python without backend packages, and
+the new module-level `asyncpg` import made that import fail. Load `asyncpg`
+only inside the PostgreSQL readiness function so the image checker retains its
+stdlib-only import boundary. An isolated `python -S` image-checker import
+regression now passes without site packages, alongside all five focused harness
+tests, `scripts/check_ci.py` and `git diff --check`. A new hosted head is
+required; the failed container run is not release evidence.

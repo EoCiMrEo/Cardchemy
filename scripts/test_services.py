@@ -15,8 +15,6 @@ import tempfile
 import time
 from uuid import uuid4
 
-import asyncpg
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -46,6 +44,7 @@ def wait_ready(name: str, command: list[str]) -> None:
 
 def wait_postgres_ready(tcp_port: int, password: str, database_name: str) -> None:
     """Wait for the final server via authenticated host TCP, not its init socket."""
+    import asyncpg
 
     async def probe() -> None:
         deadline = time.monotonic() + 60

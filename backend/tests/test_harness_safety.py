@@ -1,8 +1,20 @@
 """Regression safety boundaries for disposable service/browser verification."""
 from pathlib import Path
 import runpy
+import subprocess
+import sys
 
 import pytest
+
+
+def test_image_probe_imports_without_backend_dependencies():
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    result = subprocess.run(
+        [sys.executable, "-S", "-c",
+         "import sys; sys.path.insert(0, sys.argv[1]); import check_images", str(scripts)],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_service_harness_does_not_inherit_operator_settings(monkeypatch):
@@ -22,6 +34,7 @@ def test_service_harness_does_not_inherit_operator_settings(monkeypatch):
 
 
 def test_postgres_readiness_waits_for_authenticated_tcp_and_target_database(monkeypatch):
+    import asyncpg
     script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
     namespace = runpy.run_path(str(script))
     attempts = []
@@ -41,13 +54,13 @@ def test_postgres_readiness_waits_for_authenticated_tcp_and_target_database(monk
         if len(attempts) == 1:
             raise ConnectionResetError("temporary server stopped")
         if len(attempts) == 2:
-            raise namespace["asyncpg"].CannotConnectNowError("database system is starting up")
+            raise asyncpg.CannotConnectNowError("database system is starting up")
         return Connection()
 
     async def no_delay(_seconds):
         pass
 
-    monkeypatch.setattr(namespace["asyncpg"], "connect", connect)
+    monkeypatch.setattr(asyncpg, "connect", connect)
     monkeypatch.setattr(namespace["asyncio"], "sleep", no_delay)
     namespace["wait_postgres_ready"](54321, "generated-test-secret", "regression_test")
 
@@ -62,6 +75,7 @@ def test_postgres_readiness_waits_for_authenticated_tcp_and_target_database(monk
 
 
 def test_postgres_readiness_refuses_a_different_database(monkeypatch):
+    import asyncpg
     script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
     namespace = runpy.run_path(str(script))
     closed = []
@@ -76,7 +90,7 @@ def test_postgres_readiness_refuses_a_different_database(monkeypatch):
     async def connect(**_options):
         return Connection()
 
-    monkeypatch.setattr(namespace["asyncpg"], "connect", connect)
+    monkeypatch.setattr(asyncpg, "connect", connect)
     with pytest.raises(RuntimeError, match="unexpected database"):
         namespace["wait_postgres_ready"](54321, "generated-test-secret", "regression_test")
     assert closed == [2]
