@@ -126,17 +126,22 @@ restricted to the approved public repository's `main` and an exact reviewed
 main SHA with successful mandatory CI. It does not run on release publication,
 which avoids recursive preparation. Its preflight is read-only; only the
 release job can write contents/packages and request an OIDC signing identity.
-A short-lived `RELEASE_READINESS_TOKEN`, scoped to this repository with
-Administration read-only, supplies the protection read unavailable to the
-ordinary workflow token. See [the release procedure](RELEASING.md) for setup
+A short-lived `CARDCHEMY_RELEASE_READINESS_TOKEN` secret, scoped to this
+repository with Administration read-only and mapped to the job's
+`RELEASE_READINESS_TOKEN` environment variable, supplies the protection read
+unavailable to the ordinary workflow token. See [the release procedure](RELEASING.md) for setup
 and revocation; tokens do not belong in source, settings files or logs.
 
 The job builds/probes/scans all three final Linux/amd64 runtimes, rejects
-HIGH/CRITICAL findings, creates CycloneDX SBOMs and publishes versioned GHCR
-images with immutable digest records. It keylessly signs/verifies the images,
-packages exact-commit source, notes and source/build provenance, and signs the
-complete checksum manifest with a Sigstore bundle. It creates an annotated
-version tag and attaches verified files to a **draft** GitHub Release. The
+HIGH/CRITICAL findings, and creates CycloneDX SBOMs. It pushes one unique
+`v<version>-<source SHA>-<run ID>-<attempt>` GHCR tag per image, records each
+manifest digest, and keylessly signs/verifies those digests. The tags may be
+immediately visible on later releases once the GHCR packages are public; the
+signed digests are the supported pull identities. The workflow packages
+exact-commit source, notes and provenance, signs the complete checksum manifest
+with a Sigstore bundle, verifies the remote tags against its digest inventory,
+then creates an annotated Git version tag and attaches verified files to a
+**draft** GitHub Release. It never pushes a short `:<version>` GHCR tag. The
 maintainer verifies downloaded artifacts, source/tag bindings and anonymous
 access to all three GHCR packages/signatures before publishing the draft.
 

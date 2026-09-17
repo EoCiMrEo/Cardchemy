@@ -39,6 +39,35 @@ def validate_workflow(document: dict, filename: str) -> None:
                 "Release preflight permissions must remain narrowly read-only")
         require(any(step.get("uses") == COSIGN_INSTALLER for step in document["jobs"]["release"].get("steps", [])),
                 "Signed release must install the reviewed Cosign bootstrap")
+        steps = document["jobs"]["release"].get("steps", [])
+        ordered = (
+            "Publish unique release tags and verify keyless image signatures",
+            "Prepare source, notes and provenance",
+            "Sign and verify the checksum manifest",
+            "Final main/CI/registry-tag guard before creating the signed draft",
+            "Create annotated version tag and verified draft release",
+        )
+        positions = [next((index for index, step in enumerate(steps) if step.get("name") == name), -1)
+                     for name in ordered]
+        require(all(position >= 0 and sum(step.get("name") == name for step in steps) == 1
+                    for name, position in zip(ordered, positions))
+                and positions == sorted(positions),
+                "Signed release must publish unique images, sign and draft in order")
+        publish = steps[positions[0]].get("run", "")
+        pushes = [(index, match.group()) for index, step in enumerate(steps)
+                  for match in re.finditer(r"\bdocker\s+push\b", step.get("run", ""))]
+        require(pushes == [(positions[0], 'docker push')]
+                and re.search(r'(?m)^\s*release_tag="\$image:v\$VERSION-\$SOURCE_SHA-\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"\s*$', publish) is not None
+                and re.search(r'(?m)^\s*docker push "\$release_tag"\s*$', publish) is not None
+                and '--record-image "$variant" --image-tag "$release_tag"' in publish
+                and '--verify-release-tag "$variant"' in publish
+                and "cosign sign --yes" in publish
+                and "cosign verify-blob" in steps[positions[2]].get("run", "")
+                and "--remote" in steps[positions[3]].get("run", "")
+                and '--verify-release-tag "$variant"' in steps[positions[3]].get("run", "")
+                and "gh release create" in steps[positions[4]].get("run", "")
+                and "--draft" in steps[positions[4]].get("run", ""),
+                "Only unique release tags may be pushed; image/signature inventory and draft must follow")
     for name, job in document["jobs"].items():
         require("timeout-minutes" in job, f"{filename}/{name}: missing timeout")
         require("continue-on-error" not in job, f"{filename}/{name}: cannot ignore job failures")

@@ -120,45 +120,29 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2; embedded bootstrap checksums
         with:
           cosign-release: v3.0.6
-      - name: Check registry versions, publish digest identities and verify keyless signatures
+      - name: Publish unique release tags and verify keyless image signatures
         shell: bash
         run: |
           set -euo pipefail
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          # New packages may return access-denied until first creation. Stage
-          # a unique candidate before checking version absence with known access.
+          # GitHub does not provide an atomic create-only GHCR tag operation.
+          # Every run/attempt gets a distinct versioned tag; consumers use the
+          # signed digest as the stable pull identity.
           for variant in backend backend-ocr frontend; do
             image="ghcr.io/eocimreo/cardchemy-$variant"
-            candidate="$image:candidate-$SOURCE_SHA-$GITHUB_RUN_ID"
-            docker tag "$image:$VERSION" "$candidate"
-            docker push "$candidate"
+            release_tag="$image:v$VERSION-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker tag "$image:$VERSION" "$release_tag"
+            docker push "$release_tag"
             python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
-              --record-image "$variant" --package-dir artifacts/release
+              --record-image "$variant" --image-tag "$release_tag" --package-dir artifacts/release
+            python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
+              --verify-release-tag "$variant" --package-dir artifacts/release
           done
           python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote
           for variant in backend backend-ocr frontend; do
             image="ghcr.io/eocimreo/cardchemy-$variant"
-            if docker manifest inspect "$image:$VERSION" > /dev/null 2> registry-status.txt; then
-              echo 'Release image version already exists; refusing overwrite' >&2
-              exit 1
-            elif ! grep -Eq 'manifest unknown|name unknown|no such manifest' registry-status.txt; then
-              echo 'Registry absence could not be verified; refusing publication' >&2
-              exit 1
-            fi
-          done
-          rm registry-status.txt
-          for variant in backend backend-ocr frontend; do
-            image="ghcr.io/eocimreo/cardchemy-$variant"
-            expected_digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "artifacts/release/$variant.build.json")"
-            docker push "$image:$VERSION"
-            python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
-              --record-image "$variant" --package-dir artifacts/release
             digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "artifacts/release/$variant.build.json")"
-            if [[ "$digest" != "$expected_digest" ]]; then
-              echo 'Published version differs from the verified candidate; refusing signing' >&2
-              exit 1
-            fi
             cosign sign --yes "$image@$digest"
             cosign verify --certificate-identity "$CERTIFICATE_IDENTITY" --certificate-oidc-issuer "$OIDC_ISSUER" \
               --certificate-github-workflow-sha "$SOURCE_SHA" "$image@$digest" > /dev/null
@@ -176,8 +160,15 @@ jobs:
           # the signed release directory must contain only public attachments.
           rm artifacts/release/preflight.json
           python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --verify-package artifacts/release
-      - name: Final main/CI/tag guard before version tagging
-        run: python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote
+      - name: Final main/CI/registry-tag guard before creating the signed draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" --remote
+          for variant in backend backend-ocr frontend; do
+            python3 scripts/check_release.py --version "$VERSION" --source-sha "$SOURCE_SHA" \
+              --verify-release-tag "$variant" --package-dir artifacts/release
+          done
       - name: Create annotated version tag and verified draft release
         shell: bash
         run: |
@@ -200,7 +191,8 @@ jobs:
             --notes-file artifacts/release/release-notes.md artifacts/release/*.sbom.json artifacts/release/*.audit.json \
             artifacts/release/*.build.json artifacts/release/*.manifest.json artifacts/release/source-provenance.json artifacts/release/SHA256SUMS \
             artifacts/release/SHA256SUMS.sigstore.json "artifacts/release/cardchemy-$VERSION-source.tar.gz" artifacts/release/release-notes.md
-          echo 'Draft prepared: verify anonymous GHCR digest access, downloaded signatures/checksums and tag commit before publishing.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Summarize signed draft and image digests
+        run: echo 'Signed draft and unique GHCR tags prepared; verify anonymous digest pulls, downloads, checksum bundle and tag commit before publishing.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

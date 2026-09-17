@@ -17,8 +17,13 @@ remain in Unreleased until that release is intentionally prepared.
 Follow [RELEASING.md](RELEASING.md) for protected-main readiness, keyless signed
 artifacts/images, an annotated version tag, verified draft and final publication
 to GitHub Releases plus GHCR. The published platform is Linux/amd64; see
-[runtime support](RUNTIMES.md). Tags and versioned images are never overwritten.
-Corrections to published artifacts require a reviewed new version.
+[runtime support](RUNTIMES.md). The Git version tag is `vMAJOR.MINOR.PATCH`.
+Each GHCR image has a unique
+`v<version>-<source SHA>-<workflow run ID>-<run attempt>` tag, while its signed
+`image@sha256:<digest>` is the supported pull identity. Registry tags can move;
+the workflow does not push a short `:<version>` image tag. Never overwrite a
+published Git tag or deliberately reuse an image tag. Corrections to published
+artifacts require a reviewed new version.
 
 The tag is annotated and binds the signed checksum-manifest hash; release
 artifacts and image digests are signed through GitHub Actions OIDC. This does
