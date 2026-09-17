@@ -27,6 +27,10 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 HOST = "cards.rehearsal.test"
 PREFIX = "cardchemy-rehearsal-"
+SERVICES = {"db", "migrate", "backend", "worker", "email-worker", "frontend", "tls-edge"}
+CONTAINER_STATUSES = {"created", "running", "paused", "restarting", "removing", "exited", "dead"}
+HEALTH_STATUSES = {None, "starting", "healthy", "unhealthy"}
+STARTUP_EVENTS = {"api_started", "api_stopped", "database_revision_verified", "worker_started", "process_failed"}
 ALLOWED_ENVIRONMENT = {"PATH", "HOME", "TMP", "TEMP", "TMPDIR",
                        "SYSTEMROOT", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA",
                        "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432"}
@@ -40,6 +44,9 @@ def failure_category(output: bytes) -> str:
     """Classify private command output without echoing any captured text."""
     lowered = output[-128 * 1024:].lower()
     rules = (
+        ("database_starting", (b"cannotconnectnowerror", b"database system is starting up")),
+        ("connection_reset", (b"connectionreseterror",)),
+        ("connection_refused", (b"connectionrefusederror",)),
         ("image_pull_access_denied", (b"pull access denied", b"repository does not exist", b"insufficient_scope")),
         ("image_build_failed", (b"failed to solve:", b"failed to build", b"build failed")),
         ("service_unhealthy", (b"unhealthy", b"didn't complete successfully")),
@@ -49,8 +56,25 @@ def failure_category(output: bytes) -> str:
     return next((category for category, phrases in rules if any(phrase in lowered for phrase in phrases)), "command_failed")
 
 
+def container_diagnostic(document: dict, project: str) -> dict:
+    """Select only closed lifecycle fields after validating exact ownership."""
+    project_name(project)
+    labels = document.get("Config", {}).get("Labels", {}) or {}
+    service = labels.get("com.docker.compose.service")
+    if (labels.get("com.docker.compose.project") != project or service not in SERVICES
+            or document.get("Name") != f"/{project}-{service}-1"):
+        raise RehearsalError("diagnostic_container_ownership")
+    state = document.get("State", {})
+    status, health, exit_code = state.get("Status"), state.get("Health", {}).get("Status"), state.get("ExitCode")
+    if (status not in CONTAINER_STATUSES or health not in HEALTH_STATUSES
+            or type(exit_code) is not int or not 0 <= exit_code <= 255):
+        raise RehearsalError("diagnostic_container_contract")
+    return {"service": service, "status": status, "health": health, "exit_code": exit_code}
+
+
 def run(command: list[str], *, cwd: Path, environment: dict[str, str],
-        stage: str, input_data: bytes | None = None, timeout: int = 900) -> bytes:
+        stage: str, input_data: bytes | None = None, timeout: int = 900,
+        combined_output: bool = False) -> bytes:
     try:
         result = subprocess.run(command, cwd=cwd, env=environment, input=input_data,
                                 capture_output=True, timeout=timeout)
@@ -62,7 +86,7 @@ def run(command: list[str], *, cwd: Path, environment: dict[str, str],
         diagnostic = stage + ":" + failure_category(result.stderr + result.stdout)
         print("Rehearsal: fixed command failure category " + diagnostic, flush=True)
         raise RehearsalError(diagnostic)
-    return result.stdout
+    return result.stdout + result.stderr if combined_output else result.stdout
 
 
 def environment() -> dict[str, str]:
@@ -241,6 +265,46 @@ class Stack:
         sql = "SELECT json_build_object('users',(SELECT count(*) FROM users),'subjects',(SELECT count(*) FROM subjects),'sets',(SELECT count(*) FROM flashcard_sets),'cards',(SELECT count(*) FROM flashcards),'enrollments',(SELECT count(*) FROM enrollments),'progress',(SELECT count(*) FROM study_progress),'receipts',(SELECT count(*) FROM study_answer_submissions),'outbox',(SELECT count(*) FROM email_outbox_messages),'head',(SELECT version_num FROM alembic_version));"
         return json.loads(self.compose("exec", "-T", "db", "psql", "-U", "rehearsal", "-d", "cardchemy_rehearsal", "-At", "-c", sql))
 
+    def diagnose(self) -> None:
+        """Emit lifecycle state only, without IDs/names/configuration/raw output."""
+        if not self.started:
+            return
+        try:
+            identifiers = self.compose("ps", "--all", "--quiet").decode().split()
+            if any(not re.fullmatch(r"[a-f0-9]{12,64}", identity) for identity in identifiers):
+                raise RehearsalError("diagnostic_identity_contract")
+            if not identifiers:
+                print(json.dumps({"rehearsal_failure_services": []}), flush=True)
+                return
+            details = json.loads(run(["docker", "inspect", *identifiers], cwd=self.checkout,
+                                     environment=self.environment, stage="diagnostic_inspection", timeout=30))
+            # Validate all ownership before reading even one container's logs.
+            diagnostics = [container_diagnostic(detail, self.project) for detail in details]
+            for detail, diagnostic in zip(details, diagnostics):
+                if (not re.fullmatch(r"[a-f0-9]{64}", detail["Id"])
+                        or not any(detail["Id"].startswith(identity) for identity in identifiers)):
+                    raise RehearsalError("diagnostic_inspected_identity")
+                logs = run(["docker", "logs", "--tail", "60", detail["Id"]], cwd=self.checkout,
+                           environment=self.environment, stage="diagnostic_startup", timeout=30,
+                           combined_output=True)
+                # Parse private stdout/stderr but select only known JSON lifecycle
+                # event names. Never forward fields or exception strings.
+                events = []
+                for line in logs[-128 * 1024:].splitlines():
+                    try:
+                        item = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(item, dict) and item.get("event") in STARTUP_EVENTS:
+                        events.append(item["event"])
+                diagnostic["startup_events"] = events[-10:]
+                category = failure_category(logs)
+                if category != "command_failed":
+                    diagnostic["startup_failure_category"] = category
+            print(json.dumps({"rehearsal_failure_services": diagnostics}, sort_keys=True), flush=True)
+        except (RehearsalError, OSError, ValueError, KeyError, TypeError):
+            print(json.dumps({"rehearsal_failure_diagnostic": "query_or_ownership_contract_failed"}), flush=True)
+
     def cleanup(self) -> None:
         if not self.started:
             return
@@ -252,7 +316,7 @@ class Stack:
             for detail in details:
                 labels = detail.get("Config", {}).get("Labels", {})
                 if (labels.get("com.docker.compose.project") != self.project
-                        or labels.get("com.docker.compose.service") not in {"db", "migrate", "backend", "worker", "email-worker", "frontend", "tls-edge"}):
+                        or labels.get("com.docker.compose.service") not in SERVICES):
                     raise RehearsalError("container_ownership")
         # Stop/remove only project-owned containers. Never use down --volumes.
         self.compose("down", "--timeout", "45")
@@ -450,6 +514,10 @@ def main() -> int:
                 raise RehearsalError("recovered_counts")
             evidence.update({"alembic_head": expected["head"], "archive_sha256": checksum, "counts": expected,
                              "checks": ["fresh_clone_bootstrap", "strict_production_profile", "private_api_database", "tls_certificate_validation", "secure_refresh_cookie", "edge_headers_spa_closed_docs", "instructor_student_reads", "server_graded_study", "custom_backup_checksum", "separate_empty_volume_restore", "upgrade_heads_drift", "restored_answer_receipt_progress"]})
+        except Exception:
+            for stack in stacks:
+                stack.diagnose()
+            raise
         finally:
             cleanup_failures = []
             for stack in reversed(stacks):

@@ -778,20 +778,20 @@ The separate v1.0 operational readiness checklist below remains independently ga
 
 Do not publish v1.0 until all of the following are true:
 
-- [ ] All P0 items are complete.
+- [x] All P0 items are complete.
 - [x] Phase 9A repository cleanup is verified with no lost regression coverage,
   and root `.env` is the sole documented file-based configuration source.
-- [ ] No known critical/high vulnerability is reachable without a documented,
+- [x] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.
-- [ ] Authentication and cross-subject authorization tests pass.
+- [x] Authentication and cross-subject authorization tests pass.
 - [ ] Database migration, backup, restore, and upgrade tests pass.
-- [ ] PDF jobs are bounded, durable, cancellable, and recoverable.
-- [ ] Transactional email passes Mailpit integration and end-to-end tests;
+- [x] PDF jobs are bounded, durable, cancellable, and recoverable.
+- [x] Transactional email passes Mailpit integration and end-to-end tests;
   production SMTP setup and failure recovery are documented and verified.
-- [ ] Frontend typecheck, lint, tests, accessibility checks, and production build
+- [x] Frontend typecheck, lint, tests, accessibility checks, and production build
   pass.
 - [ ] A fresh-clone production deployment has been tested on a clean machine.
-- [ ] Documentation, license, privacy disclosure, security policy, and release
+- [x] Documentation, license, privacy disclosure, security policy, and release
   artifacts are complete.
-- [ ] The end-to-end instructor/student journey passes without manual database or
+- [x] The end-to-end instructor/student journey passes without manual database or
   source-code changes.

@@ -201,3 +201,8 @@ this production profile with a trusted local HTTPS edge and a current-head
 backup restored into a separate empty volume. Pair it with
 [actual local encrypted SMTP verification](SMTP-VERIFICATION.md).
 Deployment operators still verify their own TLS edge, relay and recovery goals.
+
+The database healthcheck probes internal loopback TCP. The official PostgreSQL
+image starts a temporary socket-only server during initialization; a Unix-socket
+probe can release the migration service before the final TCP server is ready.
+This healthcheck does not publish the database outside the Compose network.

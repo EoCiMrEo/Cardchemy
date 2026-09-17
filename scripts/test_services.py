@@ -51,7 +51,7 @@ def run_service_tests(command: list[str], *, cwd: Path, environment: dict[str, s
                             capture_output=True, text=True)
     output = result.stdout + "\n" + result.stderr
     counts = re.findall(
-        r"^(?:\d+ (?:passed|failed|skipped|deselected|xfailed|xpassed|errors?|warnings?)(?:, )?)+ in \d+(?:\.\d+)?s$",
+        r"^(?:\d+ (?:passed|failed|skipped|deselected|xfailed|xpassed|errors?|warnings?)(?:, )?)+ in \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?$",
         output, flags=re.MULTILINE,
     )
     if counts:
