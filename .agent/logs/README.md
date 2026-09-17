@@ -17,6 +17,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-17 | [v1.0 release gate](2026-09-17/2026-09-17-v1-release-gate.md) | Exact-source CI, local encrypted SMTP, clean-machine production backup/restore rehearsals and readiness evidence. |
 | 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity, signed public v0.1.0 publication and separate v1.0 readiness work. |
 | 2026-09-17 | [Local encrypted SMTP verification](2026-09-17/2026-09-17-local-smtp-tls-verification.md) | Actual authenticated STARTTLS/implicit-TLS delivery, certificate rejection, durable retry and guarded recovery with disposable local capture. |
 | 2026-09-17 | [Phase 11 demo](2026-09-17/2026-09-17-phase-11-demo.md) | Bounded disposable production-build/Nginx demonstration, private generated sign-in, no provider calls and verified cleanup. |

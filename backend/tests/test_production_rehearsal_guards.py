@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,3 +71,28 @@ def test_recovered_set_verification_uses_computed_collection_counts():
                                        "student_email": "student@example.com", "student_password": "fixture-password"},
                                  {"subject": "subject-id", "set": "fixture-set", "answer": {}, "key": "fixture-key", "result": {"is_correct": True}})
     assert "/api/subjects/subject-id/sets" in app.paths
+
+
+@pytest.mark.parametrize("private_output,category", [
+    (b"pull access denied for image, secret=sentinel-never-expose", "image_pull_access_denied"),
+    (b"failed to solve: password=sentinel-never-expose", "image_build_failed"),
+    (b"container unhealthy token=sentinel-never-expose", "service_unhealthy"),
+    (b"internal exception secret=sentinel-never-expose", "command_failed"),
+])
+def test_command_failures_emit_only_closed_diagnostics(monkeypatch, capsys, private_output, category):
+    monkeypatch.setattr(rehearsal.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
+        returncode=1, stderr=private_output, stdout=b"untrusted private stdout=sentinel-never-expose"))
+    with pytest.raises(rehearsal.RehearsalError) as failure:
+        rehearsal.run(["docker", "compose", "up"], cwd=Path("."), environment={}, stage="compose_up")
+    assert str(failure.value) == f"compose_up:{category}"
+    output = capsys.readouterr()
+    assert "sentinel-never-expose" not in output.out + output.err + str(failure.value)
+
+
+def test_shared_images_are_built_before_startup_considers_image_pull():
+    calls = []
+    stack = object.__new__(rehearsal.Stack)
+    stack.compose = lambda *args, **kwargs: calls.append(args)
+    stack.start(build=True)
+    assert calls[0] == ("build",)
+    assert calls[1] == ("up", "-d", "--no-build", "--wait", "--wait-timeout", "180")

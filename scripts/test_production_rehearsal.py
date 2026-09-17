@@ -36,15 +36,32 @@ class RehearsalError(RuntimeError):
     """Only fixed diagnostic stages may leave the private workspace."""
 
 
+def failure_category(output: bytes) -> str:
+    """Classify private command output without echoing any captured text."""
+    lowered = output[-128 * 1024:].lower()
+    rules = (
+        ("image_pull_access_denied", (b"pull access denied", b"repository does not exist", b"insufficient_scope")),
+        ("image_build_failed", (b"failed to solve:", b"failed to build", b"build failed")),
+        ("service_unhealthy", (b"unhealthy", b"didn't complete successfully")),
+        ("host_port_busy", (b"port is already allocated", b"address already in use")),
+        ("docker_daemon_unavailable", (b"cannot connect to the docker daemon", b"error during connect")),
+    )
+    return next((category for category, phrases in rules if any(phrase in lowered for phrase in phrases)), "command_failed")
+
+
 def run(command: list[str], *, cwd: Path, environment: dict[str, str],
         stage: str, input_data: bytes | None = None, timeout: int = 900) -> bytes:
     try:
         result = subprocess.run(command, cwd=cwd, env=environment, input=input_data,
                                 capture_output=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired):
-        raise RehearsalError(stage) from None
+    except subprocess.TimeoutExpired:
+        raise RehearsalError(stage + ":command_timeout") from None
+    except OSError:
+        raise RehearsalError(stage + ":command_unavailable") from None
     if result.returncode:
-        raise RehearsalError(stage)
+        diagnostic = stage + ":" + failure_category(result.stderr + result.stdout)
+        print("Rehearsal: fixed command failure category " + diagnostic, flush=True)
+        raise RehearsalError(diagnostic)
     return result.stdout
 
 
@@ -210,7 +227,11 @@ class Stack:
 
     def start(self, *, build: bool = False) -> None:
         self.started = True
-        self.compose("up", "-d", *( ["--build"] if build else ["--no-build"]), "--wait", "--wait-timeout", "180", timeout=1200)
+        if build:
+            # tls-edge consumes the shared frontend image but does not build it.
+            # Finish local builds before Compose considers pulling/starting it.
+            self.compose("build", timeout=1200)
+        self.compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "180", timeout=300)
 
     def verify_heads(self) -> None:
         self.compose("run", "--rm", "--no-deps", "backend", "alembic", "current", "--check-heads")
