@@ -80,3 +80,28 @@ capture and is not endorsed as a production relay. These results establish
 local encrypted application transport and durable recovery; every deployment
 operator still owns their actual relay routing, trust, mailbox delivery and
 retention. No external DNS/provider/inbox deliverability is claimed.
+
+## Independent-review correction
+
+A subsequent safety review found that nonzero `docker inspect` can represent
+a daemon/permission error rather than absence. Added shared
+`cleanup_containers()` in `scripts/test_services.py`, used by both service and
+TLS harnesses: attempt removal of only generated owned names, require a
+successful `docker ps -a --format '{{.Names}}'` inventory, and fail if any exact
+owned name remains. Failed inventory never reports successful cleanup.
+
+The same review identified that default pytest failure tracebacks can display
+credential-bearing fixture/settings representations. Both harnesses now request
+short tracebacks and capture raw stdout/stderr only in process memory. A shared
+reporter emits numeric result totals and static source-file/test-function
+identities, omits parameter IDs and exception/fixture details, and preserves
+the original failing exit code. Raw diagnostics are not written to evidence.
+
+Added `backend/tests/test_service_cleanup.py` regressions proving that a
+remaining owned name and a failed daemon inventory both refuse cleanup success,
+and that credential/message sentinels in failure output are withheld while
+counts, test identity and a failing exit are preserved. Combined safety suite
+with `tests/test_harness_safety.py`: nine passed in 0.67 seconds. Actual SMTP
+delivery code/test cases are unchanged; the twelve-case real TLS result above
+remains the transport evidence rather than treating these safety tests as
+another delivery run.

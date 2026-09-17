@@ -16,7 +16,8 @@ import tempfile
 from uuid import uuid4
 
 from test_services import (
-    ROOT, docker, port, system_environment, wait_postgres_ready, wait_ready,
+    ROOT, cleanup_containers, docker, port, run_service_tests, system_environment,
+    wait_postgres_ready, wait_ready,
 )
 
 
@@ -142,18 +143,12 @@ def main() -> int:
                 wait_ready(service, ["/mailpit", "readyz"])
                 environment[f"SMTP_TLS_TEST_{mode.upper()}_PORT"] = str(port(service, 1025))
                 environment[f"SMTP_TLS_TEST_{mode.upper()}_API"] = f"http://127.0.0.1:{port(service, 8025)}"
-            return subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-m", "smtp_tls", "tests/integration/test_smtp_tls.py"],
-                cwd=ROOT / "backend", env=environment,
-            ).returncode
+            return run_service_tests(
+                [sys.executable, "-m", "pytest", "-q", "--tb=short", "-m", "smtp_tls", "tests/integration/test_smtp_tls.py"],
+                cwd=ROOT / "backend", environment=environment,
+            )
         finally:
-            cleanup_failed = False
-            for name in reversed(names):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
-                if subprocess.run(["docker", "inspect", name], capture_output=True).returncode == 0:
-                    cleanup_failed = True
-            if cleanup_failed:
-                raise RuntimeError("An owned disposable SMTP verification service could not be removed")
+            cleanup_containers(names)
             print("Disposable TLS SMTP/DB services, keys, credentials and captured synthetic mail cleaned up.")
 
 

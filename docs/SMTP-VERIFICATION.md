@@ -28,6 +28,12 @@ SMTP authentication. An ephemeral CA issues a one-day certificate for
 The harness does not install host certificates, change operator configuration,
 read root `.env`, use an external relay, or send mail to an external mailbox.
 Database credentials are not mounted into the SMTP containers.
+Pytest output is captured privately in process memory. The harness reports only
+numeric totals and static failing test identities, preserves a failing exit
+code, and suppresses exception, fixture and parameter details that can contain
+generated credentials or messages. Cleanup succeeds only after a successful
+Docker container inventory confirms the exact owned names are absent; daemon
+or permission failures do not establish absence.
 
 The opt-in PostgreSQL integration tests exercise the actual application
 `SmtpTransport`, `EmailWorker` and transactional outbox with validated

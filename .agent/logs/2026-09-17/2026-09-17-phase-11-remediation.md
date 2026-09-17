@@ -350,3 +350,26 @@ private API/database and loopback frontend/TLS only. The CI, context (37
 required files/61 active guides/780 links), release metadata and whitespace
 validators passed. An unrelated untracked subject-scoped RAG planning document
 appeared during this task and is preserved/excluded from the release PR.
+
+
+PR #18 initial source `dfc16f29730be0cbc2bc1022587e9836606b1f90`
+passed complete CI run `35261059703`, including actual local TLS SMTP on
+Ubuntu/Python 3.11. Before merge, independent review identified two verifier
+contracts needing correction: any failed Docker inspection was incorrectly
+accepted as service absence, and pytest default tracebacks could print
+credential-bearing fixture/function arguments. No failing output from the
+successful hosted run contains those tracebacks. Shared cleanup now requires
+a successful Docker daemon inventory and exact generated-name absence.
+Service/TLS pytest output is captured privately in memory and only whitelisted
+counts/static test identities are emitted, preserving the exit status. Browser
+journey diagnostics are similarly withheld; its fixed failure summary remains.
+Journey cleanup also verifies owned network absence through a successful
+inventory. Focused regressions cover daemon/query failure, surviving owned
+containers and a credential-bearing failure-output sentinel. The corrected
+PR head must pass CI again before protected merge.
+
+Final correction validation: 101 focused release, service/readiness cleanup,
+credential-redaction and demo contracts passed; CI/context/whitespace checks
+passed. Remote main protection was revalidated: strict current-base
+ci-required bound to GitHub Actions app15368, administrator enforcement,
+resolved conversations, no force pushes and no branch deletion.

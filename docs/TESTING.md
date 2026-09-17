@@ -27,7 +27,10 @@ development/build commands retain the normal root configuration contract.
 The service/journey harnesses ignore operator application environment values
 and root `.env`, generate credentials in private temporary storage, bind
 services to loopback with random ports, and remove their containers, data,
-processes and credentials even on failure. Host-run PostgreSQL fixtures require
+processes and credentials even on failure. Cleanup claims require successful
+Docker inventories confirming generated services are absent. Service/browser
+failures emit safe test identities or fixed diagnostics; raw traces may contain
+generated credentials and are withheld. Host-run PostgreSQL fixtures require
 `postgresql+asyncpg` on loopback and a database named `*_test`; controlled CI
 service hosts are allowed explicitly. They verify the connected database
 identity and the dynamically resolved Alembic head before any write/cleanup.

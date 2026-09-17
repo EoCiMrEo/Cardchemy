@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import tempfile
@@ -31,6 +32,43 @@ def docker(*arguments: str) -> str:
     if result.returncode:
         raise RuntimeError("Docker command failed; check Docker availability and permissions")
     return result.stdout.strip()
+
+
+def cleanup_containers(names: list[str]) -> None:
+    """Require a successful daemon inventory and exact owned-name absence."""
+    for name in reversed(names):
+        # A failed start may leave nothing to remove. An rm error establishes
+        # neither presence nor absence; the successful inventory below does.
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+    remaining = set(docker("ps", "-a", "--format", "{{.Names}}").splitlines())
+    if remaining.intersection(names):
+        raise RuntimeError("An owned disposable verification container could not be removed")
+
+
+def run_service_tests(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
+    """Emit counts/static test identities without credential-bearing tracebacks."""
+    result = subprocess.run(command, cwd=cwd, env=environment,
+                            capture_output=True, text=True)
+    output = result.stdout + "\n" + result.stderr
+    counts = re.findall(
+        r"^(?:\d+ (?:passed|failed|skipped|deselected|xfailed|xpassed|errors?|warnings?)(?:, )?)+ in \d+(?:\.\d+)?s$",
+        output, flags=re.MULTILINE,
+    )
+    if counts:
+        print(counts[-1])
+    else:
+        print(f"Service pytest completed with exit code {result.returncode}.")
+    if result.returncode:
+        # Parameter IDs and exception summaries can themselves carry secrets.
+        # Report only static source-file/function identities, never either.
+        failures = re.findall(
+            r"^(?:FAILED|ERROR) (tests/[A-Za-z0-9_/]+\.py::[A-Za-z0-9_]+)(?:\[|\s|$)",
+            output, flags=re.MULTILINE,
+        )
+        for identity in sorted(set(failures)):
+            print(f"Failed service test: {identity}")
+        print("Detailed service-test diagnostics withheld to protect generated credentials and message content.")
+    return result.returncode
 
 
 def wait_ready(name: str, command: list[str]) -> None:
@@ -124,12 +162,12 @@ def main() -> int:
                     "MAILPIT_SMTP_HOST": "127.0.0.1",
                     "MAILPIT_SMTP_PORT": str(port(mailpit, 1025)),
                 }
-            result = subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-m", arguments.suite + " and not smtp_tls"],
-                cwd=ROOT / "backend", env=environment,
+            returncode = run_service_tests(
+                [sys.executable, "-m", "pytest", "-q", "--tb=short", "-m", arguments.suite + " and not smtp_tls"],
+                cwd=ROOT / "backend", environment=environment,
             )
-            if result.returncode:
-                return result.returncode
+            if returncode:
+                return returncode
             # Rehearse the entire migration chain only on this generated DB.
             if arguments.suite == "postgres":
                 for target in ("base", "head"):
@@ -138,8 +176,7 @@ def main() -> int:
                                    cwd=ROOT / "backend", env=environment, check=True)
             return 0
         finally:
-            for name in reversed(names):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            cleanup_containers(names)
             print("Disposable test services and generated credential file cleaned up.")
 
 
