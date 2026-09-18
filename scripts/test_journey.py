@@ -24,7 +24,10 @@ import time
 from urllib.request import urlopen
 from uuid import uuid4
 
-from test_services import ROOT, docker, port, system_environment, wait_ready
+from test_services import (
+    ROOT, cleanup_containers, docker, ensure_database_image, port,
+    system_environment, wait_postgres_ready, wait_ready,
+)
 
 
 class PackagedDemoUnavailable(RuntimeError):
@@ -240,6 +243,7 @@ def main() -> int:
     node = shutil.which("node")
     if not node:
         raise RuntimeError("Node.js is required for the journey browser test")
+    database_image, database_platform = ensure_database_image()
     suffix = uuid4().hex[:12]
     names: list[str] = []
     networks: list[str] = []
@@ -255,9 +259,10 @@ def main() -> int:
         try:
             database = f"cardchemy-journey-db-{suffix}"
             names.append(database)
-            docker("run", "--rm", "-d", "--name", database, "--env-file", str(env_file),
-                   "-p", "127.0.0.1::5432", "postgres:16")
-            wait_ready(database, ["pg_isready", "-U", "qa", "-d", "journey_test"])
+            docker("run", "--rm", "-d", "--name", database, "--platform", database_platform,
+                   "--env-file", str(env_file), "-p", "127.0.0.1::5432", database_image)
+            database_port = port(database, 5432)
+            wait_postgres_ready(database_port, password, "journey_test")
             mailpit = f"cardchemy-journey-mailpit-{suffix}"
             names.append(mailpit)
             docker("run", "--rm", "-d", "--name", mailpit, "-p", "127.0.0.1::8025",
@@ -296,14 +301,15 @@ def main() -> int:
             backend_environment = system_environment() | {
                 "ENVIRONMENT": "test", "RUN_JOURNEY_TESTS": "1", "PYTHONUTF8": "1",
                 "PYTHONPATH": str(ROOT / "backend"),
-                "DATABASE_URL": f"postgresql+asyncpg://qa:{password}@127.0.0.1:{port(database, 5432)}/journey_test",
+                "DATABASE_URL": f"postgresql+asyncpg://qa:{password}@127.0.0.1:{database_port}/journey_test",
                 "SECRET_KEY": secrets.token_urlsafe(48),
                 "GENERATION_SOURCE_ENCRYPTION_KEY": secrets.token_urlsafe(32),
                 "FRONTEND_BASE_URL": app_origin, "CORS_ORIGINS": app_origin,
-                "AI_PROVIDER_ENABLED": "true", "AI_API_KEY": "journey-deterministic-no-network",
-                "AI_MODEL": "journey-deterministic", "AI_REFILL_ROUNDS": "0",
-                "AI_PROVIDER_MAX_RETRIES": "0", "AI_CONCURRENCY": "1",
-                "AI_INPUT_COST_PER_MILLION_USD": "0.1", "AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
+                "FLASHCARD_AI_PROVIDER_ENABLED": "true", "FLASHCARD_AI_API_KEY": "journey-deterministic-no-network",
+                "FLASHCARD_AI_QUOTA_BUCKET": "journey-deterministic",
+                "FLASHCARD_AI_MODEL": "journey-deterministic", "FLASHCARD_AI_REFILL_ROUNDS": "0",
+                "FLASHCARD_AI_PROVIDER_MAX_RETRIES": "0", "FLASHCARD_AI_CONCURRENCY": "1",
+                "FLASHCARD_AI_INPUT_COST_PER_MILLION_USD": "0.1", "FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
                 "GENERATION_WORKER_POLL_SECONDS": "0.1", "EMAIL_WORKER_POLL_SECONDS": "0.1",
                 "SMTP_HOST": "127.0.0.1", "SMTP_PORT": str(port(mailpit, 1025)),
                 "SMTP_FROM_EMAIL": "no-reply@example.com", "SMTP_STARTTLS": "false",
@@ -373,10 +379,13 @@ def main() -> int:
             }
             result = subprocess.run([node, "node_modules/@playwright/test/cli.js", "test",
                                      "--config", "playwright.journey.config.ts"],
-                                    cwd=ROOT / "frontend", env=browser_environment)
+                                    cwd=ROOT / "frontend", env=browser_environment,
+                                    capture_output=True, text=True)
             if result.returncode:
+                print("Browser journey contract failed; private browser diagnostics omitted.")
                 failure_summary(workspace, processes)
                 return result.returncode
+            print("Browser journey contract passed.")
             if any(process.poll() is not None for process in processes):
                 raise RuntimeError("A required application process exited during the journey")
             if frontend_container is not None and not containers_running(names):
@@ -401,10 +410,12 @@ def main() -> int:
                     process.wait(timeout=5)
             for handle in handles:
                 handle.close()
-            for name in reversed(names):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            cleanup_containers(names)
             for name in reversed(networks):
                 subprocess.run(["docker", "network", "rm", name], capture_output=True)
+            remaining_networks = set(docker("network", "ls", "--format", "{{.Name}}").splitlines())
+            if remaining_networks.intersection(networks):
+                raise RuntimeError("Owned disposable journey networks could not be removed")
             print("Disposable journey processes, containers, data, fixture and generated credentials cleaned up.")
 
 

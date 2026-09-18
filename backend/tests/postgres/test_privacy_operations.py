@@ -169,7 +169,7 @@ async def test_manual_retry_receipt_survives_shorter_metadata_than_source_retent
     async with postgres_session_factory() as cleaner:
         async with cleaner.begin():
             await cleanup_retention(cleaner, retention_settings(database_metadata_retention_days=1), dry_run=False)
-    service = GenerationJobService(Settings(_env_file=None, ai_provider_enabled=True,
+    service = GenerationJobService(Settings(_env_file=None, flashcard_ai_provider_enabled=True,
                                             generation_source_retry_retention_hours=168,
                                             database_metadata_retention_days=1))
     async with postgres_session_factory() as db:

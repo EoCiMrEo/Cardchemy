@@ -16,6 +16,11 @@ _QUESTION_PREFIX = re.compile(
     re.IGNORECASE,
 )
 
+REJECTION_CATEGORIES = (
+    "unknown_source", "chunk_quota", "quote_not_contiguous", "answer_not_in_quote",
+    "unclear_question", "option_matches_question", "near_duplicate",
+)
+
 
 def normalize_evidence(value: str) -> str:
     """Normalize only for comparison; persisted evidence remains verbatim."""
@@ -52,22 +57,33 @@ def validate_grounded_candidate(
 ) -> ValidatedCard | None:
     """Return the canonical card only when every deterministic check succeeds."""
 
+    return inspect_grounded_candidate(candidate, chunks_by_id)[0]
+
+
+def inspect_grounded_candidate(
+    candidate: GeneratedCardCandidate,
+    chunks_by_id: dict[str, DocumentChunk],
+) -> tuple[ValidatedCard | None, str | None]:
+    """Return a card or a closed rejection code, never candidate content."""
+
     chunk = chunks_by_id.get(candidate.source_chunk_id)
     if chunk is None:
-        return None
+        return None, "unknown_source"
     quote = normalize_evidence(candidate.source_quote)
     source = normalize_evidence(chunk.text)
     answer = normalize_evidence(candidate.back)
-    if not quote or quote not in source or not answer or answer not in quote:
-        return None
+    if not quote or quote not in source:
+        return None, "quote_not_contiguous"
+    if not answer or answer not in quote:
+        return None, "answer_not_in_quote"
 
     # The strict candidate contract already proves four unique options and one
     # exact answer. This second pass checks clarity and meaningful distractors.
     question = normalize_evidence(candidate.front)
     if len(question) < 5 or question == answer:
-        return None
+        return None, "unclear_question"
     if any(normalize_evidence(option) == question for option in candidate.options):
-        return None
+        return None, "option_matches_question"
 
     quote_coverage = min(1.0, len(answer) / max(1, len(quote)))
     quality = round(min(1.0, 0.75 + quote_coverage * 0.25), 4)
@@ -79,7 +95,7 @@ def validate_grounded_candidate(
         source_snippet=candidate.source_quote,
         source_page=chunk.page_number,
         source_section=chunk.section,
-    )
+    ), None
 
 
 def append_if_distinct(

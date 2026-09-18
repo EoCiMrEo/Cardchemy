@@ -51,9 +51,11 @@ consumers, contracts and constraints against actual source.
 
 Cardchemy has instructor/student roles and browser → API → PostgreSQL workflows
 with separate generation and email workers. Read the canonical docs for detail.
-The roadmap records Phases 0–10 complete as of 2026-09-17 and Phase 11 open;
+The roadmap records Phases 0–11 complete as of 2026-09-17;
 refresh it for later work. Observability/privacy/export/audit are documented
-operator controls; release work remains open. Verify their current source and
+operator controls; the separate v1.0 operational readiness gate passed.
+Current published version remains 0.1.0; readiness completion did not publish v1.0.
+Verify their current source and
 limits rather than inferring completion from individual components.
 Follow accepted ADRs; do not invent replacement architecture or expand into
 adjacent phases without authorization. Supersede decisions explicitly when

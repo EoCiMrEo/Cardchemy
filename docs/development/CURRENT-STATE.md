@@ -1,13 +1,15 @@
 # Current Development State
 
-Snapshot: 2026-09-17. Phase 10 controls and Phase 11 source/documentation are
-implemented in this checkout. Publication remains gated on current verification
-and operator release evidence; no published release is asserted by this snapshot.
+Snapshot: 2026-09-18. Phases 0–11 are complete. The public v0.1.0 release
+contains independently verified keyless-signed image digests, checksums,
+source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
+passed, including an actual clean-machine production-profile recovery rehearsal.
 
 ## Current phase
 
-The [remediation plan](../../issues-required-remediation.md) records Phases 0–10
-complete. Phase 11 implementation and release verification are in progress.
+The [remediation plan](../../issues-required-remediation.md) records Phases 0–11
+complete. All eleven separate v1.0 operational readiness items passed; see
+[exact-source evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 Current product version is 0.1.0. The repository context system is implemented;
 its [completion log](../../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md) records its
 separate documentation scope.
@@ -37,10 +39,32 @@ supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
 belong to the roadmap; implementation/check details belong to the
 [dated log index](../../.agent/logs/README.md).
 The [Phase 10 closure log](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
-records current verification and its limits. Alembic head is `20260917_0008`;
-operators must apply the documented upgrade before starting this code.
+records its verification and limits at Alembic `20260917_0008`. The current
+working branch adds the mandatory pgvector foundation `20260918_0009` and
+private Subject Knowledge schema `20260918_0010`; operators must apply the
+documented configuration and database upgrade before starting this code.
 
 ## Current focus and known risks
+
+The separate [Subject-scoped RAG implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+is authorized through Preparation A/B and Phases 12-13. Preparation A prompt,
+diagnostic and offline-comparison implementation passed its offline and
+deterministic journey checks; on 2026-09-18 the operator accepted the authored
+card sample as "very good". Preparation B's definitive AI profile migration
+passed full offline backend/frontend, Compose, configuration and deterministic
+cross-stack checks. Phase 12 PostgreSQL/pgvector foundation and Phase 13
+private Subject Knowledge schema are implemented and passed their disposable
+database, recovery and RAG-off journey checks; installation, privacy,
+upload/versioning, initial models and separate-worker quota decisions are accepted
+in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md);
+these design decisions do not establish shipped Knowledge upload, indexing
+execution, retrieval, chat or Ask AI features. Those follow in Phases 14–21.
+The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
+and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
+logical restore into a separate fresh target; the existing volume path alone
+is not compatibility evidence. No paid provider calls were made.
+Actual checks and pending acceptance belong to the
+[implementation record](../../.agent/logs/2026-09-17/2026-09-17-rag-through-phase-13-implementation.md).
 
 Phase 10 diagnostics are content-free, bounded and best effort. Metrics are
 not a complete provider billing ledger and audits are not tamper-proof. Account
@@ -57,8 +81,10 @@ retain database/project identities and explicit authentication settings per
 The [demo](../DEMO.md) uses authored data and an offline provider; the
 [release guide](../RELEASING.md) defines exact-source keyless signing and
 verified draft publication. Name screening and its limits are recorded in
-[name review](../NAME-REVIEW.md). Hosted release, visibility/reporting activation
-and manual spoken accessibility evidence remain completion requirements.
+[name review](../NAME-REVIEW.md). The [published v0.1.0 release](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0),
+public repository/image pulls and private vulnerability reporting are verified.
+The user reported a successful Chrome/Narrator manual pass at 1920×1080;
+browser/assistive-technology versions were unknown and are recorded as such.
 
 ## Important constraints
 
@@ -81,9 +107,13 @@ and manual spoken accessibility evidence remain completion requirements.
 
 ## Next and maintenance
 
-Finish the authorized v0.1.0 release verification/publication. The separate
-v1.0 release gate remains open. Update this
-summary whenever a phase/milestone completes, and retain task
+The clean-machine [production recovery rehearsal](../PRODUCTION_REHEARSAL.md)
+and exact-source hosted CI passed. Actual authenticated local
+[TLS SMTP delivery/recovery](../SMTP-VERIFICATION.md) passed both supported modes.
+The v1.0 readiness gate is complete; current version remains 0.1.0 and no v1.0
+publication is performed. Repeat required release checks for future source
+changes and verify each deployment's own edge, relay and recovery goals.
+Update this summary whenever a phase/milestone completes, and retain task
 detail in the roadmap. For ongoing work read [orientation](../00-START-HERE.md),
 [project map](../../PROJECT-MAP.md), [ADR index](../decisions/ADR-000-INDEX.md)
 and [agent maintenance rules](../../AGENTS.md).

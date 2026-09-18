@@ -62,7 +62,7 @@ class GenerationWorker:
         self.job_service = GenerationJobService(self.settings)
         # One gate per worker process prevents concurrent jobs from multiplying
         # the configured provider-request concurrency.
-        self.provider_semaphore = asyncio.Semaphore(self.settings.ai_concurrency)
+        self.provider_semaphore = asyncio.Semaphore(self.settings.flashcard_ai_concurrency)
         # One rolling quota window is shared by every job in this worker
         # process. Provider retries reserve through this same governor.
         self.provider_rate_governor = ProviderRateGovernor.from_settings(
@@ -75,7 +75,7 @@ class GenerationWorker:
     async def run(self, stop_event: asyncio.Event) -> None:
         """Poll with bounded local concurrency until shutdown is requested."""
 
-        if not self.settings.ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled:
             logger.info("worker_disabled", extra={"kind": "generation"})
             try:
                 while not stop_event.is_set():
@@ -456,7 +456,7 @@ class GenerationWorker:
 
             await self._update_stage(job_id, claim_token, "generating_cards", 40)
             job_settings = self.settings.model_copy(
-                update={"ai_provider": job_provider, "ai_model": job_model}
+                update={"flashcard_ai_provider": job_provider, "flashcard_ai_model": job_model}
             )
             graph = create_flashcard_graph(
                 settings=job_settings,

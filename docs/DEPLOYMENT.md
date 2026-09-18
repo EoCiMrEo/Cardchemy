@@ -15,6 +15,7 @@ repository root:
 
 ```text
 python scripts/bootstrap_env.py
+python scripts/check_config_migration.py
 docker compose config --quiet
 docker compose up -d --build --wait
 docker compose exec backend python -m app.cli create-instructor --email instructor@example.com
@@ -24,7 +25,7 @@ The bootstrap command creates `.env` once, refuses to overwrite it, generates
 the database password and two application keys independently, and never prints
 their values. The application is at <http://127.0.0.1:8080>; Mailpit is at
 <http://127.0.0.1:8025>. A provider key is optional for startup but required to
-generate cards; set `AI_PROVIDER_ENABLED=true` only after configuring that key.
+generate cards; set `FLASHCARD_AI_PROVIDER_ENABLED=true` only after configuring that key.
 The API receives this non-secret switch while the credential remains isolated
 to the generation worker. Stop the stack with `docker compose down`; do not add
 `--volumes` unless destroying all local application data is intentional.
@@ -35,9 +36,11 @@ Use exactly one override at a time:
 
 ```text
 # Development: host DB/API ports, backend bind mounts, API reload
+python scripts/check_config_migration.py
 docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile development up -d --build --wait
 
 # Production: strict production settings, real encrypted SMTP, no Mailpit
+python scripts/check_config_migration.py
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile production config --quiet
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile production up -d --build --wait
 ```
@@ -125,11 +128,21 @@ docker compose stop -t 45 worker email-worker
 ## Volumes, backup, upgrades, and disaster recovery
 
 `postgres_data` contains all durable application records, outbox state, job
-state, and any short-lived encrypted source PDFs. `mailpit_data` is local/test
+state, private Subject Knowledge after capture is implemented, and any
+short-lived encrypted source PDFs. `mailpit_data` is local/test
 capture only and must not be used or restored in production. The frontend, API,
 and workers are replaceable images and have no durable filesystem state.
 
 Before an upgrade:
+
+The PostgreSQL 16/pgvector 0.8.6 Alpine transition needs a separate fresh ICU
+target for any earlier Debian/libc cluster. The database entrypoint refuses a
+populated unmarked or incompatible legacy volume before starting PostgreSQL.
+Back up and restore logically into the new target, verify it, and keep the old
+volume until the cutover decision. See the exact
+[database operations](DATABASE_OPERATIONS.md#moving-the-prior-debian-installation-to-the-reviewed-alpine-build)
+procedure. The operator's explicit approval to discard a particular local
+legacy volume does not change this default for other installations.
 
 Keep existing database/Compose project names and secrets while adopting new
 images. The [configuration upgrade note](CONFIGURATION.md#existing-installations-and-cardchemy-defaults)
@@ -195,3 +208,14 @@ docker run --rm cardchemy-backend:0.1.0 sh -c "! command -v gcc && ! command -v 
 
 The release image check should confirm that neither runtime contains build
 toolchains or test material, and record the optional OCR image size separately.
+
+The [clean-machine production rehearsal](PRODUCTION_REHEARSAL.md) verifies
+this production profile with a trusted local HTTPS edge and a current-head
+backup restored into a separate empty volume. Pair it with
+[actual local encrypted SMTP verification](SMTP-VERIFICATION.md).
+Deployment operators still verify their own TLS edge, relay and recovery goals.
+
+The database healthcheck probes internal loopback TCP. The official PostgreSQL
+image starts a temporary socket-only server during initialization; a Unix-socket
+probe can release the migration service before the final TCP server is ready.
+This healthcheck does not publish the database outside the Compose network.

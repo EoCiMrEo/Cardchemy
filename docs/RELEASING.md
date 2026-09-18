@@ -65,20 +65,31 @@ gh workflow run release-sbom.yml --repo EoCiMrEo/Cardchemy --ref main \
 
 The workflow refuses a different repository/ref/SHA, private or archived
 repository, disabled private vulnerability reporting, missing protection,
-absent exact-commit mandatory CI, an existing
-version tag/release, or an unverifiable registry-version absence. Its checks
-repeat before privileged work and tagging. It builds and probes backend,
+absent exact-commit mandatory CI, or an existing Git version tag/release. Its
+checks repeat before privileged work and tagging. It builds and probes backend,
 backend-ocr and frontend, rejects HIGH/CRITICAL vulnerabilities including
-unfixed findings, creates CycloneDX SBOMs, pushes versioned GHCR images and
-signs each immutable digest with Cosign using GitHub Actions OIDC.
+unfixed findings, and creates CycloneDX SBOMs. For each image it pushes one
+unique GHCR tag of the form
+`v0.1.0-<source SHA>-<workflow run ID>-<run attempt>`, records and checks the
+registry manifest digest, then signs/verifies that digest with Cosign using
+GitHub Actions OIDC. The run attempt distinguishes a rerun of the same workflow
+run. GHCR tags are mutable references; the signed `image@sha256:<digest>` is
+the supported pull identity. On the first release, GHCR creates private
+packages by default. On later releases, new tags can be visible immediately
+if those packages are already public. A visible tag before the signed draft
+exists is only a staged image, not evidence of a completed release. The
+workflow never pushes a short `:0.1.0` image tag.
 
 It archives the exact Git commit, prepares notes and image/source provenance,
 hashes the complete attachment inventory, then keylessly signs `SHA256SUMS`
 with a Sigstore verification bundle. It verifies those signatures before
-creating an annotated `v0.1.0` tag and a **draft** GitHub Release. The tag records
-the signed manifest's hash and points to the reviewed source; it is an
-annotated Git tag, **not a GPG-signed Git tag**. Cryptographic release trust
-comes from the keyless artifact/image signatures and their source binding.
+creating an annotated `v0.1.0` Git tag and a **draft** GitHub Release. Each
+image's unique GHCR tag and digest are included in its signed release inventory,
+and the workflow verifies that the remote tag resolves to the recorded manifest
+bytes. The annotated Git tag records the signed checksum manifest's hash and
+points to the reviewed source; it is **not a GPG-signed Git tag**.
+Cryptographic release trust comes from the keyless artifact/image signatures
+and their source binding.
 
 The attachment inventory includes `source-provenance.json`, `release-notes.md`,
 `cardchemy-0.1.0-source.tar.gz`, `SHA256SUMS`, `SHA256SUMS.sigstore.json` and,
@@ -96,14 +107,16 @@ checks to broad owner/identity patterns or disable transparency verification.
 
 ## Verify downloads and public image access
 
-GHCR packages initially default to private. In each package's Settings, make
-`cardchemy-backend`, `cardchemy-backend-ocr` and `cardchemy-frontend` public.
+GHCR packages initially default to private, though linked packages can inherit
+repository visibility. Check `cardchemy-backend`, `cardchemy-backend-ocr` and
+`cardchemy-frontend` individually. After readiness passes, make any private
+package public using its Settings.
 Repository visibility alone does not establish image visibility. Verify using
 an unauthenticated client with a new empty Docker configuration, then remove
 that temporary configuration. [GitHub documents the initial visibility and anonymous public pulls](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 Download **all** draft attachments into a new empty directory; do not mix them
-with a previous run. With independently installed, verified Cosign 3.0.6, run
+with a previous run. With independently installed, verified Cosign 3.1.3, run
 the following from that directory in a POSIX shell, replacing the source value
 with the independently reviewed SHA, not a value accepted solely from a download:
 
@@ -134,6 +147,8 @@ checksum inventory and the following bindings before deployment:
   and run, successful CI identity, and Linux/amd64 platform.
 - Each raw `.manifest.json` hashes to the released registry digest, and its
   config digest equals the image config ID in the matching `.build.json`.
+  The build record also names the unique version/source/run/attempt GHCR tag;
+  pull by the recorded digest, since the registry tag itself can later move.
 - The vulnerability audit and CycloneDX SBOM both identify that same image
   config. The audit contains no HIGH/CRITICAL findings and identifies
   Linux/amd64 plus the approved repository URL, source revision and version
@@ -158,8 +173,8 @@ cosign verify --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISS
 Repeat for `backend-ocr` and `frontend` using their own digests. Run Cosign
 with no registry credentials when establishing public access to signatures.
 Use the flags documented for the pinned
-[Cosign blob verifier](https://github.com/sigstore/cosign/blob/v3.0.6/doc/cosign_verify-blob.md)
-and [image verifier](https://github.com/sigstore/cosign/blob/v3.0.6/doc/cosign_verify.md).
+[Cosign blob verifier](https://github.com/sigstore/cosign/blob/v3.1.3/doc/cosign_verify-blob.md)
+and [image verifier](https://github.com/sigstore/cosign/blob/v3.1.3/doc/cosign_verify.md).
 
 Independently fetch the version tag and confirm its peeled commit equals
 `SOURCE_SHA`; verify its annotation names the SHA256 hash of the downloaded,
@@ -181,7 +196,18 @@ with operator records; Actions artifacts expire after 90 days.
 Deploy by verified digest using [DEPLOYMENT.md](DEPLOYMENT.md). A later rebuild
 from the same source can differ because base-image tags are mutable. Keep the
 inventory belonging to the exact deployed digest. Never overwrite a published
-version tag or versioned image, force-push history, or delete deployment data to
-repair a failed release. If a workflow fails after pushing images/tagging,
-inspect its retained evidence and partial state before deciding a reviewed
-recovery or a new version; an automatic retry deliberately refuses identity reuse.
+Git version tag or deliberately reuse a GHCR tag, force-push history, or delete
+deployment data to repair a failed release. GitHub Releases and GHCR do not
+provide one atomic cross-service transaction. A failure before the Git tag can
+leave unique image tags. A failure between tag creation and draft creation can
+leave the annotated source tag without a draft. A later failure may leave a signed
+draft. Existing public GHCR packages expose new tags during a later release
+run. **Do not newly make packages public or publish a draft after a failed
+workflow.** Inspect the retained Actions evidence,
+draft inventory, annotated tag target and message, image signatures, unique
+tag targets and every recorded digest. The normal workflow deliberately refuses
+reuse of an existing Git version tag/release, so it cannot repair a tag-only
+failure by rerunning. A maintainer must document and independently review an
+exact-source, exact-checksum completion of the existing draft or orphaned Git
+tag, or choose a new version after accounting for the partial state. Do not
+overwrite an existing tag or image to make a rerun appear successful.

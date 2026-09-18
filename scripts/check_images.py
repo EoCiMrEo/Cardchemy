@@ -57,7 +57,7 @@ from app.workers.generation import GenerationWorker
 assert "/auth/login" in app.openapi()["paths"]
 assert app.openapi()["info"]["title"] == "Cardchemy"
 assert "/health/live" in app.openapi()["paths"]
-assert GenerationWorker().settings.ai_provider_enabled is False
+assert GenerationWorker().settings.flashcard_ai_provider_enabled is False
 assert EmailWorker().settings.smtp_host == "127.0.0.1"
 
 password = "Generated runtime compatibility password"
@@ -242,7 +242,7 @@ def main() -> int:
             "DATABASE_URL": "postgresql+asyncpg://probe:probe@127.0.0.1:5432/runtime_probe_test",
             "SECRET_KEY": secrets.token_urlsafe(48),
             "GENERATION_SOURCE_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"),
-            "AI_PROVIDER_ENABLED": "false",
+            "FLASHCARD_AI_PROVIDER_ENABLED": "false",
             "SMTP_HOST": "127.0.0.1",
             "SMTP_PORT": "1025",
             "SMTP_FROM_EMAIL": "runtime-probe@example.com",

@@ -1,6 +1,6 @@
 # Agent Logs
 
-Last Updated: 2026-09-17
+Last Updated: 2026-09-18
 
 This directory records agent-visible development history for Cardchemy: what changed, why the work was needed, what problems appeared, how they were solved, and how the result was verified.
 
@@ -17,7 +17,15 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
-| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity and artwork, verification, release pipeline, and outstanding publication gates. |
+| 2026-09-18 | [RAG foundation and Knowledge schema closure](2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md) | Phase 12 guarded PG16/pgvector runtime and Phase 13 private Knowledge schema, exact artifact and disposable migration/recovery/integrity evidence, plus authorized legacy-volume and private `.env` key migration. |
+| 2026-09-17 | [RAG through Phase 13 implementation](2026-09-17/2026-09-17-rag-through-phase-13-implementation.md) | Preparation A/B implementation after G1/G2/G4/G6 approval and delegated G5 selection; accepted ADR/model boundaries, preserved working state and per-phase evidence. |
+| 2026-09-17 | [Flashcard quality offline comparison](2026-09-17/2026-09-17-flashcard-quality-offline-comparison.md) | Authored baseline-generation-renderer/refill replay, measured local outcomes and concrete four-card instructor review sample; no remote-model quality or paid-call claim. |
+| 2026-09-17 | [RAG through Phase 13 startup audit](2026-09-17/2026-09-17-rag-through-phase-13-startup-audit.md) | Three read-only audits, fresh backend/AI/config baselines and explicit G1/G2/G4/G5/G6 questions before implementation; plan and existing work preserved. |
+| 2026-09-17 | [Approved RAG plan update](2026-09-17/2026-09-17-rag-implementation-plan-update.md) | Updates the approved plan with flashcard quality/config preparations, independent Knowledge publication, explicit design gates and complete RAG verification/privacy/recovery contracts; no implementation. |
+| 2026-09-17 | [Flashcard prompts and RAG plan review](2026-09-17/2026-09-17-flashcard-prompts-and-rag-plan-review.md) | Read-only source review of prompt yield, definitive AI profile migration and subject-scoped RAG; records independent Knowledge publication and required plan contracts before approval. |
+| 2026-09-17 | [v1.0 release gate](2026-09-17/2026-09-17-v1-release-gate.md) | All eleven readiness items verified: exact-source CI, actual local encrypted SMTP and passing clean-machine production backup/restore. |
+| 2026-09-17 | [Phase 11 remediation](2026-09-17/2026-09-17-phase-11-remediation.md) | Governance, Cardchemy identity, signed public v0.1.0 publication and separate v1.0 readiness work. |
+| 2026-09-17 | [Local encrypted SMTP verification](2026-09-17/2026-09-17-local-smtp-tls-verification.md) | Actual authenticated STARTTLS/implicit-TLS delivery, certificate rejection, durable retry and guarded recovery with disposable local capture. |
 | 2026-09-17 | [Phase 11 demo](2026-09-17/2026-09-17-phase-11-demo.md) | Bounded disposable production-build/Nginx demonstration, private generated sign-in, no provider calls and verified cleanup. |
 | 2026-09-17 | [Phase 11 readiness audit](2026-09-17/2026-09-17-phase-11-readiness-audit.md) | Read-only release/governance, branding and documentation/demo audits; verified remote identity and recorded required owner decisions before implementation. |
 | 2026-09-17 | [Phase 10 remediation](2026-09-17/2026-09-17-phase-10-remediation.md) | Safe structured logging/correlation, operational metrics and worker health, transactional audit, provider disclosure and guarded retention/export/deletion; isolated verification and limits. |

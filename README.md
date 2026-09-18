@@ -83,7 +83,7 @@ override root values, then validated defaults apply. Only public `VITE_*`
 values reach the browser.
 
 Generation starts disabled. Configure the generation worker's credential/model
-and set `AI_PROVIDER_ENABLED=true` before uploading for AI generation. Calls can
+and set `FLASHCARD_AI_PROVIDER_ENABLED=true` before uploading for AI generation. Calls can
 spend provider quota. Compose isolates AI credentials to that worker and SMTP
 credentials to the email worker. [Configuration](docs/CONFIGURATION.md) defines
 ranges, consumers and applying changes. Stop with `docker compose down`,

@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!database-entrypoint.sh
+!verify-initial-profile.sh
+!.dockerignore
+!.gitattributes

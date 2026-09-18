@@ -12,8 +12,12 @@ Priority labels:
 
 ## Verified baseline and next work (2026-09-17)
 
-- Phases 0-10 are recorded complete. Phase 11 remains for open-source release
-  and branding. Phase 10 closure evidence is recorded in
+- Phases 0-11 are recorded complete; signed public v0.1.0 publication is
+  recorded in [Phase 11 evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+  The separate v1.0 operational readiness gate passed; current version remains
+  0.1.0. [Gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md)
+  records exact-source CI, actual local TLS SMTP and clean-machine recovery.
+  Phase 10 evidence is in
   [the dated remediation log](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
 - Phase 10 verification: 259 offline backend cases, 34 PostgreSQL cases with
   head/drift and full disposable downgrade/re-upgrade, three Mailpit cases,
@@ -683,12 +687,12 @@ and contribute to.
 - [x] **P0** Add a root README containing product scope, screenshots, architecture,
   prerequisites, quick start, configuration, upgrades, backups, limitations,
   privacy notes, and troubleshooting.
-- [ ] **P0** Publish and verify the single root `.env.example` and configuration
+- [x] **P0** Publish and verify the single root `.env.example` and configuration
   guidance completed in Phase 9A; do not reintroduce backend/frontend examples
   or a second user-managed `.env` file.
 - [x] **P1** Add `CONTRIBUTING.md`, `SECURITY.md`, Code of Conduct, pull-request
   template, and issue templates.
-- [ ] **P1** Document a responsible vulnerability-reporting channel and supported
+- [x] **P1** Document a responsible vulnerability-reporting channel and supported
   release versions.
 - [x] **P1** remove stale `idea.md` claims about Instructor Toolkits,
   RAG/pgvector, Redis/Celery, OCR, PWA/offline, testing, and CI; move unfinished
@@ -704,19 +708,19 @@ and contribute to.
   social handles, and trademarks before adopting it.
 - [x] **P1** Add sample data or a demo path that does not require spending real AI
   quota.
-- [ ] **P1** Publish signed/tagged releases with release notes, checksums, images,
+- [x] **P1** Publish signed/tagged releases with release notes, checksums, images,
   and SBOMs.
 - [x] **P2** Add a public roadmap that clearly distinguishes shipped features
   from planned work.
 
 ### Brand assets and UI rollout
 
-Asset review (2026-09-16): the supplied files are in `frontend/public/` but are
-not wired into the UI. Both dashboard headers still render
-`copy.common.appName = 'Flashcard Generator'`; `frontend/index.html` uses
-`/cards.svg` (not `/card.svg`) as its favicon and already has the title
-`Cardchemy`. This checklist plans the rollout; adding the assets does not
-complete the rebrand.
+Historical pre-implementation asset review (2026-09-16): the supplied files were in `frontend/public/` but were
+not wired into the UI. Both dashboard headers rendered
+`copy.common.appName = 'Flashcard Generator'`; `frontend/index.html` used
+`/cards.svg` (not `/card.svg`) as its favicon and already had the title
+`Cardchemy`. The completed checklist below records the subsequent rollout;
+the shared wordmark and `/favicon.ico` are now implemented and verified.
 
 | Asset | Intended role |
 | --- | --- |
@@ -764,26 +768,45 @@ operate, upgrade, and contribute to the project using only repository
 documentation, and the packaged UI/browser tab consistently use the approved
 Cardchemy branding without accessibility or responsive-layout regressions.
 
+Completion evidence (2026-09-17): the repository and root template are public,
+private vulnerability reporting is enabled, and [v0.1.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0)
+publishes all 17 verified attachments and three independently verified signed
+GHCR image digests. Anonymous asset downloads/image pulls passed. See the
+[Phase 11 closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+The separate v1.0 operational readiness checklist below also passed; completing
+readiness does not publish a v1.0 version or tag.
+
 ---
 
 ## v1.0 release gate
 
 Do not publish v1.0 until all of the following are true:
 
-- [ ] All P0 items are complete.
+- [x] All P0 items are complete.
 - [x] Phase 9A repository cleanup is verified with no lost regression coverage,
   and root `.env` is the sole documented file-based configuration source.
-- [ ] No known critical/high vulnerability is reachable without a documented,
+- [x] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.
-- [ ] Authentication and cross-subject authorization tests pass.
-- [ ] Database migration, backup, restore, and upgrade tests pass.
-- [ ] PDF jobs are bounded, durable, cancellable, and recoverable.
-- [ ] Transactional email passes Mailpit integration and end-to-end tests;
+- [x] Authentication and cross-subject authorization tests pass.
+- [x] Database migration, backup, restore, and upgrade tests pass.
+- [x] PDF jobs are bounded, durable, cancellable, and recoverable.
+- [x] Transactional email passes Mailpit integration and end-to-end tests;
   production SMTP setup and failure recovery are documented and verified.
-- [ ] Frontend typecheck, lint, tests, accessibility checks, and production build
+- [x] Frontend typecheck, lint, tests, accessibility checks, and production build
   pass.
-- [ ] A fresh-clone production deployment has been tested on a clean machine.
-- [ ] Documentation, license, privacy disclosure, security policy, and release
+- [x] A fresh-clone production deployment has been tested on a clean machine.
+- [x] Documentation, license, privacy disclosure, security policy, and release
   artifacts are complete.
-- [ ] The end-to-end instructor/student journey passes without manual database or
+- [x] The end-to-end instructor/student journey passes without manual database or
   source-code changes.
+
+**Readiness completed 2026-09-17:** all eleven items are supported by
+[gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+[Clean-machine production/recovery 35266166852](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166852)
+and [exact-source CI 35266166793](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166793)
+passed at protected source `79e3212cfa682ee0d9f643a03d45aeea66502162`.
+Actual authenticated local STARTTLS/implicit-TLS delivery and failure recovery,
+public signed v0.1.0 artifacts, and the accurately recorded human spoken check
+complete the evidence. Paid-provider quality, external SMTP/DNS/mailbox delivery
+and each operator's hosting/recovery goals remain site-specific checks.
+The current published version is **0.1.0**; no v1.0 publication is performed.

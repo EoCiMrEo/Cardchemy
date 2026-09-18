@@ -1,6 +1,6 @@
 # Data Model
 
-Current truth verified against code: 2026-09-16.
+Current truth verified against code: 2026-09-18.
 
 ## Purpose and scope
 
@@ -20,6 +20,7 @@ evolution. Account deletion/export are operator CLI controls described in
 | [models/email.py](../../backend/app/models/email.py) | `email_outbox_messages`: durable email delivery state linked to reset or invitation rows. |
 | [models/operations.py](../../backend/app/models/operations.py) | `request_events`, `worker_heartbeats`: content-free request timing/correlation and worker-loop health. |
 | [models/audit.py](../../backend/app/models/audit.py) | `audit_events`: fixed-field privileged state changes, committed with their domain mutation. |
+| [models/knowledge.py](../../backend/app/models/knowledge.py) | `rag_embedding_spaces`, `knowledge_storage_usage`, `subject_documents`, content revisions/pages, index revisions/chunks/jobs: private Subject Knowledge, revision identity, reserved capacity and durable indexing target. |
 
 ## Primary relationships and flow
 
@@ -29,6 +30,15 @@ progress row per card. A generation job belongs to an instructor and subject,
 has at most one encrypted source and at most one result set. Generation
 completion stages the set/cards and job result in one transaction. Study
 updates stage the answer receipt and progress in one transaction.
+
+Subject Knowledge is an independent durable store. A document belongs to its
+Subject's instructor; immutable content revisions own canonical pages, review
+and publication. Index revisions own chunks, full embedding-space snapshots and
+1,536-dimensional vectors. An index job targets one exact index revision and
+captures the Subject corpus revision. Generation jobs may authoritatively link
+one document; sets carry a nullable navigation link. Existing jobs/sets have no
+document link, and deleting job history leaves Knowledge intact. The schema
+does not itself upload files, execute indexing or expose retrieval routes.
 
 ## Important invariants
 
@@ -48,6 +58,15 @@ updates stage the answer receipt and progress in one transaction.
   explicit approval action.
 - Status/interval bounds, nonnegative counters, job claims/completion and email
   claim/terminal-state checks protect persisted state.
+- Knowledge starts private and cannot enter the eligible chunk view until its
+  content and index revisions are active and ready, the content revision is
+  reviewed/published, and the Subject's active embedding space matches. This
+  view is an eligibility predicate, not principal authorization; future
+  retrieval also checks current Subject owner/enrollment in its SQL.
+- The PostgreSQL schema guards document, page, chunk/vector and aggregate
+  Subject/uploader/deployment count and byte reservations under one ordered
+  transaction advisory lock. Charges cover reserved payload, including
+  private/staged/failed retained revisions, not PostgreSQL overhead/WAL/backups.
 
 ## Deletion ownership and edge cases
 
@@ -60,6 +79,8 @@ updates stage the answer receipt and progress in one transaction.
 | Generation job | Source cascades; result set's `generation_job_id` and quota event's `job_id` become null. Learning content and quota charges survive job-history deletion. |
 | Reset or invitation | Linked outbox messages cascade. |
 | Audit actor account | Actor becomes null; opaque resource/subject IDs and transition history remain until configured audit cleanup. |
+| Knowledge document | Content revisions/pages and index revisions/chunks/jobs cascade. Generation-job and set links detach; the job records a capture-removal tombstone; flashcards survive. |
+| Subject or instructor | Owned Knowledge cascades with its Subject; ordinary generation-history deletion does not cascade Knowledge. |
 
 Rate-limit buckets have no user foreign key and do not participate in account
 cascades. Quota charges survive subject/job deletion but cascade with their
@@ -70,7 +91,8 @@ alone do not prove them.
 ## Sources, verification and related decisions
 
 The [migration chain](../../backend/alembic/versions/) currently ends at
-`20260917_0008`; [database startup](../../backend/app/database.py) verifies the
+`20260918_0010`, requiring PostgreSQL 16 and pgvector 0.8.6 even with RAG off;
+[database startup](../../backend/app/database.py) verifies the
 database matches all configured heads. Never infer the live database revision
 from this code snapshot. See [database operations](../DATABASE_OPERATIONS.md),
 [PostgreSQL integrity tests](../../backend/tests/postgres/test_database_integrity.py),

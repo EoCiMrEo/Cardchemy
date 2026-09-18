@@ -152,8 +152,13 @@ tolerate that narrow ambiguity.
 
 ## Sender-domain responsibility
 
-The deployment operator owns deliverability and domain reputation. Before
-sending production mail:
+An operator-owned local or LAN relay is supported; an online provider is not
+required. The [local encrypted SMTP verifier](SMTP-VERIFICATION.md) exercises
+actual TLS delivery and failure recovery without external mail. Verify routing
+and receipt on the installation's own relay before relying on it.
+
+The deployment operator owns deliverability and domain reputation. When the
+relay sends mail outside the local installation:
 
 1. Authorize the chosen relay in the sender domain's SPF record.
 2. Enable DKIM signing at the relay and publish its selector records.

@@ -179,7 +179,7 @@ class GenerationJobService:
 
     async def _check_reservation_capacity(self, db: AsyncSession, user_id: UUID) -> None:
         await self._lock_admission(db)
-        if not self.settings.ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled:
             raise generation_http_error(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "ai_provider_not_configured",
@@ -316,8 +316,8 @@ class GenerationJobService:
             set_description=(data.set_description or "").strip() or None,
             requested_card_count=data.card_count,
             source_pdf_name=filename,
-            ai_provider=self.settings.ai_provider,
-            ai_model=self.settings.ai_model,
+            ai_provider=self.settings.flashcard_ai_provider,
+            ai_model=self.settings.flashcard_ai_model,
             max_attempts=self.settings.generation_max_attempts,
             available_at=now,
             upload_expires_at=now
@@ -647,7 +647,7 @@ class GenerationJobService:
         )
         _, reset_at = self._day_bounds()
         unavailable_reasons: list[GenerationLimitReason] = []
-        if not self.settings.ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled:
             unavailable_reasons.append(
                 GenerationLimitReason(
                     code="ai_provider_not_configured",
@@ -677,9 +677,9 @@ class GenerationJobService:
             )
         return GenerationLimitsResponse(
             generation_available=not unavailable_reasons,
-            ai_provider=self.settings.ai_provider,
-            ai_model=self.settings.ai_model,
-            ai_pricing_configured=self.settings.ai_pricing_configured,
+            ai_provider=self.settings.flashcard_ai_provider,
+            ai_model=self.settings.flashcard_ai_model,
+            ai_pricing_configured=self.settings.flashcard_ai_pricing_configured,
             unavailable_reasons=unavailable_reasons,
             max_upload_bytes=self.settings.pdf_max_upload_bytes,
             max_pages=self.settings.pdf_max_pages,

@@ -721,6 +721,10 @@ passlib==1.7.4 \
     --hash=sha256:aa6bca462b8d8bda89c70b382f0c298a20b5560af6cbfa2dce410c0a2fb669f1 \
     --hash=sha256:defd50f72b65c5402ab2c573830a6978e5f202ad0d984793c8dde2c4152ebe04
     # via -r requirements.in
+pgvector==0.5.0 \
+    --hash=sha256:07a9dcf735696879406983afc6eba9a787cef7c0cf6c367ca1a5779f036dee74 \
+    --hash=sha256:fedc9800894e6da2be51358d7b7c574bf34f247ca741a5a09513622135f5964f
+    # via -r requirements.in
 pyasn1==0.6.4 \
     --hash=sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81 \
     --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b

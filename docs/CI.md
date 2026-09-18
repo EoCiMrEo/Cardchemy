@@ -10,12 +10,37 @@ bounded timeouts and fresh dependency installations. Paid AI requests are exclud
 | --- | --- |
 | `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow and repository-context/link validation |
 | `postgres-migrations` | Disposable PostgreSQL; constraints, transactions and concurrency; Alembic head and drift checks; full downgrade to base and upgrade to head |
-| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts |
+| `database-artifact` | Validate pinned PostgreSQL/pgvector recipe inputs, LF/hash/platform/data path; build/probe immutable Linux/amd64 bytes; prove vector and legacy-to-ICU logical recovery; fail on HIGH/CRITICAL Trivy findings and retain configuration/archive/recipe-bound CycloneDX and provenance |
+| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts; authenticated local STARTTLS/implicit-TLS, certificate rejection and failure recovery |
 | `frontend` | `npm run check`: types, lint, unit tests, component coverage, production build and Chromium browser contracts; emitted bundle budgets |
 | `journey` | `python scripts/test_journey.py`: real instructor creation, PDF generation with an offline provider, review/publication, invitation, student study and persisted progress |
 | `dependency-audit` | Fresh `pip-audit --require-hashes --strict` against the complete development lock; `npm audit --audit-level=low` across all npm scopes, plus explicit shipped-dependency audit |
 | `secret-scan` | Gitleaks scans full Git history with redacted findings; Trivy scans the current source worktree |
 | `containers (backend)` / `(backend-ocr)` / `(frontend)` | Final Linux runtime builds; native-library/auth/PDF/OCR and edge smoke probes; Trivy fails on HIGH/CRITICAL OS and application vulnerabilities, including vulnerabilities without fixes; CycloneDX SBOM artifacts |
+
+The database artifact inventory is [`runtime-artifacts.json`](../runtime-artifacts.json).
+It records the reviewed local recipe and immutable base/source/input identities.
+The shared helper verifies recipe label, supported platform and actual runtime
+prerequisites, then returns immutable bytes for every disposable consumer.
+The CI-equivalent archive harness exports that identity and binds the audit to
+the archive's image-configuration digest. Docker's local identity can represent
+an OCI index; a configuration digest is recorded separately rather than equated
+with it. Reports retain inventory/recipe inputs, image/index/configuration and
+archive hashes, fresh advisory metadata, scanner identity and report checksums.
+Keep this evidence with deployment records. Database reports are retained for
+30 days in CI. The three-image signed application release workflow does not
+publish/sign this database image; upstream signature verification is not claimed.
+Any changed recipe/input requires a new identity and passing scan/recovery proof.
+
+The local equivalent is `python scripts/test_database_artifact.py` using the
+backend development Python. It exports the immutable reviewed database image,
+downloads a fresh public advisory database into a disposable 4 GiB cache, then
+disconnects scanner networking before analysis. It fails on HIGH/CRITICAL
+findings, including unfixed vulnerabilities. Audit, CycloneDX SBOM, image and
+scanner identities, archive hash and report checksums remain under ignored
+`artifacts/database-artifact/<run-id>`. Owned scanner containers and exports
+are removed; no operator environment, application content or database volume is
+mounted. A local pass does not establish a hosted CI pass.
 
 Service runners generate isolated credentials, bind random ports to loopback,
 use no persistent volumes and remove containers in cleanup. They do not use the
@@ -44,10 +69,19 @@ documentation links (external URLs and historical bodies are excluded),
 `python scripts/check_coverage.py backend/coverage.json`,
 `python scripts/test_services.py postgres`,
 `python scripts/test_services.py mailpit`,
-`python scripts/test_journey.py` and `python scripts/check_ci.py`.
+`python scripts/test_smtp_tls.py`,
+`python scripts/test_journey.py`, `python scripts/check_runtime_artifacts.py`
+and `python scripts/check_ci.py`.
 From `frontend`, `npm run check` is the authoritative frontend gate; run
 `node ../scripts/check_bundle.mjs` after its production build. See
 [AI evaluation](AI_EVALUATION.md) for explicit opt-in live-provider validation.
+
+The manual read-only [production recovery rehearsal](PRODUCTION_REHEARSAL.md)
+runs on a fresh Ubuntu runner from protected main. It separately verifies a
+clean clone, strict production Compose, trusted HTTPS edge and a checksummed
+backup restored into a second empty volume. It is release evidence rather than
+part of the required per-PR aggregator. No operator secrets or external AI/mail
+services are injected.
 
 Backend coverage includes every application module, including operational
 entry points; only `TYPE_CHECKING` guards are excluded. The Phase 9 measured
@@ -126,17 +160,22 @@ restricted to the approved public repository's `main` and an exact reviewed
 main SHA with successful mandatory CI. It does not run on release publication,
 which avoids recursive preparation. Its preflight is read-only; only the
 release job can write contents/packages and request an OIDC signing identity.
-A short-lived `RELEASE_READINESS_TOKEN`, scoped to this repository with
-Administration read-only, supplies the protection read unavailable to the
-ordinary workflow token. See [the release procedure](RELEASING.md) for setup
+A short-lived `CARDCHEMY_RELEASE_READINESS_TOKEN` secret, scoped to this
+repository with Administration read-only and mapped to the job's
+`RELEASE_READINESS_TOKEN` environment variable, supplies the protection read
+unavailable to the ordinary workflow token. See [the release procedure](RELEASING.md) for setup
 and revocation; tokens do not belong in source, settings files or logs.
 
 The job builds/probes/scans all three final Linux/amd64 runtimes, rejects
-HIGH/CRITICAL findings, creates CycloneDX SBOMs and publishes versioned GHCR
-images with immutable digest records. It keylessly signs/verifies the images,
-packages exact-commit source, notes and source/build provenance, and signs the
-complete checksum manifest with a Sigstore bundle. It creates an annotated
-version tag and attaches verified files to a **draft** GitHub Release. The
+HIGH/CRITICAL findings, and creates CycloneDX SBOMs. It pushes one unique
+`v<version>-<source SHA>-<run ID>-<attempt>` GHCR tag per image, records each
+manifest digest, and keylessly signs/verifies those digests. The tags may be
+immediately visible on later releases once the GHCR packages are public; the
+signed digests are the supported pull identities. The workflow packages
+exact-commit source, notes and provenance, signs the complete checksum manifest
+with a Sigstore bundle, verifies the remote tags against its digest inventory,
+then creates an annotated Git version tag and attaches verified files to a
+**draft** GitHub Release. It never pushes a short `:<version>` GHCR tag. The
 maintainer verifies downloaded artifacts, source/tag bindings and anonymous
 access to all three GHCR packages/signatures before publishing the draft.
 
@@ -206,9 +245,13 @@ and [Trivy action v0.36.0](https://github.com/aquasecurity/trivy-action/commit/e
 Release preparation additionally uses
 [download-artifact v4.3.0](https://github.com/actions/download-artifact/commit/d3f86a106a0bac45b974a628896c90dbdf5c8093)
 and [Cosign installer v4.1.2](https://github.com/sigstore/cosign-installer/commit/6f9f17788090df1f26f669e9d70d6ae9567deba6),
-with Cosign explicitly pinned to v3.0.6. The release-only action owner and
+with Cosign explicitly pinned to v3.1.3. The release-only action owner and
 permissions are checked by `scripts/check_ci.py`.
 Trivy's scanner version is explicitly v0.70.0 and
+[its release cache is held in the runner's temporary directory](https://github.com/aquasecurity/trivy-action#inputs)
+so later release readiness checks see the same clean source checkout.
+The patched Cosign pin addresses the legacy-bundle verification advisory
+[GHSA-fx35-mq7g-6g98](https://github.com/sigstore/cosign/security/advisories/GHSA-fx35-mq7g-6g98).
 [Gitleaks is v8.24.2 with the official GHCR manifest digest](https://github.com/gitleaks/gitleaks/pkgs/container/gitleaks).
 When updating pins verify the official release/commit and review upstream
 changes; a version comment does not replace commit verification.

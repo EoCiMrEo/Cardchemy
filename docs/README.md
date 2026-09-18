@@ -10,6 +10,7 @@ implementation remains the final source of truth.
 [System overview](architecture/SYSTEM-OVERVIEW.md),
 [data model](architecture/DATA-MODEL.md), [auth](architecture/AUTH-FLOW.md),
 [AI generation](architecture/AI-GENERATION-FLOW.md),
+[Subject Knowledge](architecture/SUBJECT-KNOWLEDGE-FLOW.md),
 [study/progress](architecture/STUDY-PROGRESS-FLOW.md) and
 [accepted ADRs](decisions/ADR-000-INDEX.md).
 
@@ -25,6 +26,7 @@ them for operational detail rather than copying their setting tables/commands.
 | [Configuration](CONFIGURATION.md) | Root settings, ranges, precedence, service consumers and applying changes |
 | [Runtimes](RUNTIMES.md) | Supported runtime/platform versions |
 | [Deployment](DEPLOYMENT.md) | Compose variants, TLS/edge, draining, volumes, image/recovery procedures |
+| [Production rehearsal](PRODUCTION_REHEARSAL.md) | Clean-machine production installation, TLS and separate-volume backup/restore checks |
 | [Database operations](DATABASE_OPERATIONS.md) | Migration chain, backup/restore and safe rollback |
 | [Observability](OBSERVABILITY.md) | Safe logs/errors/correlation, retained metrics, worker health, privileged audits and optional numeric reporting |
 | [Privacy](PRIVACY.md) | Provider disclosure, data lifecycle, operator export/deletion and bounded metadata retention |
@@ -32,8 +34,11 @@ them for operational detail rather than copying their setting tables/commands.
 | [PDF generation](PDF_GENERATION.md) | Upload contract, bounds, encrypted-source retention, OCR and operations |
 | [AI generation](AI_GENERATION.md) | Grounding, packing, budgets, validation, quality and telemetry contracts |
 | [AI providers](AI_PROVIDERS.md) | Provider configuration, retry/error and request governance |
+| [AI profile migration](AI_PROFILE_MIGRATION.md) | Hard rename from `AI_*`, private credential migration and operator drain/restart order |
 | [AI evaluation](AI_EVALUATION.md) | Fixed corpus, thresholds and explicitly opted-in paid evaluation |
+| [RAG evaluation](RAG_EVALUATION.md) | Authored Subject Knowledge corpus, retrieval/support/security criteria and live-evaluation boundary |
 | [Email delivery](EMAIL_DELIVERY.md) | SMTP, Mailpit, outbox retry/ambiguity and operator recovery |
+| [SMTP verification](SMTP-VERIFICATION.md) | Actual authenticated local TLS delivery, certificate rejection and durable failure recovery |
 | [Testing](TESTING.md) | Maintained suites, safe harnesses and live/gated boundaries |
 | [CI](CI.md) | Mandatory jobs, budget/scanning/protection contracts and recorded baselines |
 | [Dependencies](DEPENDENCIES.md) | Dependency/hashed-lock policy and tooling |
