@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 import jwt
 from jwt import InvalidTokenError
-from passlib.context import CryptContext
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,12 +20,12 @@ from app.config import get_settings
 from app.models.flashcard import Enrollment
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, User, UserRole
 from app.schemas.user import TokenData, UserCreate
+from app.services import passwords
 from app.time_utils import as_utc, utcnow
 
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
-DUMMY_PASSWORD_HASH = pwd_context.hash("timing-only-password-value")
+DUMMY_PASSWORD_HASH = passwords.hash_password("timing-only-password-value")
 
 
 def db_utcnow() -> datetime:
@@ -54,14 +53,11 @@ class AuthService:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        return pwd_context.hash(password)
+        return passwords.hash_password(password)
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        try:
-            return pwd_context.verify(plain_password, hashed_password)
-        except (TypeError, ValueError):
-            return False
+        return passwords.verify_password(plain_password, hashed_password)
 
     @staticmethod
     def _encode_token(
