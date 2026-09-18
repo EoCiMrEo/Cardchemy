@@ -68,6 +68,59 @@ def test_gemini_sdk_retry_layer_is_explicitly_disabled():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status,expected_attempts", [(429, 2), (404, 1)])
+async def test_installed_gemini_sdk_wire_contract_has_one_retry_owner(
+    monkeypatch, status, expected_attempts
+):
+    """Exercise the actual SDK with an in-memory transport, without provider calls."""
+    from google import genai
+    from google.genai import types
+
+    attempts = []
+    delays = []
+
+    async def handler(request):
+        attempts.append(request)
+        payload = json.loads(request.content)
+        assert payload["generationConfig"]["responseMimeType"] == "application/json"
+        assert payload["generationConfig"]["responseJsonSchema"]["type"] == "object"
+        if len(attempts) == 1:
+            return httpx.Response(status, json={"error": {"code": status, "message": "synthetic failure"}})
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"role": "model", "parts": [{"text": '{"value":"ok"}'}]}}],
+            "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 7},
+        })
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.ai.providers.asyncio.sleep", record_sleep)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+        sdk = genai.Client(api_key="synthetic-test-only-key", http_options=types.HttpOptions(
+            httpx_async_client=transport, retry_options=types.HttpRetryOptions(attempts=1)
+        ))
+        try:
+            adapter = GeminiProvider(settings(), client=sdk)
+            arguments = dict(response_model=Output, system_prompt="trusted synthetic instruction",
+                             user_prompt="synthetic evidence", max_output_tokens=100, operation="sdk_contract")
+            if status == 404:
+                with pytest.raises(AIProviderError, match="selected model"):
+                    await adapter.generate_structured(**arguments)
+                assert delays == []
+            else:
+                response = await adapter.generate_structured(**arguments)
+                assert response.data.value == "ok"
+                assert response.usage.input_tokens == 11
+                assert response.usage.output_tokens == 7
+                assert delays == [3]
+            assert len(attempts) == expected_attempts
+            assert adapter.telemetry_snapshot().request_count == expected_attempts
+        finally:
+            await sdk.aio.aclose()
+            sdk.close()
+
+
+@pytest.mark.asyncio
 async def test_gemini_adapter_uses_schema_system_boundary_and_usage():
     models = GeminiModels(cached_input_tokens=4)
     client = SimpleNamespace(aio=SimpleNamespace(models=models))
