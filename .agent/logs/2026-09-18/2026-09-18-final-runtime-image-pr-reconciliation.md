@@ -36,3 +36,27 @@ The combined branch is prepared for the repository's context, CI-structure and
 diff checks. Hosted CI and final GitHub merge are pending at this checkpoint.
 No paid model call, provider request, production deployment, database
 migration, secret inspection or volume operation was performed for this PR.
+
+## Dependabot replacement and final policy
+
+While this reconciliation was being prepared, Dependabot marked #24 obsolete,
+closed it without a merge and deleted its branch. Dependabot immediately opened
+replacement PR #25 at `312fbb8fb5450fb3450691e4c48ac68cc27162ad`. It
+proposes changing only the frontend build stage from pinned Node 24.21.0 to
+pinned Node 26.8.2; current `docs/RUNTIMES.md` supports Node 24.x. The earlier
+push recreated #24's deleted branch, but did not reopen or change that closed
+PR. Its commits remain isolated and must be cleaned up after final merge.
+
+The #25 head was normally merged into this isolated branch with merge commit
+`9c42bce`, preserving the Dependabot commit in ancestry and resolving the
+resulting Dockerfile to exact protected-main Node 24 bytes. The effective
+runtime remains unchanged. The Docker `dependabot.yml` entry now ignores only
+major `node` version updates; minor and patch releases, other Docker images,
+and security updates remain eligible. [GitHub's Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference)
+documents `dependency-name` plus `version-update:semver-major` in `ignore`.
+This prevents another automatic unsupported-major replacement PR while a future
+Node-major upgrade can be planned, verified and explicitly supported.
+
+The #25 branch must pass context/CI structure checks locally and all
+current-base hosted checks before its protected merge. No Node 26 runtime
+claims or live-provider claims result from this reconciliation.
