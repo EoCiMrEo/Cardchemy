@@ -49,3 +49,14 @@ Live GitHub branch protection was inspected read-only in Settings: PR flow,
 and no administrator bypass are enabled; force pushes/deletions are disabled.
 No settings were modified. The 14 runtime/diagnostic/identity contracts pass,
 CI structure passes, and context validates 37 files/65 guides/874 local links.
+
+## Feature merge completed
+
+PR #23 head `6c833653b88ede6a0bfd679e58f56703129fd083` passed all 13 mandatory
+jobs in hosted CI run `35376050704`, including the corrected exact database
+scan/SBOM gate. Dependency review passed and there were no review threads.
+GitHub merged it normally into protected main at
+`62796df3efd420cb140308eae4d0eec73acd13a7`, verified by the merge result and
+subsequent PR metadata (`merged=true`, 2026-09-18T17:46:43Z). No protections
+were bypassed. The remaining dependency and historical-plan PRs are being
+prepared against that exact main revision.
