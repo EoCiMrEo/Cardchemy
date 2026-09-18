@@ -15,6 +15,8 @@ verification workflow.
 - [Auth service](../../backend/app/services/auth.py) and
   [user schemas](../../backend/app/schemas/user.py): normalized identity,
   password hashing, typed JWT validation, sessions and invitation/reset consumption.
+- [Password records](../../backend/app/services/passwords.py): direct bcrypt
+  with preserved v2/v1 wrapper and legacy raw bcrypt verification contracts.
 - [Subject router](../../backend/app/routers/subjects.py) and
   [subject service](../../backend/app/services/subject.py): invitation creation/
   acceptance and owner/enrollment authorization.
@@ -58,8 +60,9 @@ verification workflow.
 - Refresh tokens are cookie-only: HttpOnly, SameSite `lax`/`strict`, path
   `/auth`; Secure is required in production. They are absent from response JSON.
 - Emails are trimmed/lowercased; the database enforces normalized uniqueness.
-  Password inputs are 8–128 characters; hashing uses `bcrypt_sha256` and can
-  verify legacy bcrypt hashes.
+  Password inputs are 8–128 characters; direct bcrypt creates the same
+  `bcrypt_sha256` v2 records, verifies historic v1/raw records and preserves
+  full-password wrapper semantics. Raw legacy bcrypt retains its 72-byte limit.
 - Forgot-password replies are generic and SMTP runs in a separate worker.
   PostgreSQL-backed rate limits protect sensitive endpoints; identifiers are hashed.
 - Root `.env` is the sole user-managed configuration file. Production rejects

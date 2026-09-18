@@ -33,7 +33,8 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 ## Common change paths
 
 - Authentication: [routers/auth.py](app/routers/auth.py) →
-  [services/auth.py](app/services/auth.py) → [models/user.py](app/models/user.py),
+  [services/auth.py](app/services/auth.py) →
+  [services/passwords.py](app/services/passwords.py) / [models/user.py](app/models/user.py),
   with [frontend auth](../frontend/MOC.md) and [auth flow](../docs/architecture/AUTH-FLOW.md).
 - Subjects, manual cards and publication: [routers/subjects.py](app/routers/subjects.py) /
   [routers/flashcards.py](app/routers/flashcards.py) →

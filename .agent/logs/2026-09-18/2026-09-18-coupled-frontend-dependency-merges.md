@@ -14,10 +14,11 @@ Applied the React review skill and verified official Vite, Vitest, ESLint and
 React migration/fetching guidance against the affected source.
 
 Normal merges preserve the feature head `4a5bea7`, the original dependency heads
-below, and protected main through `f32a1c8` (including hosted scan ownership
-remediation and historical plan reconciliation). No history rewrites, forced
-peer installs or protected-branch bypasses were used. Local commits are handed
-to the coordinating task; this worktree does not push or merge GitHub PRs.
+below, and protected main through `f1c138c` (including hosted scan ownership,
+historical plan reconciliation and bcrypt 5 password compatibility). No history
+rewrites, forced peer installs or protected-branch bypasses were used. Local
+commits are handed to the coordinating task; this worktree does not push or
+merge GitHub PRs.
 
 | PR | Original head | Concrete failure |
 | --- | --- | --- |
@@ -53,8 +54,6 @@ to the coordinating task; this worktree does not push or merge GitHub PRs.
 
 ## Verification and limits
 
-- Node 24.7.0; verified npm 11.19.1. Clean `npm ci`: 354 packages, zero audit
-  vulnerabilities, no peer overrides.
 - Exact npm 11.19.1 clean install passed: 354 packages installed, 355 audited,
   zero vulnerabilities and no peer override. The first full-gate attempt stopped
   at lint because a temporary Corepack download had been placed under
@@ -78,8 +77,13 @@ to the coordinating task; this worktree does not push or merge GitHub PRs.
   environment passed migration, generation, review, publication, enrollment,
   invitation email, durable answer/progress proof and browser contracts; all
   generated processes, containers, data, fixture and credentials were removed.
-- Workflow/context contracts passed before this final log update; the final
-  current-main rerun is recorded below after integration.
+- After normally merging current protected main `f1c138c`, both additive log and
+  changelog conflicts retained the frontend and bcrypt records. Frontend package
+  and lock content remained byte-identical to the verified pre-merge commit;
+  `npm ls --all` exited successfully with platform/feature-specific optional
+  packages absent as expected. `scripts/check_ci.py` passed all workflow,
+  protection and budget contracts; `scripts/check_context.py` passed 37 required
+  files, 67 active guides and 895 local links; final diff validation passed.
 - Exact-image vulnerability/SBOM review is coordinated separately by the image
   audit subagent; hosted current-base CI and remote merge remain the parent
   task's responsibility. No paid AI, production delivery or deployment claim.

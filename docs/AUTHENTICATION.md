@@ -41,6 +41,23 @@ rotated, stored only in an HttpOnly SameSite cookie, and linked to a server-side
 session with a 30-day absolute lifetime. Reusing an older refresh token revokes
 that session. Logout and password reset also revoke server-side sessions.
 
+## Password records and dependency upgrades
+
+Password inputs remain 8–128 characters. The direct `bcrypt` backend creates
+the existing Passlib-compatible `bcrypt_sha256` v2 format: UTF-8 password,
+HMAC-SHA256 keyed by the ASCII bcrypt salt, standard base64, then cost-12 bcrypt.
+The whole password participates, including Unicode and NUL characters.
+Verification also accepts historic v1 SHA256/base64 wrappers and raw
+`$2$`, `$2a$`, `$2b$`, and `$2y$` records. Raw bcrypt retains its original
+72-byte truncation and rejects NUL; changing a suffix beyond that boundary
+cannot change an old raw hash. A password reset writes a current v2 record.
+Malformed or unsupported records fail authentication with no hash/password log.
+
+The backend no longer depends on Passlib. Installing the regenerated hashed
+locks upgrades bcrypt without rewriting stored password records or requiring a
+database migration. See [the compatibility decision](decisions/ADR-013-password-hash-compatibility.md)
+and [password contract tests](../backend/tests/test_password_hashes.py).
+
 ## Password recovery
 
 Password recovery queues a single-use, 30-minute link in the transactional
