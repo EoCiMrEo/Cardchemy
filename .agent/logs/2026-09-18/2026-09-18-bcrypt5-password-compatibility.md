@@ -82,3 +82,21 @@ operation ran. The full Windows offline suite and actual Python 3.11 runtime
 probes provide distinct evidence; the full Python 3.11 suite and PostgreSQL,
 Mailpit/journey/security gates still require current-head hosted CI before merge.
 No push or GitHub merge was performed by this subtask.
+
+## Final branch reconciliation
+
+Compatibility implementation commit `56c3825` was preserved before incorporating
+Dependabot's automatically refreshed remote head `a2461ce` through normal merge
+`5bff7f6`. The only authoritative-input disagreement was removal of Passlib;
+resolution retained the tested direct input and its already regenerated Windows
+locks, with pgvector unchanged. No commit was rebased or force-pushed.
+
+Protected main subsequently merged PR #23 at `62796df` and historical-plan PR
+#12 at `f32a1c8`, each after all thirteen required hosted jobs passed (reported by
+the coordinating merge agent and verified in fetched merge history). The latest
+main was incorporated normally; the log-index conflict preserved both histories.
+PR #12 contains documentation only, so context validation was repeated without
+claiming another runtime test run. The new password critical-file floor passed
+against the measured report, and the strict complete Python audit passed for
+81 dependencies with zero known vulnerabilities. Current-head hosted checks
+remain required for this dependency branch before its GitHub merge.
