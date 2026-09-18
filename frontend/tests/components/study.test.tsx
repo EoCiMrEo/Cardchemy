@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { configureStore } from '@reduxjs/toolkit'
 import { Provider } from 'react-redux'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import StudyMode from '@/pages/student/StudyMode'
 import studyReducer from '@/store/slices/studySlice'
 import type { StudyAnswerResponse, StudyCard } from '@/services/types'
@@ -56,9 +56,32 @@ it('cancels an in-flight answer when the card is unmounted', async () => {
 it('recovers a session load failure using the requested review mode', async () => {
   mocks.session.mockRejectedValueOnce(new Error('offline')); mount('?mode=review_all')
   fireEvent.click(await screen.findByRole('button', { name: copy.common.retry })); await screen.findByText(card.front_content)
-  expect(mocks.session).toHaveBeenLastCalledWith('set-1', 20, 'review_all')
+  expect(mocks.session).toHaveBeenLastCalledWith('set-1', 20, 'review_all', expect.any(AbortSignal))
 })
 it('shows an accessible caught-up state when there are no due cards', async () => {
   mocks.session.mockResolvedValue({ cards: [], time_limit: null }); mount(); await screen.findByRole('heading', { name: copy.study.allCaughtUp })
   await waitFor(() => expect(document.activeElement?.textContent).toBe(copy.study.allCaughtUp))
+})
+
+it('hides the previous session during navigation and ignores its delayed response', async () => {
+  let resolveOld!: (value: { cards: StudyCard[]; time_limit: null }) => void
+  let resolveNew!: (value: { cards: StudyCard[]; time_limit: null }) => void
+  mocks.session.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve }))
+    .mockReturnValueOnce(new Promise(resolve => { resolveNew = resolve }))
+  const store = configureStore({ reducer: { study: studyReducer } })
+  render(<Provider store={store}><MemoryRouter initialEntries={['/study/set-1']}>
+    <Link to="/study/set-2?mode=review_all">New session</Link>
+    <Routes><Route path="/study/:id" element={<StudyMode />} /></Routes>
+  </MemoryRouter></Provider>)
+  const oldSignal = mocks.session.mock.calls[0][3] as AbortSignal
+  fireEvent.click(screen.getByText('New session'))
+  expect(oldSignal.aborted).toBe(true)
+  expect(screen.getByRole('status', { name: copy.study.loading })).toBeTruthy()
+  const newCard = { ...card, id: 'card-2', set_id: 'set-2', front_content: 'New question' }
+  await act(async () => { resolveNew({ cards: [newCard], time_limit: null }) })
+  await screen.findByText(newCard.front_content)
+  await act(async () => { resolveOld({ cards: [card], time_limit: null }) })
+  expect(screen.queryByText(card.front_content)).toBeNull()
+  expect(store.getState().study.currentSessionId).toBe('set-2')
+  expect(store.getState().study.cards).toEqual([newCard])
 })

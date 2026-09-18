@@ -64,27 +64,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearSession])
 
-  const checkAuth = useCallback(async () => {
+  const restoreSession = useCallback(() => {
     const operation = ++authOperation.current
-    setIsLoading(true)
-    try {
-      await refreshAccessToken()
+    return refreshAccessToken().then(() => {
       if (authOperation.current !== operation) return
-      const profile = await authService.getProfile()
-      if (authOperation.current === operation) setUser(profile)
-    } catch {
+      return authService.getProfile().then((profile) => {
+        if (authOperation.current === operation) setUser(profile)
+      })
+    }).catch(() => {
       if (authOperation.current === operation) clearSessionState()
-    } finally {
+    }).finally(() => {
       if (authOperation.current === operation) setIsLoading(false)
-    }
+    })
   }, [clearSessionState])
 
+  const checkAuth = useCallback(async () => {
+    setIsLoading(true)
+    await restoreSession()
+  }, [restoreSession])
+
   useEffect(() => {
-    void checkAuth()
+    void restoreSession()
     return () => {
       authOperation.current += 1
     }
-  }, [checkAuth])
+  }, [restoreSession])
 
   useEffect(() => {
     window.addEventListener('auth:session-ended', handleSessionEnded)

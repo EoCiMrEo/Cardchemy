@@ -38,9 +38,16 @@ function validateEdit(values: EditValues): string | null {
 
 export default function SetView() {
   const { id } = useParams<{ id: string }>()
+  return <SetViewContent key={id} />
+}
+
+function SetViewContent() {
+  const { id } = useParams<{ id: string }>()
   const [set, setSet] = useState<FlashcardSet | null>(null)
   const [cards, setCards] = useState<Flashcard[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadedId, setLoadedId] = useState<string | null>(null)
+  const loading = loadedId !== id
+  const loadControllerRef = useRef<AbortController | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -51,26 +58,34 @@ export default function SetView() {
   const [approvingAll, setApprovingAll] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
-  const loadData = useCallback(async () => {
-    if (!id) return
-    setLoadError(null)
-    setLoading(true)
-    try {
-      const [setData, cardsData] = await Promise.all([
-        subjectService.getSet(id),
-        flashcardService.getCards(id),
-      ])
+  const loadData = useCallback(() => {
+    if (!id) return Promise.resolve()
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    return Promise.all([
+      subjectService.getSet(id, controller.signal),
+      flashcardService.getCards(id, controller.signal),
+    ]).then(([setData, cardsData]) => {
+      if (controller.signal.aborted) return
+      setLoadError(null)
       setSet(setData)
       setCards(cardsData)
-    } catch (caught: unknown) {
-      setLoadError(apiErrorMessage(caught, copy.setReview.loadFailed))
-    } finally {
-      setLoading(false)
-    }
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setLoadError(apiErrorMessage(caught, copy.setReview.loadFailed))
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadedId(id)
+    })
   }, [id])
+
+  const reloadData = () => {
+    setLoadedId(null)
+    void loadData()
+  }
 
   useEffect(() => {
     void loadData()
+    return () => loadControllerRef.current?.abort()
   }, [loadData])
 
   const startCardAction = (cardId: string): boolean => {
@@ -180,7 +195,7 @@ export default function SetView() {
     return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
   }
 
-  if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
+  if (loadError) return <PageError message={loadError} onRetry={reloadData} />
 
   return (
     <div className="space-y-6">

@@ -5,7 +5,7 @@ FROM node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --global npm@11.19.1 && npm ci
 
 COPY index.html postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts ./
 COPY config ./config

@@ -5,6 +5,11 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Aligned coupled frontend dependency upgrades (Vite 8/React plugin 6, ESLint 10
+  and Vitest/coverage 5), with the declared npm resolver in the Docker builder.
+  Route loaders cancel old requests and hide previous Subject/session data;
+  generation polling preserves Subject scope through failures and late retries.
+
 - Upgraded bcrypt to 5.0.0 and replaced Passlib with direct bcrypt while
   preserving current full-password v2 hashes, historic v1 wrappers and legacy
   raw bcrypt verification. Stored password records require no migration.

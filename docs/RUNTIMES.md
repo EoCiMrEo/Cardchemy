@@ -97,6 +97,8 @@ the application runtime contract. The official image manifests and source
 revisions were verified before pinning. Native and OCR smoke tests accompany
 these patches, and hosted CI still tests Python 3.11 and 3.13.
 
-The npm version is declared in `frontend/package.json`. Python runtime packages
+The npm version is declared in `frontend/package.json` and explicitly installed
+in the frontend Docker builder before `npm ci`; host CI and image builds use
+the same lockfile resolver. Python runtime packages
 are pinned with hashes in `backend/requirements*.txt`; update them only through
 `backend/scripts/lock_dependencies.ps1` and verify both Python 3.11 and 3.13.

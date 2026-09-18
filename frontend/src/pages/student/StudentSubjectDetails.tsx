@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { subjectService } from "@/services/subjects"
 import { studyService } from "@/services/study"
@@ -13,56 +13,63 @@ import { copy } from "@/i18n/en"
 
 export default function StudentSubjectDetails() {
   const { id } = useParams<{ id: string }>()
+  return <StudentSubjectContent key={id} />
+}
+
+function StudentSubjectContent() {
+  const { id } = useParams<{ id: string }>()
   const [subject, setSubject] = useState<Subject | null>(null)
   const [sets, setSets] = useState<FlashcardSet[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadedId, setLoadedId] = useState<string | null>(null)
+  const loading = loadedId !== id
+  const loadControllerRef = useRef<AbortController | null>(null)
   const [progressMap, setProgressMap] = useState<Record<string, SetProgress>>({})
   const [loadError, setLoadError] = useState<string | null>(null)
   const [progressWarning, setProgressWarning] = useState<string | null>(null)
 
-  const loadData = useCallback(async (signal?: AbortSignal) => {
-    if (!id) return
-    setLoadError(null)
-    setProgressWarning(null)
-    try {
-      setLoading(true)
-      const [subData, setsData] = await Promise.all([
-        subjectService.getSubject(id),
-        subjectService.getSets(id)
-      ])
-      if (signal?.aborted) return
+  const loadData = useCallback(() => {
+    if (!id) return Promise.resolve()
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    const { signal } = controller
+    return Promise.all([
+      subjectService.getSubject(id, signal),
+      subjectService.getSets(id, signal),
+    ]).then(([subData, setsData]) => {
+      if (signal.aborted) return
+      setLoadError(null)
       setSubject(subData)
       setSets(setsData)
-
-      const progressResults = await Promise.allSettled(
-        setsData
-          .filter((set) => set.is_published)
-          .map(async (set) => [set.id, await studyService.getSetProgress(set.id)] as const),
-      )
-      if (signal?.aborted) return
-      const successful = progressResults.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
-      setProgressMap(Object.fromEntries(successful))
-      if (successful.length !== progressResults.length) {
-        setProgressWarning(copy.studentSubject.progressPartial)
-      }
-    } catch (caught: unknown) {
-      if (!signal?.aborted) {
-        setLoadError(apiErrorMessage(caught, copy.studentSubject.loadFailed))
-      }
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
+      return Promise.allSettled(
+        setsData.filter((set) => set.is_published)
+          .map(async (set) => [set.id, await studyService.getSetProgress(set.id, signal)] as const),
+      ).then((progressResults) => {
+        if (signal.aborted) return
+        const successful = progressResults.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+        setProgressMap(Object.fromEntries(successful))
+        setProgressWarning(successful.length !== progressResults.length ? copy.studentSubject.progressPartial : null)
+      })
+    }).catch((caught: unknown) => {
+      if (!signal.aborted) setLoadError(apiErrorMessage(caught, copy.studentSubject.loadFailed))
+    }).finally(() => {
+      if (!signal.aborted) setLoadedId(id)
+    })
   }, [id])
 
+  const reloadData = () => {
+    setLoadedId(null)
+    void loadData()
+  }
+
   useEffect(() => {
-    const controller = new AbortController()
-    void loadData(controller.signal)
-    return () => controller.abort()
+    void loadData()
+    return () => loadControllerRef.current?.abort()
   }, [loadData])
 
   if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" /></div>
 
-  if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
+  if (loadError) return <PageError message={loadError} onRetry={reloadData} />
 
   return (
     <div className="space-y-6">
@@ -81,7 +88,7 @@ export default function StudentSubjectDetails() {
       {progressWarning ? (
         <div className="flex items-center justify-between gap-4 rounded border border-amber-200 bg-amber-50 p-3" role="alert">
           <p className="text-sm text-amber-800">{progressWarning}</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void loadData()}>{copy.common.retry}</Button>
+          <Button type="button" variant="outline" size="sm" onClick={reloadData}>{copy.common.retry}</Button>
         </div>
       ) : null}
 

@@ -64,6 +64,10 @@ Use the backend development environment's Python (on Windows,
 `python -m pip install --require-hashes -r backend/requirements-dev.txt` and
 `npm ci` from `frontend`; install Chromium with
 `npx playwright install --with-deps chromium` where the platform requires it.
+The frontend Docker builder also installs the declared npm 11.19.1 before
+`npm ci`; dependency updates must satisfy the same peer graph in host and image
+builds. Keep coupled Vite/React-plugin/Tailwind, ESLint/js and Vitest/coverage
+upgrades aligned per [dependency policy](DEPENDENCIES.md).
 Run this offline command from `backend`:
 
 ```sh

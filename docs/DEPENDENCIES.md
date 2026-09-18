@@ -43,6 +43,14 @@ Tailwind, TypeScript, and ESLint. Playwright and axe run the maintained browser
 and accessibility checks; install the pinned Chromium runtime with
 `npx playwright install chromium` before `npm run check` on a new host.
 
+Upgrade coupled frontend peers together: ESLint and `@eslint/js` use major 10;
+Vite 8 pairs with React plugin 6 and a Tailwind Vite plugin that supports Vite 8.
+Vitest and `@vitest/coverage-v8` must share the exact version (currently 5.0.0).
+Regenerate the lock with the declared npm 11.19.1, which the Docker builder also
+installs, and verify a clean `npm ci`, the complete frontend gate and the image
+runtime smoke. Resolve incompatible peers instead of using forced installs or
+disabling lint rules, coverage or browser checks.
+
 Normal tests use injected providers and fixtures. The live AI evaluation is
 separately opted in with `RUN_LIVE_AI_TESTS=1` and configured provider
 credentials, and may consume quota. See [AI_EVALUATION.md](AI_EVALUATION.md).

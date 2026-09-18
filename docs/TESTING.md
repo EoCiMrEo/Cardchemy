@@ -24,6 +24,9 @@ Install the browser once from `frontend` using
 The frontend check and browser runner inject API_PORT=8000 and VITE_API_URL=/api
 for all stages; the public loader then avoids reading root .env. Individual
 development/build commands retain the normal root configuration contract.
+Component regressions include aborted and delayed Subject/session responses,
+immediate loading on navigation, and generation jobs staying in their Subject
+scope after poll failures or late mutation responses.
 
 The service/journey harnesses ignore operator application environment values
 and root `.env`, generate credentials in private temporary storage, bind
