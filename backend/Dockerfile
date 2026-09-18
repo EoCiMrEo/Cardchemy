@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # Build native wheels and the virtual environment away from the runtime image.
-FROM python:3.11.16-alpine3.24@sha256:0495f5559318affa673172ec7e35cd0a5213e4aaf4c76d0a66554c0af97b157e AS dependency-builder
+FROM python:3.14.6-alpine3.24@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92 AS dependency-builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -19,7 +19,7 @@ RUN python -m venv /opt/venv \
 # The final image contains runtime libraries and application code only. OCR is
 # opt-in and is intentionally installed here because its executables are needed
 # while jobs run, not while Python dependencies build.
-FROM python:3.11.16-alpine3.24@sha256:0495f5559318affa673172ec7e35cd0a5213e4aaf4c76d0a66554c0af97b157e AS runtime
+FROM python:3.14.6-alpine3.24@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92 AS runtime
 
 ARG INSTALL_OCR=false
 
