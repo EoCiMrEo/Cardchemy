@@ -16,8 +16,8 @@ import tempfile
 from uuid import uuid4
 
 from test_services import (
-    ROOT, cleanup_containers, docker, port, run_service_tests, system_environment,
-    wait_postgres_ready, wait_ready,
+    ROOT, cleanup_containers, docker, ensure_database_image, port,
+    run_service_tests, system_environment, wait_postgres_ready, wait_ready,
 )
 
 
@@ -87,6 +87,7 @@ def certificates(directory: Path) -> None:
 
 
 def main() -> int:
+    database_image, database_platform = ensure_database_image()
     suffix = uuid4().hex[:12]
     names: list[str] = []
     with tempfile.TemporaryDirectory(prefix="cardchemy-smtp-tls-") as temporary:
@@ -109,7 +110,8 @@ def main() -> int:
             database = f"cardchemy-smtp-tls-db-{suffix}"
             names.append(database)
             docker("run", "--rm", "-d", "--name", database,
-                   "--env-file", str(database_env), "-p", "127.0.0.1::5432", "postgres:16")
+                   "--platform", database_platform, "--env-file", str(database_env),
+                   "-p", "127.0.0.1::5432", database_image)
             tcp_port = port(database, 5432)
             wait_postgres_ready(tcp_port, database_password, "smtp_tls_test")
             database_url = f"postgresql+asyncpg://qa:{database_password}@127.0.0.1:{tcp_port}/smtp_tls_test"

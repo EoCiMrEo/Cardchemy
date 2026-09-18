@@ -22,6 +22,7 @@ from app.models.email import EmailOutboxMessage
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, RateLimitBucket, User
 from app.time_utils import as_utc, utcnow
+from app.services.knowledge_lock import acquire_knowledge_write_lock
 
 
 class PrivacyOperationError(ValueError):
@@ -117,6 +118,7 @@ async def delete_account(db: AsyncSession, user_id: UUID) -> dict[str, int]:
     stopped. Locks prevent claims/inserts racing the commit; already-running
     generation or SMTP claims cause a refusal rather than a remote side effect.
     """
+    await acquire_knowledge_write_lock(db)
     user = await db.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise PrivacyOperationError("account_not_found", "Account was not found.")
@@ -177,6 +179,11 @@ async def cleanup_retention(db: AsyncSession, settings: Settings, dry_run: bool 
     """
     from app.models.audit import AuditEvent
     from app.models.operations import RequestEvent, WorkerHeartbeat
+
+    if not dry_run:
+        # Old generation history can be linked to durable Knowledge. Admission
+        # precedes its FOR UPDATE rows, preserving document-delete lock order.
+        await acquire_knowledge_write_lock(db)
 
     now = utcnow()
     metadata_cutoff = now - timedelta(days=settings.database_metadata_retention_days)

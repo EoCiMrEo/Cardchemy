@@ -1,6 +1,6 @@
 # AI Generation Flow
 
-Current truth, verified against source on 2026-09-16. Start with
+Current truth, verified against source on 2026-09-17. Start with
 [project orientation](../00-START-HERE.md) and the [project map](../../PROJECT-MAP.md).
 
 ## Purpose and scope
@@ -71,6 +71,11 @@ flowchart LR
    verified quote. Page/section come from the server, never from model output.
    A deterministic pass rejects unclear/ungrounded cards and near duplicates;
    bounded refill rounds request only the missing global count.
+   Versioned generation/map/reduce prompts request feasible assigned targets,
+   compact parallel options and exact contiguous quote/answer spans. Refill passes
+   bounded accepted question/answer exclusions as untrusted context; summaries
+   remain navigation aids. Full accepted cards retain deterministic duplicate
+   enforcement. See [evaluation](../AI_EVALUATION.md) for bounds and evidence.
 8. Success requires exactly the requested number of cards. A final transaction
    revalidates the lease, creates the unpublished set and unapproved cards,
    records telemetry, deletes the source, and completes the job. A rollback
@@ -137,6 +142,17 @@ mean cost unavailable. Telemetry is finalized on success or handled failure;
 process crashes or cancellation before finalization can omit attempts. It is
 not an exact provider billing ledger.
 
+Pipeline-only content-free quality diagnostics separately expose prompt versions,
+raw/grounded/distinct/accepted/missing counts per round, fixed rejection categories,
+refill use and uncertain request counts. They preserve existing persisted count
+semantics and exclude content and source IDs. Preflight includes rendered reduction
+overhead and a bounded refill envelope. Actual rendered context and remaining-job
+input/output/cost reservations protect concurrent requests; completed responses
+reconcile to usage while failures/cancellation conservatively retain uncertain
+capacity until the run ends. Summary output planning remains estimated, so later
+rendered checks and reported usage are authoritative. No output-cap, allocation,
+grounding or strict complete-result threshold changed.
+
 ## Relevant source paths and validation
 
 - UI: [SubjectDetails.tsx](../../frontend/src/pages/instructor/SubjectDetails.tsx),
@@ -152,6 +168,7 @@ not an exact provider billing ledger.
   [PDF processor](../../backend/app/services/pdf_processor.py),
   [active graph facade](../../backend/app/agents/graph.py).
 - AI: [pipeline](../../backend/app/ai/pipeline.py),
+  [versioned prompts](../../backend/app/ai/prompts.py),
   [chunking](../../backend/app/ai/chunking.py),
   [contracts](../../backend/app/ai/contracts.py),
   [grounding](../../backend/app/ai/grounding.py),

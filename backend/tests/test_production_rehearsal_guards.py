@@ -33,10 +33,10 @@ def test_volume_removal_requires_exact_name_and_both_owner_labels(name, project,
 
 
 def test_rehearsal_filters_inherited_live_credentials(monkeypatch):
-    for key in ("SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD", "AI_API_KEY", "GEMINI_API_KEY", "GITHUB_TOKEN"):
+    for key in ("SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD", "FLASHCARD_AI_API_KEY", "RAG_AI_API_KEY", "RAG_EMBEDDING_API_KEY", "AI_API_KEY", "GEMINI_API_KEY", "GITHUB_TOKEN"):
         monkeypatch.setenv(key, "not-a-real-secret")
     filtered = rehearsal.environment()
-    assert not {"SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD", "AI_API_KEY", "GEMINI_API_KEY", "GITHUB_TOKEN"} & filtered.keys()
+    assert not {"SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD", "FLASHCARD_AI_API_KEY", "RAG_AI_API_KEY", "RAG_EMBEDDING_API_KEY", "AI_API_KEY", "GEMINI_API_KEY", "GITHUB_TOKEN"} & filtered.keys()
 
 
 def test_recovered_set_verification_uses_computed_collection_counts():

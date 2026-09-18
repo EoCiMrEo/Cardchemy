@@ -222,7 +222,7 @@ async def test_short_metadata_grace_cannot_forget_a_retained_manual_retry_receip
     await db.commit()
     db.expire_all()
     assert await db.get(GenerationQuotaEvent, charge_id) is not None
-    service = GenerationJobService(Settings(_env_file=None, ai_provider_enabled=True,
+    service = GenerationJobService(Settings(_env_file=None, flashcard_ai_provider_enabled=True,
                                             generation_source_retry_retention_hours=168,
                                             database_metadata_retention_days=1))
     replayed = await service.retry(db, job_id=job_id, user_id=owner_id, idempotency_key=key)

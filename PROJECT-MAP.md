@@ -16,13 +16,14 @@ give the next level of detail.
 | Sets/cards | [flashcards router](backend/app/routers/flashcards.py), [flashcard service](backend/app/services/flashcard.py), [schemas](backend/app/schemas/flashcard.py) | CRUD, strict four-option validation, approval/publication |
 | Generation admission | [generation router](backend/app/routers/generation.py), [generation service](backend/app/services/generation.py) | Job reservation, raw-PDF upload, quotas, polling/cancel/manual retry |
 | Generation execution | [worker entry](backend/app/worker.py), [generation worker](backend/app/workers/generation.py), [compatibility facade](backend/app/agents/graph.py) | Lease claims, extraction, pipeline invocation, fencing and atomic result |
-| AI quality/providers | [pipeline](backend/app/ai/pipeline.py), [grounding](backend/app/ai/grounding.py), [providers](backend/app/ai/providers/__init__.py), [rate governor](backend/app/ai/rate_limit.py) | Evidence packing, typed output, duplicate rejection, one retry owner and request budgets |
+| AI quality/providers | [pipeline](backend/app/ai/pipeline.py), [prompts](backend/app/ai/prompts.py), [grounding](backend/app/ai/grounding.py), [providers](backend/app/ai/providers/__init__.py), [rate governor](backend/app/ai/rate_limit.py) | Evidence packing, versioned prompts/refill exclusions, typed output, fixed quality diagnostics, duplicate rejection, one retry owner and request budgets |
 | PDF/source protection | [PDF processor](backend/app/services/pdf_processor.py), [source storage](backend/app/services/source_storage.py) | Subprocess bounds, optional OCR, encrypted temporary sources |
 | Study/progress | [study router](backend/app/routers/study.py), [flashcard service](backend/app/services/flashcard.py), [models](backend/app/models/flashcard.py) | Eligibility, due/review-all queries, server grading/scheduling and receipts |
 | Transactional email | [email service](backend/app/services/email.py), [worker entry](backend/app/email_worker.py), [email worker](backend/app/workers/email.py), [outbox model](backend/app/models/email.py) | Atomic enqueue, safe templates, SMTP delivery and ambiguity recovery |
 | Operators | [CLI](backend/app/cli.py), [health probe](backend/app/healthcheck.py), [shutdown](backend/app/workers/shutdown.py) | Instructor bootstrap, queue status/retry and process health/drain |
 | Diagnostics/privacy/audit | [safe diagnostics](backend/app/observability.py), [operations](backend/app/services/operations.py), [privacy](backend/app/services/privacy.py), [audit](backend/app/services/audit.py) | Correlation/errors, retained aggregate metrics, worker-loop health, operator lifecycle and transactional privileged history |
-| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260917_0008` head; schema constraints/triggers |
+| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260918_0010` head; Subject Knowledge constraints/triggers and mandatory vector extension |
+| Subject Knowledge foundation | [Knowledge models](backend/app/models/knowledge.py), [Knowledge lock](backend/app/services/knowledge_lock.py) | Private document/content/index revisions, reserved capacity, eligible-record predicate and durable index-job target; capture/retrieval routes follow later |
 
 ## Frontend
 
@@ -55,6 +56,15 @@ give the next level of detail.
   [frontend Dockerfile](frontend/Dockerfile) and [Nginx](frontend/nginx.conf)
   define the runtime. [Vite](frontend/vite.config.ts) and the
   [public loader](frontend/config/environment.mjs) define browser configuration.
+- [Database inventory](runtime-artifacts.json), the
+  [reviewed database recipe](docker/database/Dockerfile), and the
+  [database image helper](scripts/runtime_database.py) own the pinned
+  PostgreSQL 16/pgvector build and verified immutable consumer identity.
+  [Artifact scanning](scripts/test_database_artifact.py),
+  [vector recovery](scripts/test_pgvector_restore.py), and
+  [prior-installation recovery](scripts/test_database_volume_upgrade.py)
+  verify security and disposable restore contracts; see
+  [database operations](docs/DATABASE_OPERATIONS.md).
 - Backend [tests](backend/tests) separate offline, `postgres/`, and opt-in
   `integration/`; frontend [Node units](frontend/tests), [component tests](frontend/tests/components)
   and [E2E](frontend/e2e) cover client contracts.

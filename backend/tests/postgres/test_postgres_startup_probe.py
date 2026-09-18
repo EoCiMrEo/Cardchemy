@@ -18,6 +18,7 @@ def test_compose_probe_waits_for_final_tcp_server_during_delayed_initialization(
     helpers = runpy.run_path(str(root / "scripts/test_services.py"))
     docker = helpers["docker"]
     cleanup_containers = helpers["cleanup_containers"]
+    database_image, database_platform = helpers["ensure_database_image"]()
     command = yaml.safe_load((root / "docker-compose.yml").read_text(encoding="utf-8"))["services"]["db"]["healthcheck"]["test"]
     assert command[0] == "CMD-SHELL" and len(command) == 2
     # This is the actual maintained health command, with only Compose's
@@ -48,9 +49,10 @@ def test_compose_probe_waits_for_final_tcp_server_during_delayed_initialization(
         try:
             docker(
                 "run", "--rm", "-d", "--name", name, "--network", "none",
+                "--platform", database_platform,
                 "--env-file", str(environment_file),
                 "--mount", f"type=bind,source={initialization},target=/docker-entrypoint-initdb.d/99-delayed-startup.sh,readonly",
-                "postgres:16",
+                database_image,
             )
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:

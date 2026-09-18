@@ -11,6 +11,7 @@ On a clean clone, from the repository root:
 
 ```text
 python scripts/bootstrap_env.py
+python scripts/check_config_migration.py
 docker compose config --quiet
 docker compose up -d --build --wait
 docker compose exec backend python -m app.cli create-instructor --email instructor@example.com
@@ -24,7 +25,7 @@ explicit CLI `--allow-additional` option. See [authentication operations](../AUT
 At template defaults the application is [127.0.0.1:8080](http://127.0.0.1:8080)
 and local email capture is [127.0.0.1:8025](http://127.0.0.1:8025).
 The migrate service runs before API/workers. Generation remains disabled until
-provider settings/credential are configured and `AI_PROVIDER_ENABLED=true`.
+provider settings/credential are configured and `FLASHCARD_AI_PROVIDER_ENABLED=true`.
 Recreate the API/generation worker to apply the switch/settings; enabling can
 spend provider quota. See [AI providers](../AI_PROVIDERS.md).
 
@@ -37,6 +38,7 @@ discarding an existing database. For upgrades/recovery follow
 Use one override at a time, from root:
 
 ```text
+python scripts/check_config_migration.py
 docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile development up -d --build --wait
 ```
 
@@ -71,7 +73,8 @@ Reuse an existing supported environment instead of recreating it. POSIX uses
 the development override (or use a separately managed PostgreSQL 16 instance):
 
 ```text
-docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile development up -d --wait db mailpit
+python scripts/check_config_migration.py
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile development up -d --build --wait db mailpit
 ```
 
 This infrastructure-only command does not stop an already running API/worker.

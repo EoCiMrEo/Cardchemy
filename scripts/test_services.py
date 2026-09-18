@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
+import json
 import os
 from pathlib import Path
 import re
@@ -17,6 +19,24 @@ import time
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
+DATABASE_ARTIFACT = json.loads((ROOT / "runtime-artifacts.json").read_text(encoding="utf-8"))["database"]
+DATABASE_IMAGE = DATABASE_ARTIFACT["image"]
+DATABASE_PLATFORM = DATABASE_ARTIFACT["supported_platform"]
+
+
+def ensure_database_image() -> tuple[str, str]:
+    """Resolve the verified recipe image only when a service is requested.
+
+    Load by path so runpy/importlib contract callers do not need the scripts
+    directory on sys.path. Importing this harness never builds an image.
+    """
+    path = ROOT / "scripts" / "runtime_database.py"
+    spec = importlib.util.spec_from_file_location("cardchemy_runtime_database", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load the reviewed database recipe verifier")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.ensure_database_image(root=ROOT)
 
 
 def system_environment() -> dict[str, str]:
@@ -116,6 +136,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suite", choices=["postgres", "mailpit"])
     arguments = parser.parse_args()
+    database_image, database_platform = ensure_database_image()
     suffix = uuid4().hex[:12]
     names: list[str] = []
     with tempfile.TemporaryDirectory(prefix="flashcard-regression-") as directory:
@@ -130,7 +151,8 @@ def main() -> int:
             database = f"flashcard-regression-db-{suffix}"
             names.append(database)
             docker("run", "--rm", "-d", "--name", database,
-                   "--env-file", str(environment_file), "-p", "127.0.0.1::5432", "postgres:16")
+                   "--platform", database_platform, "--env-file", str(environment_file),
+                   "-p", "127.0.0.1::5432", database_image)
             database_port = port(database, 5432)
             wait_postgres_ready(database_port, password, "regression_test")
             database_url = f"postgresql+asyncpg://qa:{password}@127.0.0.1:{database_port}/regression_test"
@@ -138,6 +160,7 @@ def main() -> int:
                 "ENVIRONMENT": "test",
                 "DATABASE_URL": database_url,
                 "POSTGRES_TEST_DATABASE_URL": database_url,
+                "POSTGRES_TEST_CONTAINER_NAME": database,
                 "SECRET_KEY": "test-only-secret-with-adequate-entropy-1234567890",
                 "GENERATION_SOURCE_ENCRYPTION_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                 "PYTHONUTF8": "1",
@@ -174,6 +197,11 @@ def main() -> int:
                     operation = "downgrade" if target == "base" else "upgrade"
                     subprocess.run([sys.executable, "-m", "alembic", operation, target],
                                    cwd=ROOT / "backend", env=environment, check=True)
+                for command in (
+                    [sys.executable, "-m", "alembic", "current", "--check-heads"],
+                    [sys.executable, "-m", "alembic", "check"],
+                ):
+                    subprocess.run(command, cwd=ROOT / "backend", env=environment, check=True)
             return 0
         finally:
             cleanup_containers(names)

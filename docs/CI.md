@@ -10,12 +10,37 @@ bounded timeouts and fresh dependency installations. Paid AI requests are exclud
 | --- | --- |
 | `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow and repository-context/link validation |
 | `postgres-migrations` | Disposable PostgreSQL; constraints, transactions and concurrency; Alembic head and drift checks; full downgrade to base and upgrade to head |
+| `database-artifact` | Validate pinned PostgreSQL/pgvector recipe inputs, LF/hash/platform/data path; build/probe immutable Linux/amd64 bytes; prove vector and legacy-to-ICU logical recovery; fail on HIGH/CRITICAL Trivy findings and retain configuration/archive/recipe-bound CycloneDX and provenance |
 | `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts; authenticated local STARTTLS/implicit-TLS, certificate rejection and failure recovery |
 | `frontend` | `npm run check`: types, lint, unit tests, component coverage, production build and Chromium browser contracts; emitted bundle budgets |
 | `journey` | `python scripts/test_journey.py`: real instructor creation, PDF generation with an offline provider, review/publication, invitation, student study and persisted progress |
 | `dependency-audit` | Fresh `pip-audit --require-hashes --strict` against the complete development lock; `npm audit --audit-level=low` across all npm scopes, plus explicit shipped-dependency audit |
 | `secret-scan` | Gitleaks scans full Git history with redacted findings; Trivy scans the current source worktree |
 | `containers (backend)` / `(backend-ocr)` / `(frontend)` | Final Linux runtime builds; native-library/auth/PDF/OCR and edge smoke probes; Trivy fails on HIGH/CRITICAL OS and application vulnerabilities, including vulnerabilities without fixes; CycloneDX SBOM artifacts |
+
+The database artifact inventory is [`runtime-artifacts.json`](../runtime-artifacts.json).
+It records the reviewed local recipe and immutable base/source/input identities.
+The shared helper verifies recipe label, supported platform and actual runtime
+prerequisites, then returns immutable bytes for every disposable consumer.
+The CI-equivalent archive harness exports that identity and binds the audit to
+the archive's image-configuration digest. Docker's local identity can represent
+an OCI index; a configuration digest is recorded separately rather than equated
+with it. Reports retain inventory/recipe inputs, image/index/configuration and
+archive hashes, fresh advisory metadata, scanner identity and report checksums.
+Keep this evidence with deployment records. Database reports are retained for
+30 days in CI. The three-image signed application release workflow does not
+publish/sign this database image; upstream signature verification is not claimed.
+Any changed recipe/input requires a new identity and passing scan/recovery proof.
+
+The local equivalent is `python scripts/test_database_artifact.py` using the
+backend development Python. It exports the immutable reviewed database image,
+downloads a fresh public advisory database into a disposable 4 GiB cache, then
+disconnects scanner networking before analysis. It fails on HIGH/CRITICAL
+findings, including unfixed vulnerabilities. Audit, CycloneDX SBOM, image and
+scanner identities, archive hash and report checksums remain under ignored
+`artifacts/database-artifact/<run-id>`. Owned scanner containers and exports
+are removed; no operator environment, application content or database volume is
+mounted. A local pass does not establish a hosted CI pass.
 
 Service runners generate isolated credentials, bind random ports to loopback,
 use no persistent volumes and remove containers in cleanup. They do not use the
@@ -45,7 +70,8 @@ documentation links (external URLs and historical bodies are excluded),
 `python scripts/test_services.py postgres`,
 `python scripts/test_services.py mailpit`,
 `python scripts/test_smtp_tls.py`,
-`python scripts/test_journey.py` and `python scripts/check_ci.py`.
+`python scripts/test_journey.py`, `python scripts/check_runtime_artifacts.py`
+and `python scripts/check_ci.py`.
 From `frontend`, `npm run check` is the authoritative frontend gate; run
 `node ../scripts/check_bundle.mjs` after its production build. See
 [AI evaluation](AI_EVALUATION.md) for explicit opt-in live-provider validation.

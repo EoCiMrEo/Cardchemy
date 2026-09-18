@@ -13,7 +13,13 @@ claims, issuer/audience, clock skew, and session verification remain enforced.
 The production lock excludes python-jose and its unfixable ECDSA dependency. `cryptography` protects temporary PDF source data with
 AES-256-GCM. Gemini uses the direct `google-genai` SDK; an OpenAI-compatible
 endpoint uses `httpx`. AI orchestration and grounding are typed application
-code, without a framework or vector-database dependency. OCR uses external
+code, without an AI framework. Subject Knowledge uses the hash-locked Python
+`pgvector` integration and PostgreSQL 16's pgvector 0.8.6 server extension;
+[`runtime-artifacts.json`](../runtime-artifacts.json) pins the reviewed local
+database recipe and its external base/source/package inputs independently of
+the Python lock.
+The database build's flattened final runtime uses pinned native privilege
+switching and a separately retained exact-image audit/SBOM. OCR uses external
 Poppler and Tesseract executables only in the explicitly enabled worker image.
 
 The frontend uses React and Redux Toolkit for study-session state. Radix

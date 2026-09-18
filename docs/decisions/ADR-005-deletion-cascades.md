@@ -32,6 +32,13 @@ from a surviving published set.
 
 ## Related Areas
 
+[ADR-012](ADR-012-subject-knowledge-and-rag-boundaries.md) extends deletion
+ownership for durable Subject Knowledge: document deletion removes its
+pages/chunks/index jobs and detaches surviving generation/set links, preserving
+flashcards; job-history deletion preserves Knowledge. Subject/account ownership
+cascades Knowledge. This adds dependents without changing existing study/card
+deletion rules.
+
 [Data model and cascade table](../architecture/DATA-MODEL.md),
 [model definitions](../../backend/app/models/),
 [PostgreSQL integrity tests](../../backend/tests/postgres/test_database_integrity.py),

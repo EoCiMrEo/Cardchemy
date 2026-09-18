@@ -1,6 +1,6 @@
 # Current Development State
 
-Snapshot: 2026-09-17. Phases 0–11 are complete. The public v0.1.0 release
+Snapshot: 2026-09-18. Phases 0–11 are complete. The public v0.1.0 release
 contains independently verified keyless-signed image digests, checksums,
 source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
 passed, including an actual clean-machine production-profile recovery rehearsal.
@@ -39,10 +39,32 @@ supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
 belong to the roadmap; implementation/check details belong to the
 [dated log index](../../.agent/logs/README.md).
 The [Phase 10 closure log](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
-records current verification and its limits. Alembic head is `20260917_0008`;
-operators must apply the documented upgrade before starting this code.
+records its verification and limits at Alembic `20260917_0008`. The current
+working branch adds the mandatory pgvector foundation `20260918_0009` and
+private Subject Knowledge schema `20260918_0010`; operators must apply the
+documented configuration and database upgrade before starting this code.
 
 ## Current focus and known risks
+
+The separate [Subject-scoped RAG implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+is authorized through Preparation A/B and Phases 12-13. Preparation A prompt,
+diagnostic and offline-comparison implementation passed its offline and
+deterministic journey checks; on 2026-09-18 the operator accepted the authored
+card sample as "very good". Preparation B's definitive AI profile migration
+passed full offline backend/frontend, Compose, configuration and deterministic
+cross-stack checks. Phase 12 PostgreSQL/pgvector foundation and Phase 13
+private Subject Knowledge schema are implemented and passed their disposable
+database, recovery and RAG-off journey checks; installation, privacy,
+upload/versioning, initial models and separate-worker quota decisions are accepted
+in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md);
+these design decisions do not establish shipped Knowledge upload, indexing
+execution, retrieval, chat or Ask AI features. Those follow in Phases 14–21.
+The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
+and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
+logical restore into a separate fresh target; the existing volume path alone
+is not compatibility evidence. No paid provider calls were made.
+Actual checks and pending acceptance belong to the
+[implementation record](../../.agent/logs/2026-09-17/2026-09-17-rag-through-phase-13-implementation.md).
 
 Phase 10 diagnostics are content-free, bounded and best effort. Metrics are
 not a complete provider billing ledger and audits are not tamper-proof. Account

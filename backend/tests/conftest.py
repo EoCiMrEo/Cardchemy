@@ -11,7 +11,7 @@ os.environ["SECRET_KEY"] = "test-only-secret-key-with-adequate-entropy-123456789
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/test"
 os.environ["GENERATION_SOURCE_ENCRYPTION_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 if os.environ.get("RUN_LIVE_AI_TESTS") != "1":
-    os.environ["AI_API_KEY"] = "test-only-provider-key"
+    os.environ["FLASHCARD_AI_API_KEY"] = "test-only-provider-key"
 os.environ["EMAIL_LEASE_SECONDS"] = "240"
 
 import pytest_asyncio
