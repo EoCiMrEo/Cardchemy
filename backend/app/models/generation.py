@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     JSON,
@@ -44,10 +45,18 @@ class GenerationJob(Base):
     __tablename__ = "generation_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_id = Column(UUID(as_uuid=True), nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     subject_id = Column(
         UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False
     )
+    # Authoritative Knowledge capture association. Removing a document detaches
+    # this provenance without deleting the generation result or allowing retry
+    # to recapture removed content.
+    document_id = Column(
+        UUID(as_uuid=True), ForeignKey("subject_documents.id", ondelete="SET NULL"), nullable=True,
+    )
+    knowledge_capture_removed = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     idempotency_key_hash = Column(String(64), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
@@ -145,6 +154,13 @@ class GenerationJob(Base):
     )
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "subject_id", "user_id"],
+            ["subject_documents.id", "subject_documents.subject_id", "subject_documents.uploader_id"],
+            name="fk_generation_jobs_document_scope", deferrable=True, initially="DEFERRED",
+        ),
+        CheckConstraint("NOT knowledge_capture_removed OR document_id IS NULL", name="ck_generation_jobs_removed_capture"),
+        Index("ix_generation_jobs_document", "document_id", "subject_id", "user_id"),
         UniqueConstraint(
             "user_id", "idempotency_key_hash", name="uq_generation_jobs_user_idempotency"
         ),
@@ -220,6 +236,7 @@ class GenerationJob(Base):
         Index("ix_generation_jobs_user_created", "user_id", "created_at", "id"),
         Index("ix_generation_jobs_subject_created", "subject_id", "created_at", "id"),
         Index("ix_generation_jobs_created", "created_at", "id"),
+        Index("ix_generation_jobs_retention", "completed_at", "id", postgresql_where=text("status IN ('completed','failed','cancelled')")),
         Index(
             "ix_generation_jobs_queue",
             "available_at",

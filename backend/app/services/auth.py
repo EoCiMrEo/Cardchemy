@@ -195,6 +195,18 @@ class AuthService:
         db.add(user)
         await db.flush()
         await db.refresh(user)
+        if role == UserRole.INSTRUCTOR:
+            from app.models.audit import AuditAction
+            from app.services.audit import AuditService
+
+            AuditService.record(
+                db,
+                action=AuditAction.INSTRUCTOR_PROVISIONED,
+                actor_kind="operator",
+                target_type="account",
+                target_id=user.id,
+                role_after=UserRole.INSTRUCTOR.value,
+            )
         return user
 
     @staticmethod
@@ -347,6 +359,17 @@ class AuthService:
         )
         db.add(invite)
         await db.flush()
+        from app.models.audit import AuditAction
+        from app.services.audit import AuditService
+
+        AuditService.record(
+            db,
+            action=AuditAction.INVITATION_CREATED,
+            actor_id=instructor_id,
+            target_type="invitation",
+            target_id=invite.id,
+            subject_id=subject_id,
+        )
         return invite, AuthService.issue_invitation_token(invite)
 
     @staticmethod

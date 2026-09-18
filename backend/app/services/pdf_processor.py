@@ -284,6 +284,10 @@ def _extract_child(
 ) -> None:
     """Child-process entry point; it must remain top-level for Windows spawn."""
 
+    # Windows/spawn children have fresh logging state. Parser warnings can
+    # include crafted document bytes and must receive the same safe sinks.
+    from app.observability import configure_logging
+    configure_logging()
     try:
         try:
             import resource

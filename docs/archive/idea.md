@@ -3,6 +3,9 @@
 This is historical brainstorming, preserved for context. It is not an
 implementation guide or a description of current product capabilities. Use the
 maintained documentation in `docs/` and the current repository code for those.
+The [public roadmap](../../ROADMAP.md) identifies proposals requiring a new
+decision. Toolkit affiliation, old runtime recommendations and future-feature
+claims below are preserved history, not current Cardchemy capabilities.
 
 ---
 

@@ -26,50 +26,105 @@ def make_settings(**overrides) -> Settings:
 
 def test_ai_admission_uses_non_secret_flag_and_worker_validates_credentials():
     disabled_with_key = make_settings(
-        ai_provider_enabled=False,
-        ai_api_key="worker-only-key",
+        flashcard_ai_provider_enabled=False,
+        flashcard_ai_api_key="worker-only-key",
     )
-    assert disabled_with_key.ai_provider_configured is True
-    assert disabled_with_key.ai_provider_enabled is False
+    assert disabled_with_key.flashcard_ai_provider_configured is True
+    assert disabled_with_key.flashcard_ai_provider_enabled is False
 
     enabled_without_key = make_settings(
-        ai_provider_enabled=True,
-        ai_api_key=None,
-        gemini_api_key=None,
+        flashcard_ai_provider_enabled=True,
+        flashcard_ai_api_key=None,
     )
-    assert enabled_without_key.ai_provider_configured is False
-    assert enabled_without_key.ai_provider_enabled is True
+    assert enabled_without_key.flashcard_ai_provider_configured is False
+    assert enabled_without_key.flashcard_ai_provider_enabled is True
     with pytest.raises(ValueError, match="Enabled Gemini generation requires"):
         enabled_without_key.require_generation_worker_config()
 
     enabled_with_key = make_settings(
-        ai_provider_enabled=True,
-        ai_api_key="worker-only-key",
+        flashcard_ai_provider_enabled=True,
+        flashcard_ai_api_key="worker-only-key",
+        flashcard_ai_quota_bucket="test-flashcards",
     )
-    assert enabled_with_key.ai_provider_configured is True
+    assert enabled_with_key.flashcard_ai_provider_configured is True
     assert enabled_with_key.require_generation_worker_config() is enabled_with_key
 
-    enabled_with_legacy_key = make_settings(
-        ai_provider_enabled=True,
-        ai_api_key=None,
-        gemini_api_key="legacy-worker-key",
-    )
-    assert (
-        enabled_with_legacy_key.require_generation_worker_config()
-        is enabled_with_legacy_key
-    )
-
     enabled_keyless_local_endpoint = make_settings(
-        ai_provider_enabled=True,
-        ai_provider="openai_compatible",
-        ai_base_url="http://model:11434/v1",
-        ai_api_key=None,
-        gemini_api_key=None,
+        flashcard_ai_provider_enabled=True,
+        flashcard_ai_provider="openai_compatible",
+        flashcard_ai_base_url="http://model:11434/v1",
+        flashcard_ai_api_key=None,
+        flashcard_ai_quota_bucket="test-flashcards",
     )
     assert (
         enabled_keyless_local_endpoint.require_generation_worker_config()
         is enabled_keyless_local_endpoint
     )
+
+
+@pytest.mark.parametrize("rag_enabled,answer_enabled,embedding_enabled", [
+    (rag, answer, embedding)
+    for rag in (False, True) for answer in (False, True) for embedding in (False, True)
+])
+def test_rag_flag_matrix_suspends_only_affected_roles(rag_enabled, answer_enabled, embedding_enabled):
+    configured = make_settings(
+        rag_enabled=rag_enabled,
+        rag_ai_provider_enabled=answer_enabled,
+        rag_embedding_provider_enabled=embedding_enabled,
+    )
+    assert configured.rag_index_available is (rag_enabled and embedding_enabled)
+    assert configured.rag_answer_available is (rag_enabled and answer_enabled and embedding_enabled)
+    # Disabled roles require no key/bucket and never enable a different role.
+    if not rag_enabled or not embedding_enabled:
+        assert configured.require_rag_index_worker_config() is configured
+    else:
+        with pytest.raises(ValueError, match="RAG_EMBEDDING_API_KEY"):
+            configured.require_rag_index_worker_config()
+    if not rag_enabled or not answer_enabled:
+        assert configured.require_rag_answer_worker_config() is configured
+    elif not embedding_enabled:
+        with pytest.raises(ValueError, match="RAG_EMBEDDING_PROVIDER_ENABLED"):
+            configured.require_rag_answer_worker_config()
+    else:
+        with pytest.raises(ValueError, match="RAG_AI_API_KEY"):
+            configured.require_rag_answer_worker_config()
+
+
+def test_enabled_role_keys_and_explicit_quota_buckets_are_independent():
+    configured = make_settings(
+        flashcard_ai_provider_enabled=True, flashcard_ai_api_key="flashcard-key",
+        flashcard_ai_quota_bucket="flashcard-budget",
+        rag_enabled=True, rag_ai_provider_enabled=True, rag_embedding_provider_enabled=True,
+        rag_ai_api_key="answer-key", rag_embedding_api_key="embedding-key",
+        rag_ai_quota_bucket="answer-budget", rag_embedding_quota_bucket="embedding-budget",
+    )
+    assert configured.require_generation_worker_config() is configured
+    assert configured.require_rag_index_worker_config() is configured
+    assert configured.require_rag_answer_worker_config() is configured
+    for role, changes, code in (
+        ("flashcard", {"flashcard_ai_quota_bucket": ""}, "FLASHCARD_AI_QUOTA_BUCKET"),
+        ("index", {"rag_embedding_api_key": None}, "RAG_EMBEDDING_API_KEY"),
+        ("index", {"rag_embedding_quota_bucket": ""}, "RAG_EMBEDDING_QUOTA_BUCKET"),
+        ("answer", {"rag_ai_api_key": None}, "RAG_AI_API_KEY"),
+        ("answer", {"rag_ai_quota_bucket": ""}, "RAG_AI_QUOTA_BUCKET"),
+    ):
+        changed = configured.model_copy(update=changes)
+        method = {
+            "flashcard": changed.require_generation_worker_config,
+            "index": changed.require_rag_index_worker_config,
+            "answer": changed.require_rag_answer_worker_config,
+        }[role]
+        with pytest.raises(ValueError, match=code):
+            method()
+
+    # Matching keys are allowed only when deliberately set on both profiles;
+    # no method copies them from another role.
+    missing_query = configured.model_copy(update={"rag_embedding_api_key": None})
+    with pytest.raises(ValueError, match="RAG_EMBEDDING_API_KEY"):
+        missing_query.require_rag_answer_worker_config()
+    assert "answer-key" not in repr(configured)
+    assert "embedding-key" not in repr(configured)
+    assert "flashcard-key" not in repr(configured)
 
 
 @pytest.mark.parametrize(
@@ -307,7 +362,7 @@ class _ControlledEmailWorker(EmailWorker):
 async def test_disabled_generation_worker_waits_without_claiming_jobs():
     worker = _ControlledGenerationWorker(
         make_settings(
-            ai_provider_enabled=False,
+            flashcard_ai_provider_enabled=False,
             generation_worker_poll_seconds=0.1,
         )
     )
@@ -325,7 +380,7 @@ async def test_disabled_generation_worker_waits_without_claiming_jobs():
 async def test_generation_worker_drains_short_active_work():
     worker = _ControlledGenerationWorker(
         make_settings(
-            ai_provider_enabled=True,
+            flashcard_ai_provider_enabled=True,
             generation_worker_concurrency=1,
             generation_worker_poll_seconds=0.1,
             worker_shutdown_grace_seconds=0.5,
@@ -344,7 +399,7 @@ async def test_generation_worker_drains_short_active_work():
 async def test_email_worker_cancels_work_only_after_shutdown_grace():
     worker = _ControlledEmailWorker(
         make_settings(
-            ai_provider_enabled=True,
+            flashcard_ai_provider_enabled=True,
             email_worker_concurrency=1,
             email_worker_poll_seconds=0.1,
             worker_shutdown_grace_seconds=0.01,

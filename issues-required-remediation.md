@@ -10,10 +10,20 @@ Priority labels:
 - **P1**: required for a dependable v1.0.
 - **P2**: important hardening, maintainability, or product polish.
 
-## Verified baseline and next work (2026-09-16)
+## Verified baseline and next work (2026-09-17)
 
-- Phases 0-9 are recorded complete. Remaining work is operational hardening
-  and open-source release in Phases 10-11.
+- Phases 0-11 are recorded complete; signed public v0.1.0 publication is
+  recorded in [Phase 11 evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+  The separate v1.0 operational readiness gate passed; current version remains
+  0.1.0. [Gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md)
+  records exact-source CI, actual local TLS SMTP and clean-machine recovery.
+  Phase 10 evidence is in
+  [the dated remediation log](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
+- Phase 10 verification: 259 offline backend cases, 34 PostgreSQL cases with
+  head/drift and full disposable downgrade/re-upgrade, three Mailpit cases,
+  the deterministic real application journey, full frontend gate (47 Chromium
+  cases), three image runtime probes and all Compose configurations pass.
+  Paid AI/live reset remain gated; operator data was not migrated or deleted.
 - The application includes durable PDF-generation and email workers, versioned
   migrations, source-grounded AI generation, provider quota controls, request
   telemetry, and a production-shaped Compose deployment. Root `.env` is the
@@ -25,7 +35,7 @@ Priority labels:
   26 component contracts/coverage, production build and 47 Chromium cases.
   The separate live password-reset case and paid-provider evaluation remain
   explicitly opt-in; no paid AI call was made during Phase 9.
-- Fresh full Python/npm dependency audits and Git/history/worktree secret scans
+- Phase 9 full Python/npm dependency audits and Git/history/worktree secret scans
   report no findings. All three final runtime images pass native/auth/PDF/OCR
   probes and HIGH/CRITICAL OS/application scans, including unfixed advisories;
   CycloneDX SBOMs and checksums are retained.
@@ -37,7 +47,7 @@ Priority labels:
   repaired hosted run 35129468986 passed every mandatory gate. Full locked
   audits remain mandatory where private-repository native dependency review
   requires an additional GitHub entitlement. Evidence is recorded in
-  `.agent/logs/2026-09-16-phase-9-remediation.md`.
+  [the dated Phase 9 log](.agent/logs/2026-09-16/2026-09-16-phase-9-remediation.md).
 - Preserve existing user changes and the real root `.env`. Updating this plan
   does not authorize deleting local environments, data, credentials, or volumes.
 
@@ -632,29 +642,38 @@ breaks the full build, security boundaries, migrations, or critical user journey
 
 **Goal:** Make failures diagnosable without exposing user documents or secrets.
 
-- [ ] **P1** Replace `print` and raw tracebacks with structured logging and log
+- [x] **P1** Replace `print` and raw tracebacks with structured logging and log
   levels.
-- [ ] **P1** Add request/job correlation IDs and safe error codes returned to the
+- [x] **P1** Add request/job correlation IDs and safe error codes returned to the
   client.
-- [ ] **P1** Add centralized exception handling and sanitize all client-facing
+- [x] **P1** Add centralized exception handling and sanitize all client-facing
   error messages.
-- [ ] **P1** Record latency, error rate, queue depth, job duration, generated-card
+- [x] **P1** Record latency, error rate, queue depth, job duration, generated-card
   count, model usage, and estimated cost.
-- [ ] **P1** Add readiness/liveness endpoints and database/worker health signals.
-- [ ] **P1** Define log redaction rules for tokens, emails, document contents,
+- [x] **P1** Add readiness/liveness endpoints and database/worker health signals.
+- [x] **P1** Define log redaction rules for tokens, emails, document contents,
   prompts, model responses, and API keys.
-- [ ] **P1** Document that extracted document content is sent to Gemini, including
+- [x] **P1** Document that extracted document content is sent to Gemini, including
   the provider's role and the deployment operator's responsibilities.
-- [ ] **P1** Define retention/deletion/export behavior for accounts, subjects,
+- [x] **P1** Define retention/deletion/export behavior for accounts, subjects,
   generated cards, progress, jobs, and any retained source files.
-- [ ] **P1** Add configurable request, job, and database retention policies.
-- [ ] **P2** Add an audit trail for privileged actions such as invitations,
+- [x] **P1** Add configurable request, job, and database retention policies.
+- [x] **P2** Add an audit trail for privileged actions such as invitations,
   publication, card approval, and account-role changes.
-- [ ] **P2** Add optional error reporting/telemetry that is disabled by default for
+- [x] **P2** Add optional error reporting/telemetry that is disabled by default for
   self-hosters and never uploads document content.
 
 **Phase complete when:** operators can diagnose a failed generation from an ID
 and metrics without seeing secrets or unnecessary user content.
+
+**Completed 2026-09-17:** [closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md),
+[safe diagnostics](docs/OBSERVABILITY.md), [privacy/lifecycle controls](docs/PRIVACY.md)
+and [ADR-011](docs/decisions/ADR-011-operational-privacy-controls.md).
+Alembic revision `20260917_0008` adds operational/audit records. Exports/deletion
+and bounded retention are guarded operator commands; telemetry is disabled by
+default and explicitly run. Metrics are best effort and audits are diagnostic,
+not tamper-proof. Operators own disclosure, proxy/collector and backup/provider
+expiry. No production deployment or paid-provider success is asserted.
 
 ---
 
@@ -663,38 +682,99 @@ and metrics without seeing secrets or unnecessary user content.
 **Goal:** Publish a trustworthy repository that users can understand, operate,
 and contribute to.
 
-- [ ] **P0** Choose and add a license. Consider Apache-2.0 for broad adoption or
+- [x] **P0** Choose and add a license. Consider Apache-2.0 for broad adoption or
   AGPL-3.0 if hosted derivatives should publish their changes.
-- [ ] **P0** Add a root README containing product scope, screenshots, architecture,
+- [x] **P0** Add a root README containing product scope, screenshots, architecture,
   prerequisites, quick start, configuration, upgrades, backups, limitations,
   privacy notes, and troubleshooting.
-- [ ] **P0** Publish and verify the single root `.env.example` and configuration
+- [x] **P0** Publish and verify the single root `.env.example` and configuration
   guidance completed in Phase 9A; do not reintroduce backend/frontend examples
   or a second user-managed `.env` file.
-- [ ] **P1** Add `CONTRIBUTING.md`, `SECURITY.md`, Code of Conduct, pull-request
+- [x] **P1** Add `CONTRIBUTING.md`, `SECURITY.md`, Code of Conduct, pull-request
   template, and issue templates.
-- [ ] **P1** Document a responsible vulnerability-reporting channel and supported
+- [x] **P1** Document a responsible vulnerability-reporting channel and supported
   release versions.
-- [ ] **P1** remove stale `idea.md` claims about Instructor Toolkits,
+- [x] **P1** remove stale `idea.md` claims about Instructor Toolkits,
   RAG/pgvector, Redis/Celery, OCR, PWA/offline, testing, and CI; move unfinished
   ideas into an explicit roadmap.
-- [ ] **P1** Replace the Vite template README, favicon, document title, package
-  name/version, API metadata, and generic login branding.
-- [ ] **P1** Use the selected standalone name consistently in application config,
+- [x] **P1** Finish replacing legacy/template branding in frontend documentation,
+  package name/version, API metadata, and account-page branding. The browser
+  title is already `Cardchemy`; verify it rather than treating it as unfinished.
+  Follow the brand-asset rollout below for the in-app name and favicon.
+- [x] **P1** Use the selected standalone name consistently in application config,
   Compose, image names, UI, docs, examples, and repository metadata.
-- [ ] **P1** Current naming candidate: **Cardchemy**, with the tagline
+- [x] **P1** Current naming candidate: **Cardchemy**, with the tagline
   **“Turn documents into memory.”** Verify repository/package handles, domains,
   social handles, and trademarks before adopting it.
-- [ ] **P1** Add sample data or a demo path that does not require spending real AI
+- [x] **P1** Add sample data or a demo path that does not require spending real AI
   quota.
-- [ ] **P1** Publish signed/tagged releases with release notes, checksums, images,
+- [x] **P1** Publish signed/tagged releases with release notes, checksums, images,
   and SBOMs.
-- [ ] **P2** Add a public roadmap that clearly distinguishes shipped features
+- [x] **P2** Add a public roadmap that clearly distinguishes shipped features
   from planned work.
+
+### Brand assets and UI rollout
+
+Historical pre-implementation asset review (2026-09-16): the supplied files were in `frontend/public/` but were
+not wired into the UI. Both dashboard headers rendered
+`copy.common.appName = 'Flashcard Generator'`; `frontend/index.html` used
+`/cards.svg` (not `/card.svg`) as its favicon and already had the title
+`Cardchemy`. The completed checklist below records the subsequent rollout;
+the shared wordmark and `/favicon.ico` are now implemented and verified.
+
+| Asset | Intended role |
+| --- | --- |
+| `cardchemy-text-icon.png` | Primary in-app wordmark, replacing the visible legacy product name in instructor/student dashboard headers. Reuse for other product-brand placements where appropriate. |
+| `favicon.ico` | Browser favicon replacing `/cards.svg`; the supplied file contains 16, 32, and 48 px frames. |
+| `cardchemy-logo.png` | Full card + wordmark lockup. Retain as a brand reference; use in the README/docs hero, not the compact app header. |
+| `cardchemy-favicon.png` | High-resolution standalone card mark/reference for icon exports. Do not load this large PNG as the browser favicon or introduce PWA/manifest features just to use it. |
+
+- [x] **P1** Use a shared wordmark component for both dashboard roles instead
+  of duplicating branding markup. Update the typed English catalog's product
+  name to `Cardchemy`; preserve heading/link semantics and an accessible name
+  (`alt="Cardchemy"` when the image is the only brand label), without duplicate
+  screen-reader announcements. Do not replace descriptive flashcard terminology
+  with the brand name.
+- [x] **P1** Point the HTML favicon declaration to `/favicon.ico` with the
+  appropriate ICO media type. Preserve the existing title and check all icon
+  references before removing `cards.svg`; repair active docs/tests as needed.
+- [x] **P1** Prepare web-sized, losslessly optimized exports while preserving
+  the supplied originals/reference artwork. The wordmark is 2172 × 724 px
+  (~580 kB), the full lockup is the same dimensions (~647 kB), and the square
+  mark is 1254 × 1254 px (~1.1 MB). Avoid loading unused marks; trim excessive
+  transparent padding in derived exports and set intrinsic dimensions plus
+  responsive sizing/aspect ratio to prevent distortion or layout shifts.
+- [x] **P1** Review the detailed gradient artwork at actual header and favicon
+  sizes: readable wordmark on the current light header, clear 16/32 px icon,
+  clean transparent edges, and visibility on light/dark browser-tab backgrounds.
+  If simplified artwork is needed, obtain approval rather than silently
+  redesigning the supplied brand or adding app-wide dark mode.
+- [x] **P1** Confirm asset provenance and redistribution rights before release;
+  document brand-asset licensing/usage separately if it differs from the code
+  license. Keep Cardchemy's identity standalone, with no Instructor Toolkits
+  affiliation implied by UI or release materials.
+- [x] **P1** Add branding regressions for both dashboard roles: accessible name,
+  successful image loading, and no overflow/collision with account/logout
+  controls at mobile and desktop sizes. Verify packaged Nginx serves the PNG
+  and ICO as real image files, not SPA HTML, and manually check the new browser
+  tab icon with a fresh/cache-refreshed tab.
+- [x] **P1** Run `npm run check` and `node ../scripts/check_bundle.mjs` from
+  `frontend` after implementation; assess public-image payloads separately
+  from JavaScript bundle budgets. Refresh README/product screenshots and
+  release notes, then run `python scripts/check_context.py` from the root.
 
 **Phase complete when:** an unfamiliar user can discover, install, secure,
 operate, upgrade, and contribute to the project using only repository
-documentation.
+documentation, and the packaged UI/browser tab consistently use the approved
+Cardchemy branding without accessibility or responsive-layout regressions.
+
+Completion evidence (2026-09-17): the repository and root template are public,
+private vulnerability reporting is enabled, and [v0.1.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0)
+publishes all 17 verified attachments and three independently verified signed
+GHCR image digests. Anonymous asset downloads/image pulls passed. See the
+[Phase 11 closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+The separate v1.0 operational readiness checklist below also passed; completing
+readiness does not publish a v1.0 version or tag.
 
 ---
 
@@ -702,20 +782,31 @@ documentation.
 
 Do not publish v1.0 until all of the following are true:
 
-- [ ] All P0 items are complete.
+- [x] All P0 items are complete.
 - [x] Phase 9A repository cleanup is verified with no lost regression coverage,
   and root `.env` is the sole documented file-based configuration source.
-- [ ] No known critical/high vulnerability is reachable without a documented,
+- [x] No known critical/high vulnerability is reachable without a documented,
   time-bounded exception.
-- [ ] Authentication and cross-subject authorization tests pass.
-- [ ] Database migration, backup, restore, and upgrade tests pass.
-- [ ] PDF jobs are bounded, durable, cancellable, and recoverable.
-- [ ] Transactional email passes Mailpit integration and end-to-end tests;
+- [x] Authentication and cross-subject authorization tests pass.
+- [x] Database migration, backup, restore, and upgrade tests pass.
+- [x] PDF jobs are bounded, durable, cancellable, and recoverable.
+- [x] Transactional email passes Mailpit integration and end-to-end tests;
   production SMTP setup and failure recovery are documented and verified.
-- [ ] Frontend typecheck, lint, tests, accessibility checks, and production build
+- [x] Frontend typecheck, lint, tests, accessibility checks, and production build
   pass.
-- [ ] A fresh-clone production deployment has been tested on a clean machine.
-- [ ] Documentation, license, privacy disclosure, security policy, and release
+- [x] A fresh-clone production deployment has been tested on a clean machine.
+- [x] Documentation, license, privacy disclosure, security policy, and release
   artifacts are complete.
-- [ ] The end-to-end instructor/student journey passes without manual database or
+- [x] The end-to-end instructor/student journey passes without manual database or
   source-code changes.
+
+**Readiness completed 2026-09-17:** all eleven items are supported by
+[gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+[Clean-machine production/recovery 35266166852](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166852)
+and [exact-source CI 35266166793](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166793)
+passed at protected source `79e3212cfa682ee0d9f643a03d45aeea66502162`.
+Actual authenticated local STARTTLS/implicit-TLS delivery and failure recovery,
+public signed v0.1.0 artifacts, and the accurately recorded human spoken check
+complete the evidence. Paid-provider quality, external SMTP/DNS/mailbox delivery
+and each operator's hosting/recovery goals remain site-specific checks.
+The current published version is **0.1.0**; no v1.0 publication is performed.

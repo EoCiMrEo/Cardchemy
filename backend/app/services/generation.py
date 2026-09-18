@@ -12,6 +12,7 @@ import secrets
 from uuid import UUID
 
 from fastapi import HTTPException, Request, status
+from app.observability import current_request_id
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,11 +49,13 @@ IDEMPOTENCY_PATTERN = re.compile(r"^[\x21-\x7e]{8,128}$")
 
 
 def generation_http_error(status_code: int, code: str, message: str, **headers: str) -> HTTPException:
-    return HTTPException(
+    error = HTTPException(
         status_code=status_code,
         detail={"code": code, "message": message},
         headers=headers or None,
     )
+    error.safe_detail = error.detail
+    return error
 
 
 def hash_operation_key(value: str) -> str:
@@ -176,7 +179,7 @@ class GenerationJobService:
 
     async def _check_reservation_capacity(self, db: AsyncSession, user_id: UUID) -> None:
         await self._lock_admission(db)
-        if not self.settings.ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled:
             raise generation_http_error(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "ai_provider_not_configured",
@@ -301,6 +304,7 @@ class GenerationJobService:
         await self._check_reservation_capacity(db, user_id)
         now = utcnow()
         job = GenerationJob(
+            request_id=current_request_id(),
             user_id=user_id,
             subject_id=data.subject_id,
             idempotency_key_hash=key_hash,
@@ -312,8 +316,8 @@ class GenerationJobService:
             set_description=(data.set_description or "").strip() or None,
             requested_card_count=data.card_count,
             source_pdf_name=filename,
-            ai_provider=self.settings.ai_provider,
-            ai_model=self.settings.ai_model,
+            ai_provider=self.settings.flashcard_ai_provider,
+            ai_model=self.settings.flashcard_ai_model,
             max_attempts=self.settings.generation_max_attempts,
             available_at=now,
             upload_expires_at=now
@@ -643,7 +647,7 @@ class GenerationJobService:
         )
         _, reset_at = self._day_bounds()
         unavailable_reasons: list[GenerationLimitReason] = []
-        if not self.settings.ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled:
             unavailable_reasons.append(
                 GenerationLimitReason(
                     code="ai_provider_not_configured",
@@ -673,9 +677,9 @@ class GenerationJobService:
             )
         return GenerationLimitsResponse(
             generation_available=not unavailable_reasons,
-            ai_provider=self.settings.ai_provider,
-            ai_model=self.settings.ai_model,
-            ai_pricing_configured=self.settings.ai_pricing_configured,
+            ai_provider=self.settings.flashcard_ai_provider,
+            ai_model=self.settings.flashcard_ai_model,
+            ai_pricing_configured=self.settings.flashcard_ai_pricing_configured,
             unavailable_reasons=unavailable_reasons,
             max_upload_bytes=self.settings.pdf_max_upload_bytes,
             max_pages=self.settings.pdf_max_pages,

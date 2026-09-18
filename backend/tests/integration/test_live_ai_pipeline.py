@@ -22,18 +22,20 @@ LIVE_BASE_URL = "https://api.openai.com/v1"
 
 def require_supported_live_configuration(settings):
     """Refuse unknown billing/output semantics before creating a provider."""
+    if not settings.flashcard_ai_quota_bucket:
+        raise RuntimeError("Live evaluation requires an explicit FLASHCARD_AI_QUOTA_BUCKET")
     if (
-        settings.ai_provider != "openai_compatible"
-        or str(settings.ai_base_url).rstrip("/") != LIVE_BASE_URL
-        or settings.ai_model != LIVE_MODEL
+        settings.flashcard_ai_provider != "openai_compatible"
+        or str(settings.flashcard_ai_base_url).rstrip("/") != LIVE_BASE_URL
+        or settings.flashcard_ai_model != LIVE_MODEL
     ):
         raise RuntimeError("Live evaluation hard budget requires the supported non-reasoning model and official endpoint")
     # Published text prices reviewed 2026-09-16. Explicitly supplied prices must
     # be at least these floors, and operators must refresh them before a run:
     # https://developers.openai.com/api/docs/models/gpt-4o-mini
     if (
-        settings.ai_input_cost_per_million_usd < Decimal("0.15")
-        or settings.ai_output_cost_per_million_usd < Decimal("0.60")
+        settings.flashcard_ai_input_cost_per_million_usd < Decimal("0.15")
+        or settings.flashcard_ai_output_cost_per_million_usd < Decimal("0.60")
     ):
         raise RuntimeError("Live evaluation hard budget requires reviewed prices at or above the supported model price floors")
 
@@ -42,7 +44,7 @@ def require_reserved_price_budget(settings):
     """Price the whole token envelope before constructing a live SDK client."""
     from app.ai.pipeline import cost_microusd
 
-    if settings.ai_input_cost_per_million_usd <= 0 or settings.ai_output_cost_per_million_usd <= 0:
+    if settings.flashcard_ai_input_cost_per_million_usd <= 0 or settings.flashcard_ai_output_cost_per_million_usd <= 0:
         raise RuntimeError("Live evaluation hard budget requires explicit nonzero token prices")
     reserved_cost = cost_microusd(settings, 8_192, 2_048)
     if reserved_cost is None or reserved_cost > 20_000:
@@ -56,15 +58,15 @@ def build_budgeted_live_provider(settings):
     require_reserved_price_budget(settings)
     settings.require_generation_worker_config()
     bounded_settings = settings.model_copy(update={
-        "ai_provider_max_retries": 0,
-        "ai_refill_rounds": 0,
-        "ai_concurrency": 1,
-        "ai_cards_per_request": 2,
-        "ai_max_output_tokens": 2_048,
-        "ai_max_job_input_tokens": 8_192,
-        "ai_max_job_output_tokens": 2_048,
-        "ai_max_estimated_cost_usd": Decimal("0.02"),
-        "ai_provider_timeout_seconds": 30,
+        "flashcard_ai_provider_max_retries": 0,
+        "flashcard_ai_refill_rounds": 0,
+        "flashcard_ai_concurrency": 1,
+        "flashcard_ai_cards_per_request": 2,
+        "flashcard_ai_max_output_tokens": 2_048,
+        "flashcard_ai_max_job_input_tokens": 8_192,
+        "flashcard_ai_max_job_output_tokens": 2_048,
+        "flashcard_ai_max_estimated_cost_usd": Decimal("0.02"),
+        "flashcard_ai_provider_timeout_seconds": 30,
     })
     return BudgetedLiveProvider(get_ai_provider(bounded_settings), bounded_settings)
 
@@ -111,8 +113,8 @@ async def test_live_ai_pipeline():
     from app.config import get_settings
 
     settings = get_settings()
-    if not settings.ai_provider_enabled:
-        pytest.skip("AI_PROVIDER_ENABLED is not true")
+    if not settings.flashcard_ai_provider_enabled:
+        pytest.skip("FLASHCARD_AI_PROVIDER_ENABLED is not true")
     provider = build_budgeted_live_provider(settings)
     settings = provider.settings
 
@@ -166,30 +168,32 @@ def budget_settings(**overrides):
     values = {"environment": "test", "database_url": "sqlite+aiosqlite:///:memory:",
               "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
               "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-              "ai_input_cost_per_million_usd": "0.15", "ai_output_cost_per_million_usd": "0.60"}
+              "flashcard_ai_input_cost_per_million_usd": "0.15", "flashcard_ai_output_cost_per_million_usd": "0.60",
+              "flashcard_ai_quota_bucket": "test-live-flashcards"}
     return Settings(_env_file=None, **(values | overrides))
 
 
 @pytest.mark.parametrize("configuration", [
-    {"ai_provider": "gemini", "ai_model": "gemini-3.8-flash"},
-    {"ai_provider": "openai_compatible", "ai_base_url": LIVE_BASE_URL, "ai_model": "o4-mini"},
-    {"ai_provider": "openai_compatible", "ai_base_url": "https://model.example.com/v1", "ai_model": LIVE_MODEL},
-    {"ai_provider": "openai_compatible", "ai_base_url": "https://api.openai.com/v1/other", "ai_model": LIVE_MODEL},
-    {"ai_provider": "openai_compatible", "ai_base_url": LIVE_BASE_URL, "ai_model": "gpt-4o-mini"},
-    {"ai_provider": "openai_compatible", "ai_base_url": LIVE_BASE_URL, "ai_model": LIVE_MODEL,
-     "ai_input_cost_per_million_usd": "0.14"},
-    {"ai_provider": "openai_compatible", "ai_base_url": LIVE_BASE_URL, "ai_model": LIVE_MODEL,
-     "ai_output_cost_per_million_usd": "0.59"},
-    {"ai_provider": "openai_compatible", "ai_base_url": LIVE_BASE_URL, "ai_model": LIVE_MODEL,
-     "ai_input_cost_per_million_usd": "3"},
-], ids=["thinking-gemini", "reasoning-model", "custom-provider", "changed-endpoint", "moving-alias",
+    {"flashcard_ai_quota_bucket": ""},
+    {"flashcard_ai_provider": "gemini", "flashcard_ai_model": "gemini-3.8-flash"},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": "o4-mini"},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": "https://model.example.com/v1", "flashcard_ai_model": LIVE_MODEL},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": "https://api.openai.com/v1/other", "flashcard_ai_model": LIVE_MODEL},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": "gpt-4o-mini"},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
+     "flashcard_ai_input_cost_per_million_usd": "0.14"},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
+     "flashcard_ai_output_cost_per_million_usd": "0.59"},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
+     "flashcard_ai_input_cost_per_million_usd": "3"},
+], ids=["missing-quota-bucket", "thinking-gemini", "reasoning-model", "custom-provider", "changed-endpoint", "moving-alias",
         "underpriced-input", "underpriced-output", "reserved-cost-overrun"])
 def test_live_evaluation_refuses_unsupported_billing_before_provider_construction(monkeypatch, configuration):
     def forbidden_factory(_):
         pytest.fail("Provider construction must not precede hard budget admission")
 
     monkeypatch.setattr("app.ai.providers.get_ai_provider", forbidden_factory)
-    with pytest.raises(RuntimeError, match="hard budget"):
+    with pytest.raises(RuntimeError, match="hard budget|FLASHCARD_AI_QUOTA_BUCKET"):
         build_budgeted_live_provider(budget_settings(**configuration))
 
 
@@ -202,17 +206,17 @@ def test_live_evaluation_clamps_sdk_and_pipeline_limits_before_provider_construc
 
     monkeypatch.setattr("app.ai.providers.get_ai_provider", offline_factory)
     provider = build_budgeted_live_provider(budget_settings(
-        ai_provider="openai_compatible", ai_base_url=LIVE_BASE_URL, ai_model=LIVE_MODEL,
-        ai_provider_max_retries=3, ai_refill_rounds=2,
+        flashcard_ai_provider="openai_compatible", flashcard_ai_base_url=LIVE_BASE_URL, flashcard_ai_model=LIVE_MODEL,
+        flashcard_ai_provider_max_retries=3, flashcard_ai_refill_rounds=2,
     ))
     assert constructed_settings == [provider.settings]
-    assert provider.settings.ai_provider_max_retries == provider.settings.ai_refill_rounds == 0
-    assert provider.settings.ai_concurrency == 1
-    assert provider.settings.ai_cards_per_request == 2
-    assert provider.settings.ai_max_output_tokens == provider.settings.ai_max_job_output_tokens == 2_048
-    assert provider.settings.ai_max_job_input_tokens == 8_192
-    assert provider.settings.ai_max_estimated_cost_usd == Decimal("0.02")
-    assert provider.settings.ai_provider_timeout_seconds == 30
+    assert provider.settings.flashcard_ai_provider_max_retries == provider.settings.flashcard_ai_refill_rounds == 0
+    assert provider.settings.flashcard_ai_concurrency == 1
+    assert provider.settings.flashcard_ai_cards_per_request == 2
+    assert provider.settings.flashcard_ai_max_output_tokens == provider.settings.flashcard_ai_max_job_output_tokens == 2_048
+    assert provider.settings.flashcard_ai_max_job_input_tokens == 8_192
+    assert provider.settings.flashcard_ai_max_estimated_cost_usd == Decimal("0.02")
+    assert provider.settings.flashcard_ai_provider_timeout_seconds == 30
 
 
 async def test_live_evaluation_budget_allows_one_call_and_refuses_a_second():
@@ -230,9 +234,9 @@ async def test_live_evaluation_budget_allows_one_call_and_refuses_a_second():
 @pytest.mark.parametrize("prompt,output,prices", [
     ("source " * 10_000, 64, {}),
     ("source facts", 2_049, {}),
-    ("source facts", 64, {"ai_output_cost_per_million_usd": "10000"}),
-    ("source facts", 64, {"ai_input_cost_per_million_usd": "3"}),
-    ("source facts", 64, {"ai_input_cost_per_million_usd": "0", "ai_output_cost_per_million_usd": "0"}),
+    ("source facts", 64, {"flashcard_ai_output_cost_per_million_usd": "10000"}),
+    ("source facts", 64, {"flashcard_ai_input_cost_per_million_usd": "3"}),
+    ("source facts", 64, {"flashcard_ai_input_cost_per_million_usd": "0", "flashcard_ai_output_cost_per_million_usd": "0"}),
 ], ids=["input-budget", "output-budget", "cost-budget", "reserved-cost-budget", "missing-prices"])
 async def test_live_evaluation_budget_refuses_token_and_cost_overruns_before_a_call(prompt, output, prices):
     from app.ai.contracts import CandidateBatch

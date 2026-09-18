@@ -190,6 +190,7 @@ class InviteLink(Base):
         Index("ix_invite_links_instructor_id", "instructor_id"),
         Index("ix_invite_links_subject_id", "subject_id"),
         Index("ix_invite_links_used_by", "used_by"),
+        Index("ix_invite_links_retention", "expires_at", "id"),
     )
 
 
@@ -246,4 +247,5 @@ class RateLimitBucket(Base):
         CheckConstraint("length(trim(scope)) BETWEEN 1 AND 64", name="ck_rate_limit_scope_length"),
         CheckConstraint("length(key_hash) = 64", name="ck_rate_limit_key_hash_length"),
         CheckConstraint("count >= 0", name="ck_rate_limit_count_nonnegative"),
+        Index("ix_rate_limit_buckets_retention", "updated_at", "id"),
     )

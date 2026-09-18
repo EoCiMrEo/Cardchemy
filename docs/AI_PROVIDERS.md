@@ -5,7 +5,7 @@ strict application contract. Provider clients are created lazily by workers;
 the API can still start when credentials are absent and reports a precise
 generation-availability reason.
 
-`AI_PROVIDER_ENABLED` is the non-secret operator switch shared by the API and
+`FLASHCARD_AI_PROVIDER_ENABLED` is the non-secret operator switch shared by the API and
 generation worker. When false, the API rejects new generation jobs and the
 worker does not claim queued jobs. Provider credentials remain available only
 to the worker process.
@@ -14,23 +14,24 @@ to the worker process.
 
 | Provider | Required settings | Production baseline |
 |---|---|---|
-| `gemini` | `AI_PROVIDER_ENABLED=true`, `AI_MODEL`, `AI_API_KEY` | A specific stable Gemini text model with structured JSON output and usage metadata |
-| `openai_compatible` | `AI_PROVIDER_ENABLED=true`, `AI_MODEL`, `AI_BASE_URL`; key when the endpoint requires one | Chat Completions, separate system/user roles, strict JSON Schema response format, output-token limits, and usage metadata or estimator fallback |
+| `gemini` | `FLASHCARD_AI_PROVIDER_ENABLED=true`, `FLASHCARD_AI_MODEL`, `FLASHCARD_AI_API_KEY` | A specific stable Gemini text model with structured JSON output and usage metadata |
+| `openai_compatible` | `FLASHCARD_AI_PROVIDER_ENABLED=true`, `FLASHCARD_AI_MODEL`, `FLASHCARD_AI_BASE_URL`; key when the endpoint requires one | Chat Completions, separate system/user roles, strict JSON Schema response format, output-token limits, and usage metadata or estimator fallback |
 
 For native Gemini, use:
 
 ```dotenv
-AI_PROVIDER_ENABLED=true
-AI_PROVIDER=gemini
-AI_MODEL=gemini-3.8-flash
-AI_API_KEY=<provider-key>
-GEMINI_API_KEY=
-AI_BASE_URL=
+FLASHCARD_AI_PROVIDER_ENABLED=true
+FLASHCARD_AI_PROVIDER=gemini
+FLASHCARD_AI_MODEL=gemini-3.8-flash
+FLASHCARD_AI_API_KEY=<provider-key>
+FLASHCARD_AI_BASE_URL=
+FLASHCARD_AI_QUOTA_BUCKET=<account-or-project-quota-label>
 ```
 
-`AI_BASE_URL` must remain empty for the native Gemini adapter. `GEMINI_API_KEY`
-is a legacy fallback; prefer one value in `AI_API_KEY`, not duplicate secrets in
-both fields. After changing provider settings, recreate the API and worker so
+`FLASHCARD_AI_BASE_URL` must remain empty for the native Gemini adapter.
+The old `GEMINI_API_KEY` fallback is removed. Use the
+[private migration sequence](AI_PROFILE_MIGRATION.md) for existing settings.
+After changing provider settings, recreate the API and worker so
 both receive the non-secret switch and the worker receives the credential:
 
 ```text
@@ -45,7 +46,7 @@ The default, `gemini-3.8-flash`, is a specific stable identifier in Google’s
 model catalog as checked on 2026-09-14. Model availability changes over time;
 operators must review the provider’s lifecycle page during upgrades. Production
 configuration rejects names containing `preview`, `latest`, `experimental`, or
-`exp` unless `AI_ALLOW_UNSTABLE_MODEL=true` is an explicit risk decision.
+`exp` unless `FLASHCARD_AI_ALLOW_UNSTABLE_MODEL=true` is an explicit risk decision.
 
 Authoritative references:
 
@@ -84,9 +85,9 @@ The Gemini SDK retry layer is explicitly disabled (`attempts=1`), leaving the
 application retry loop as the single owner of request count and delay policy.
 
 Small, provenance-safe logical chunks are retained, then greedily packed up to
-`AI_REQUEST_INPUT_TARGET_TOKENS` using the actual rendered prompt. A single-pack
+`FLASHCARD_AI_REQUEST_INPUT_TARGET_TOKENS` using the actual rendered prompt. A single-pack
 document skips the summary stage. Multi-pack documents summarize per pack, and
-card generation requests up to `AI_CARDS_PER_REQUEST` cards at once while each
+card generation requests up to `FLASHCARD_AI_CARDS_PER_REQUEST` cards at once while each
 card still cites one trusted logical chunk. With the shipped 40,000-input-token
 and ten-card targets, a typical sub-40K document requesting 20 cards needs two
 initial provider requests instead of one request per chunk.
@@ -99,7 +100,7 @@ existing job token/cost limits still apply.
 
 The first required summary request and first card-generation request are
 compatibility probes before each stage fans out. A failed probe prevents sibling
-requests, and a later failure cancels outstanding siblings. `AI_CONCURRENCY` is
+requests, and a later failure cancels outstanding siblings. `FLASHCARD_AI_CONCURRENCY` is
 enforced once per worker process, so concurrent jobs cannot each create their
 own full provider request pool.
 
@@ -109,20 +110,22 @@ provider tier with an 80 percent safety margin, producing effective budgets of
 4 RPM and 200,000 input TPM. Reservations are reconciled to reported input
 usage after success and retained after ambiguous failures. This governor is
 process-local: operators running multiple generation-worker replicas must divide
-limits per replica or replace it with a distributed PostgreSQL/Redis governor.
+limits per replica and across any index/answer workers sharing the provider
+account/project quota. A quota bucket is an explicit operator label, not a
+distributed governor.
 Quota waits are covered by the whole-job time limit. Reaching that limit stops
 the job with available telemetry and manual Retry; it never automatically
 replays the expensive pipeline.
 
-Set both `AI_INPUT_COST_PER_MILLION_USD` and
-`AI_OUTPUT_COST_PER_MILLION_USD` from the provider’s current price sheet. When
+Set both `FLASHCARD_AI_INPUT_COST_PER_MILLION_USD` and
+`FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD` from the provider’s current price sheet. When
 both are zero, token budgets remain enforced and the UI labels monetary cost as
 unavailable. Prices are deliberately not hard-coded because they change.
 
 An OpenAI-compatible URL cannot contain credentials, query parameters, or a
 fragment. Prefer TLS for hosted endpoints. Plain HTTP is appropriate only on a
 trusted private network such as the internal Compose network. Never put keys in
-the URL; use `AI_API_KEY`.
+the URL; use `FLASHCARD_AI_API_KEY`.
 
 ## Provider changes
 
@@ -132,6 +135,13 @@ retryable jobs. This avoids attempting an old model snapshot against a new
 provider account. Re-run the offline corpus and the deliberately opt-in live
 evaluation described in `AI_EVALUATION.md` before production rollout.
 
-No embeddings, vector database, retrieval-augmented generation profile, or
-`pgvector` extension is included. Adding one later requires an explicit
-optional dependency profile, migrations, privacy analysis, and tests.
+The [subject-scoped RAG plan](<../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+adds independent `RAG_AI_*` and `RAG_EMBEDDING_*` profiles and a mandatory
+PostgreSQL 16 + pgvector foundation. See
+[ADR-012](decisions/ADR-012-subject-knowledge-and-rag-boundaries.md) for the
+accepted boundary. A configured profile does not itself implement Knowledge
+indexing or Ask AI execution; their later phases own those workers and gates.
+
+Before enabling a provider, review [the transfer disclosure and operator
+responsibilities](PRIVACY.md). Source encryption in Cardchemy does not prevent
+selected extracted evidence from being sent to the configured provider.

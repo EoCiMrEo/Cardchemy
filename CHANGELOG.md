@@ -5,6 +5,64 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Hard-renamed the flashcard profile to `FLASHCARD_AI_*`, rejected nonempty
+  legacy names and added independent disabled-by-default answer/embedding
+  profiles with explicit worker quota ownership. Existing operators must follow
+  the [configuration migration guide](docs/AI_PROFILE_MIGRATION.md).
+- Added mandatory PostgreSQL 16/pgvector 0.8.6 foundation with a reviewed,
+  scanned Alpine build, fail-closed legacy-volume guard and separate ICU logical
+  restore procedure. Existing installations must follow
+  [database operations](docs/DATABASE_OPERATIONS.md) before migration.
+- Added private Subject Knowledge document/content/index revisions, bounded
+  page/chunk/vector storage, aggregate reservations, publication eligibility,
+  durable index-job target and optional generation/set links. Capture,
+  indexing execution, retrieval, chat and Ask AI remain later phases.
+- Refined versioned flashcard and summary prompts with bounded untrusted
+  refill exclusions, fixed content-free quality diagnostics and concurrent
+  request-budget reservations. Strict grounding, duplicate rules, output caps
+  and exact-count atomic results remain enforced; authored offline comparisons
+  are separate from instructor judgment and real-model evaluation.
+- Added actual authenticated local STARTTLS/implicit-TLS email verification
+  and a clean-machine production-profile installation/backup/restore rehearsal.
+- Made the database healthcheck use internal TCP so the official PostgreSQL
+  image's temporary socket-only initialization server cannot release migrations early.
+- Kept a real internal health probe on the rehearsal TLS edge for older Compose
+  wait compatibility, while preserving certificate-validating HTTPS checks.
+- Completed all eleven v1.0 operational readiness checks, including deployment
+  on a clean machine with the production profile and separate-volume backup recovery.
+  The published version remains 0.1.0.
+
+## [0.1.0] - 2026-09-17
+
+First published release, with keyless-signed GHCR image digests and a signed
+checksum inventory covering source, provenance, notes, audits and SBOMs.
+The earlier prototype date did not identify a published Git tag or release.
+
+### Cardchemy identity and release readiness
+
+- Added consistent standalone Cardchemy branding, shared accessible wordmark,
+  supplied ICO favicon and optimized exports with separate artwork/trademark terms.
+- Added Apache-2.0 code licensing, contribution/security/conduct policies,
+  issue/PR templates, public roadmap, product screenshots and operating guidance.
+- Added a disposable no-quota demonstration and guarded release packaging for
+  GitHub Releases and GHCR: scanned Linux/amd64 images, CycloneDX SBOMs,
+  source provenance, checksums and keyless Sigstore signatures.
+- New installations use Cardchemy names. Existing operators must retain their
+  Compose project/database identity, secrets and explicit JWT/cookie settings;
+  changing authentication defaults invalidates existing sessions.
+
+### Phase 10 - observability and privacy controls
+
+- Added content-free JSON logs, server-generated request/job correlation,
+  centralized safe client errors, private request/queue/job/usage/cost metrics
+  and per-worker loop/database health probes.
+- Added transactional fixed-field audits for invitations, approval,
+  publication, instructor provisioning, account deletion and database role
+  changes in Alembic revision `20260917_0008`.
+- Added provider-transfer disclosure, configurable bounded metadata retention,
+  private account exports and explicit drained-writer account deletion.
+  Optional HTTPS aggregate reporting is disabled by default and operator-run.
+
 ### Fixed
 
 - Added an explicit non-secret `AI_PROVIDER_ENABLED` admission switch so the
@@ -118,12 +176,5 @@ and the Keep a Changelog structure.
 - Replaced character-window processing and the LangChain/LangGraph runtime with
   structure-aware token chunks and a small provider-neutral pipeline.
 
-## [0.1.0] - 2026-01-29
-
-### Added
-
-- Initial PDF-to-flashcard instructor workflow.
-- Instructor review and publication, student invitations, study mode, timers, and progress tracking.
-
-[Unreleased]: https://github.com/EoCiMrEo/FlashCardGenerator/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/EoCiMrEo/FlashCardGenerator/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EoCiMrEo/Cardchemy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0

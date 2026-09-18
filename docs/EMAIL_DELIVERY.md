@@ -107,8 +107,10 @@ The defaults are conservative for a small self-hosted installation:
 | `EMAIL_FAILED_RETENTION_DAYS` | 30 | Retains terminal sanitized failures |
 | `EMAIL_SECURITY_NOTIFICATION_EXPIRE_HOURS` | 24 | Prevents stale security notifications |
 
-Temporary disconnects, timeouts, and SMTP 4xx responses are retried with
-bounded exponential backoff and jitter. Permanent recipient, authentication,
+Disconnects and timeouts before the SMTP delivery stage, and explicit SMTP
+4xx rejections, are retried with bounded exponential backoff and jitter.
+Disconnects/timeouts during delivery become `smtp_delivery_ambiguous` and
+require operator review instead of automatic retry. Permanent recipient, authentication,
 certificate, and SMTP 5xx failures become terminal rather than retrying
 forever. Fix the provider configuration or recipient problem, restart the
 email worker, and inspect the queue without exposing recipients or message
@@ -150,8 +152,13 @@ tolerate that narrow ambiguity.
 
 ## Sender-domain responsibility
 
-The deployment operator owns deliverability and domain reputation. Before
-sending production mail:
+An operator-owned local or LAN relay is supported; an online provider is not
+required. The [local encrypted SMTP verifier](SMTP-VERIFICATION.md) exercises
+actual TLS delivery and failure recovery without external mail. Verify routing
+and receipt on the installation's own relay before relying on it.
+
+The deployment operator owns deliverability and domain reputation. When the
+relay sends mail outside the local installation:
 
 1. Authorize the chosen relay in the sender domain's SPF record.
 2. Enable DKIM signing at the relay and publish its selector records.
@@ -161,3 +168,9 @@ sending production mail:
 
 The application supplies standards-compliant multipart messages, but SMTP
 configuration alone cannot create or maintain these DNS and provider controls.
+
+[Privacy controls](PRIVACY.md) cover recipient metadata and account deletion;
+[observability](OBSERVABILITY.md) covers content-free outbox correlation. Mail,
+SMTP replies, recipients and sensitive links must stay out of application and
+operator proxy/collector logs. Delivered mailbox/provider copies have separate
+retention and are outside database deletion.
