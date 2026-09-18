@@ -18,3 +18,9 @@ guidance without rewriting historical evidence.
 No runtime, configuration, schema or provider calls are changed by this
 reconciliation. Context validation and current-base protected CI are required
 before merge; their results will be recorded after execution.
+
+After PR #23 merged, this branch merged exact protected main `62796df` normally.
+Context validation passed: 37 required files, 66 active guides and 880 local
+links. Original committed historical-log bytes were compared directly and are
+identical at the retained dated path (digest above). Diff whitespace validation
+passed. Hosted current-base CI remains pending until the branch is pushed.
