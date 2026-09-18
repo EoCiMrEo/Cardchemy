@@ -26,7 +26,7 @@ def make_settings(**overrides) -> Settings:
         "database_url": "sqlite+aiosqlite:///:memory:",
         "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
         "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "ai_provider_enabled": True,
+        "flashcard_ai_provider_enabled": True,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -370,6 +370,61 @@ async def test_worker_completion_is_atomic_and_stale_claim_cannot_repeat(session
         await worker._finish_success(job_id, token, cards)
 
 
+async def test_queued_job_runs_with_persisted_flashcard_provider_model_snapshot(session_factory, monkeypatch):
+    from app.ai.contracts import ExtractedDocument, ExtractedPage
+    from app.ai.pipeline import PipelineError
+
+    async with session_factory() as db:
+        owner, subject = await seed_owner_subject(db)
+        queued_settings = make_settings(
+            flashcard_ai_provider="gemini", flashcard_ai_model="queued-model",
+        )
+        service = GenerationJobService(queued_settings)
+        async with db.begin():
+            job = await service.create_reservation(
+                db, user_id=owner.id, data=job_data(subject.id),
+                idempotency_key="snapshot-hard-rename-regression",
+            )
+        async with db.begin():
+            await service.attach_source(
+                db, job_id=job.id, user_id=owner.id, media_type="application/pdf",
+                content=b"%PDF-1.7\nsnapshot",
+            )
+        assert job.ai_provider == "gemini"
+        assert job.ai_model == "queued-model"
+        job_id = job.id
+
+    worker = GenerationWorker(
+        settings=make_settings(
+            flashcard_ai_provider="openai_compatible",
+            flashcard_ai_model="current-model",
+            flashcard_ai_base_url="http://model.internal/v1",
+        ),
+        session_factory=session_factory, worker_id="snapshot-worker",
+    )
+    claim = await worker.claim_next()
+    assert claim is not None
+    captured = {}
+
+    class SpyGraph:
+        async def ainvoke(self, _payload):
+            raise PipelineError("fixed_snapshot_probe", "Snapshot inspected.", retryable=False)
+
+    def graph_factory(*, settings, **_kwargs):
+        captured["provider"] = settings.flashcard_ai_provider
+        captured["model"] = settings.flashcard_ai_model
+        return SpyGraph()
+
+    monkeypatch.setattr("app.workers.generation.PDFProcessor.extract_text_in_subprocess", lambda *_args, **_kwargs: ExtractedDocument(pages=[ExtractedPage(page_number=1, text="Fact.")]))
+    monkeypatch.setattr("app.workers.generation.create_flashcard_graph", graph_factory)
+    with pytest.raises(PipelineError, match="Snapshot inspected"):
+        await worker._pipeline(*claim)
+    assert captured == {"provider": "gemini", "model": "queued-model"}
+    async with session_factory() as db:
+        persisted = await db.get(GenerationJob, job_id)
+        assert (persisted.ai_provider, persisted.ai_model) == ("gemini", "queued-model")
+
+
 async def test_worker_permanent_failure_is_terminal_and_deletes_source(
     session_factory, monkeypatch
 ):
@@ -634,7 +689,7 @@ async def test_limits_explain_provider_unavailability(db):
     owner_id = owner.id
     subject_id = subject.id
     service = GenerationJobService(
-        make_settings(ai_provider_enabled=False, ai_api_key="worker-only-key")
+        make_settings(flashcard_ai_provider_enabled=False, flashcard_ai_api_key="worker-only-key")
     )
 
     limits = await service.limits(db, owner_id)
@@ -659,11 +714,10 @@ async def test_limits_explain_provider_unavailability(db):
 async def test_limits_use_non_secret_enablement_without_api_credentials(db):
     owner, _ = await seed_owner_subject(db)
     settings = make_settings(
-        ai_provider_enabled=True,
-        ai_api_key=None,
-        gemini_api_key=None,
+        flashcard_ai_provider_enabled=True,
+        flashcard_ai_api_key=None,
     )
-    assert settings.ai_provider_configured is False
+    assert settings.flashcard_ai_provider_configured is False
 
     limits = await GenerationJobService(settings).limits(db, owner.id)
 

@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings, get_settings
 from app.database import async_session_maker
 from app.models.email import EmailOutboxMessage, EmailOutboxStatus
+from app.observability import job_context, safe_error_code
+from app.services.operations import pulse_worker
 from app.services.email import (
     EmailCompositionError,
     EmailComposer,
@@ -57,8 +59,10 @@ class EmailWorker:
         tasks: set[asyncio.Task[None]] = set()
         last_cleanup = 0.0
         loop = asyncio.get_running_loop()
+        logger.info("worker_started", extra={"kind": "email"})
         try:
             while not stop_event.is_set():
+                await pulse_worker(self.session_factory, worker_id=self.worker_id, kind="email", status="running", stale_seconds=self.settings.worker_health_stale_seconds)
                 now_monotonic = loop.time()
                 if now_monotonic - last_cleanup >= self.settings.email_cleanup_interval_seconds:
                     await self.recover_and_cleanup()
@@ -94,14 +98,16 @@ class EmailWorker:
                     except TimeoutError:
                         pass
         finally:
+            await pulse_worker(self.session_factory, worker_id=self.worker_id, kind="email", status="draining", stale_seconds=self.settings.worker_health_stale_seconds)
             forced_cancellations = await drain_active_tasks(
                 tasks, self.settings.worker_shutdown_grace_seconds
             )
             if forced_cancellations:
                 logger.warning(
-                    "Email worker shutdown grace expired; cancelled active_messages=%s",
-                    forced_cancellations,
+                    "worker_shutdown_expired",
+                    extra={"kind": "email", "active_count": forced_cancellations},
                 )
+            logger.info("worker_stopped", extra={"kind": "email"})
 
     async def claim_next(self) -> tuple[UUID, str] | None:
         async with self.session_factory() as db:
@@ -168,6 +174,11 @@ class EmailWorker:
         return outbox
 
     async def process_claim(self, outbox_id: UUID, claim_token: str) -> None:
+        with job_context(outbox_id, email=True):
+            logger.info("email_started")
+            await self._process_claim(outbox_id, claim_token)
+
+    async def _process_claim(self, outbox_id: UUID, claim_token: str) -> None:
         try:
             async with self.session_factory() as db:
                 outbox = await self._claimed(db, outbox_id, claim_token)
@@ -178,10 +189,8 @@ class EmailWorker:
             await self.transport.send(message)
             await self._finish_success(outbox_id, claim_token)
             logger.info(
-                "Transactional email sent outbox_id=%s type=%s attempt=%s",
-                outbox_id,
-                message_type,
-                attempt_count,
+                "email_sent",
+                extra={"outbox_id": outbox_id, "attempt_count": attempt_count},
             )
         except EmailCompositionError as exc:
             await self._finish_failure(
@@ -192,9 +201,10 @@ class EmailWorker:
                 outbox_id, claim_token, code=exc.code, retryable=exc.retryable
             )
         except EmailLeaseLost:
+            logger.warning("email_lease_lost")
             return
         except Exception:
-            logger.error("Transactional email failed unexpectedly outbox_id=%s", outbox_id)
+            logger.error("email_failed", extra={"error_code": "email_internal_error"})
             await self._finish_failure(
                 outbox_id,
                 claim_token,
@@ -258,12 +268,8 @@ class EmailWorker:
                 self._clear_claim(outbox)
                 outbox.updated_at = now
                 logger.warning(
-                    "Transactional email attempt failed outbox_id=%s type=%s attempt=%s code=%s retry=%s",
-                    outbox.id,
-                    outbox.message_type,
-                    outbox.attempt_count,
-                    outbox.last_error_code,
-                    can_retry,
+                    "email_failed",
+                    extra={"outbox_id": outbox.id, "attempt_count": outbox.attempt_count, "error_code": safe_error_code(outbox.last_error_code)},
                 )
 
     @staticmethod

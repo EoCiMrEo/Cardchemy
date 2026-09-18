@@ -29,7 +29,7 @@ def generation_settings(**overrides) -> Settings:
         ),
         "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
         "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "ai_provider_enabled": True,
+        "flashcard_ai_provider_enabled": True,
         "generation_max_active_jobs_per_user": 10,
         "generation_max_active_jobs_deployment": 10,
     }

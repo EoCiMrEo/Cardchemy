@@ -1,6 +1,7 @@
 const en = {
   common: {
-    appName: 'Flashcard Generator',
+    appName: 'Cardchemy',
+    tagline: 'Turn documents into memory.',
     loading: 'Loading…',
     retry: 'Retry',
     cancel: 'Cancel',

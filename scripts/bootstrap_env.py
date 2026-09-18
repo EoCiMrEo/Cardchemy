@@ -5,7 +5,13 @@ from __future__ import annotations
 import base64
 import os
 from pathlib import Path
+import runpy
 import secrets
+
+
+ensure_no_legacy_configuration = runpy.run_path(
+    str(Path(__file__).with_name("check_config_migration.py"))
+)["ensure_no_legacy_configuration"]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +50,9 @@ def render_environment(template: str) -> str:
 
 
 def main() -> None:
+    # Validate an existing root file without modifying it. A removed nonempty
+    # name needs migration guidance even though bootstrap never overwrites it.
+    ensure_no_legacy_configuration(OUTPUT)
     if OUTPUT.exists():
         raise SystemExit("Refusing to overwrite existing .env")
 

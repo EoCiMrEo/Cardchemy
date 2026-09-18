@@ -7,6 +7,7 @@ the repository root, so startup does not depend on the caller's cwd.
 
 import base64
 import binascii
+from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import lru_cache
 import ipaddress
@@ -17,8 +18,9 @@ from typing import Literal
 from urllib.parse import quote
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
+from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import dotenv_values
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -34,6 +36,50 @@ UNSTABLE_MODEL_PATTERN = re.compile(r"(?:^|[-_.])(preview|latest|experimental|ex
 DNS_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 API_ROOT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
 FORBIDDEN_CORS_ORIGINS = {"*", "null"}
+REMOVED_AI_NAMES = frozenset({
+    "AI_PROVIDER_ENABLED", "AI_PROVIDER", "AI_MODEL", "AI_API_KEY", "AI_BASE_URL",
+    "AI_ALLOW_UNSTABLE_MODEL", "AI_PROVIDER_MAX_RETRIES", "AI_RETRY_BASE_SECONDS",
+    "AI_RETRY_MAX_SECONDS", "AI_MAX_OUTPUT_TOKENS", "AI_TEMPERATURE",
+    "AI_CONTEXT_WINDOW_TOKENS", "AI_PROVIDER_TIMEOUT_SECONDS", "AI_CONCURRENCY",
+    "AI_REQUESTS_PER_MINUTE", "AI_INPUT_TOKENS_PER_MINUTE",
+    "AI_RATE_LIMIT_SAFETY_PERCENT", "AI_REQUEST_INPUT_TARGET_TOKENS",
+    "AI_CARDS_PER_REQUEST", "AI_CHUNK_INPUT_TOKENS", "AI_CHUNK_OVERLAP_TOKENS",
+    "AI_SUMMARY_OUTPUT_TOKENS", "AI_MAX_JOB_INPUT_TOKENS", "AI_MAX_JOB_OUTPUT_TOKENS",
+    "AI_REFILL_ROUNDS", "AI_DUPLICATE_SIMILARITY_THRESHOLD",
+    "AI_INPUT_COST_PER_MILLION_USD", "AI_OUTPUT_COST_PER_MILLION_USD",
+    "AI_MAX_ESTIMATED_COST_USD", "GEMINI_API_KEY",
+})
+
+
+def _removed_ai_names(*, env_file: object, init_values: dict[str, object]) -> tuple[str, ...]:
+    """Inspect supported sources without retaining or displaying their values."""
+
+    found = {
+        str(key).upper() for key, value in init_values.items()
+        if str(key).upper() in REMOVED_AI_NAMES and value is not None and str(value).strip()
+    }
+    found.update(
+        key.upper() for key, value in os.environ.items()
+        if key.upper() in REMOVED_AI_NAMES and value.strip()
+    )
+    if env_file is not None:
+        paths = env_file if isinstance(env_file, (tuple, list)) else (env_file,)
+        for path in paths:
+            if not Path(path).is_file():
+                continue
+            # dotenv_values follows the same file format used by BaseSettings.
+            # Only key presence is retained; parser diagnostics/values never
+            # enter the fixed migration error.
+            try:
+                parsed = dotenv_values(path, encoding="utf-8", interpolate=False)
+            except Exception:
+                # Let the normal settings loader report malformed file access.
+                continue
+            found.update(
+                key.upper() for key, value in parsed.items()
+                if key.upper() in REMOVED_AI_NAMES and value is not None and value.strip()
+            )
+    return tuple(sorted(found))
 
 
 def normalize_http_origin(origin: str) -> str:
@@ -80,6 +126,27 @@ def normalize_http_origin(origin: str) -> str:
     return f"{scheme}://{normalized_host}{port_suffix}"
 
 
+@dataclass(frozen=True, slots=True)
+class TextProviderProfile:
+    """Provider-only controls; flashcard packing/card knobs never enter Ask AI."""
+
+    provider: Literal["gemini", "openai_compatible"]
+    model: str
+    api_key_value: str | None = field(repr=False)
+    base_url: AnyHttpUrl | None
+    temperature: float
+    max_output_tokens: int
+    timeout_seconds: float
+    max_retries: int
+    retry_base_seconds: float
+    retry_max_seconds: float
+    concurrency: int
+    requests_per_minute: int
+    input_tokens_per_minute: int
+    rate_limit_safety_percent: int
+    quota_bucket: str
+
+
 class Settings(BaseSettings):
     """Settings loaded from process environment and the root ``.env``."""
 
@@ -89,9 +156,21 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
         env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
-    app_name: str = Field(default="Flashcard Generator", min_length=1, max_length=128)
+    def __init__(self, **values: object) -> None:
+        selected_file = values.get("_env_file", self.model_config["env_file"])
+        removed = _removed_ai_names(env_file=selected_file, init_values=values)
+        if removed:
+            raise ValueError(
+                "Removed AI configuration keys: " + ", ".join(removed)
+                + ". Move nonempty values to FLASHCARD_AI_* and remove old names; "
+                "GEMINI_API_KEY must migrate to FLASHCARD_AI_API_KEY."
+            )
+        super().__init__(**values)
+
+    app_name: str = Field(default="Cardchemy", min_length=1, max_length=128)
     app_version: str = "0.1.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
@@ -99,24 +178,37 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     worker_shutdown_grace_seconds: float = Field(default=30, ge=0, le=7_200)
 
+    # Diagnostics contain only approved operational metadata. Business content
+    # and account deletion remain explicit operator actions.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    request_retention_days: int = Field(default=7, ge=1, le=365)
+    generation_job_retention_days: int = Field(default=30, ge=1, le=3_650)
+    database_metadata_retention_days: int = Field(default=30, ge=1, le=3_650)
+    audit_retention_days: int = Field(default=90, ge=1, le=3_650)
+    retention_batch_size: int = Field(default=500, ge=1, le=10_000)
+    worker_health_stale_seconds: int = Field(default=60, ge=10, le=3_600)
+    telemetry_enabled: bool = False
+    telemetry_endpoint: AnyHttpUrl | None = None
+    telemetry_timeout_seconds: float = Field(default=5, ge=1, le=30)
+
     # Compose injects DATABASE_URL with its internal ``db`` host. Native
     # processes derive a localhost URL from the same root PostgreSQL settings.
     database_url: str = ""
-    postgres_db: str = Field(default="flashcard_gen", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    postgres_db: str = Field(default="cardchemy", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     postgres_user: str = Field(default="admin", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     postgres_password: SecretStr | None = None
     postgres_port: int = Field(default=5432, ge=1, le=65535)
 
     secret_key: SecretStr = Field(min_length=32)
     algorithm: Literal["HS256"] = "HS256"
-    jwt_issuer: str = "flashcard-generator-api"
-    jwt_audience: str = "flashcard-generator-web"
+    jwt_issuer: str = "cardchemy-api"
+    jwt_audience: str = "cardchemy-web"
     jwt_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
     access_token_expire_minutes: int = Field(default=15, ge=1, le=60)
     refresh_token_expire_days: int = Field(default=7, ge=1, le=30)
     refresh_session_expire_days: int = Field(default=30, ge=1, le=90)
 
-    refresh_cookie_name: str = "flashcard_refresh"
+    refresh_cookie_name: str = "cardchemy_refresh"
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: Literal["lax", "strict"] = "lax"
     refresh_cookie_domain: str | None = None
@@ -150,46 +242,96 @@ class Settings(BaseSettings):
     email_failed_retention_days: int = Field(default=30, ge=1, le=3_650)
     email_security_notification_expire_hours: int = Field(default=24, ge=1, le=168)
 
-    # Provider-independent AI settings. ``GEMINI_API_KEY`` remains as a
-    # compatibility fallback while deployments migrate to ``AI_API_KEY``.
-    ai_provider_enabled: bool = False
-    ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
-    ai_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=128)
-    ai_api_key: SecretStr | None = None
-    gemini_api_key: SecretStr | None = None
-    ai_base_url: AnyHttpUrl | None = None
-    ai_allow_unstable_model: bool = False
-    ai_temperature: float = Field(default=0.2, ge=0, le=2)
-    ai_max_output_tokens: int = Field(default=8_192, ge=64, le=131_072)
-    ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
-    ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
-    ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
-    ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
-    ai_retry_max_seconds: float = Field(default=30, ge=3, le=600)
-    ai_concurrency: int = Field(default=3, ge=1, le=32)
-    ai_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
-    ai_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
-    ai_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
-    ai_chunk_input_tokens: int = Field(default=1_200, ge=128, le=131_072)
-    ai_chunk_overlap_tokens: int = Field(default=120, ge=0, le=32_768)
-    ai_request_input_target_tokens: int = Field(
+    # Flashcard text-generation profile. The 29 former AI_* names are removed.
+    flashcard_ai_provider_enabled: bool = False
+    flashcard_ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    flashcard_ai_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=128)
+    flashcard_ai_api_key: SecretStr | None = None
+    flashcard_ai_base_url: AnyHttpUrl | None = None
+    flashcard_ai_allow_unstable_model: bool = False
+    flashcard_ai_temperature: float = Field(default=0.2, ge=0, le=2)
+    flashcard_ai_max_output_tokens: int = Field(default=8_192, ge=64, le=131_072)
+    flashcard_ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
+    flashcard_ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
+    flashcard_ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
+    flashcard_ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
+    flashcard_ai_retry_max_seconds: float = Field(default=30, ge=3, le=600)
+    flashcard_ai_concurrency: int = Field(default=3, ge=1, le=32)
+    flashcard_ai_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
+    flashcard_ai_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
+    flashcard_ai_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
+    flashcard_ai_chunk_input_tokens: int = Field(default=1_200, ge=128, le=131_072)
+    flashcard_ai_chunk_overlap_tokens: int = Field(default=120, ge=0, le=32_768)
+    flashcard_ai_request_input_target_tokens: int = Field(
         default=40_000, ge=2_048, le=4_000_000
     )
-    ai_cards_per_request: int = Field(default=10, ge=1, le=100)
-    ai_summary_output_tokens: int = Field(default=1_024, ge=64, le=32_768)
-    ai_max_job_input_tokens: int = Field(default=200_000, ge=1_024, le=20_000_000)
-    ai_max_job_output_tokens: int = Field(default=262_144, ge=64, le=5_000_000)
-    ai_input_cost_per_million_usd: Decimal = Field(
+    flashcard_ai_cards_per_request: int = Field(default=10, ge=1, le=100)
+    flashcard_ai_summary_output_tokens: int = Field(default=1_024, ge=64, le=32_768)
+    flashcard_ai_max_job_input_tokens: int = Field(default=200_000, ge=1_024, le=20_000_000)
+    flashcard_ai_max_job_output_tokens: int = Field(default=262_144, ge=64, le=5_000_000)
+    flashcard_ai_input_cost_per_million_usd: Decimal = Field(
         default=Decimal("0"), ge=Decimal("0"), le=Decimal("10000")
     )
-    ai_output_cost_per_million_usd: Decimal = Field(
+    flashcard_ai_output_cost_per_million_usd: Decimal = Field(
         default=Decimal("0"), ge=Decimal("0"), le=Decimal("10000")
     )
-    ai_max_estimated_cost_usd: Decimal = Field(
+    flashcard_ai_max_estimated_cost_usd: Decimal = Field(
         default=Decimal("5"), gt=Decimal("0"), le=Decimal("100000")
     )
-    ai_refill_rounds: int = Field(default=2, ge=0, le=5)
-    ai_duplicate_similarity_threshold: float = Field(default=0.88, ge=0.5, le=1)
+    flashcard_ai_refill_rounds: int = Field(default=2, ge=0, le=5)
+    flashcard_ai_duplicate_similarity_threshold: float = Field(default=0.88, ge=0.5, le=1)
+    flashcard_ai_quota_bucket: str = Field(default="", max_length=128)
+
+    # RAG remains off by default. Answer and embedding roles have independent
+    # connection material and divided local capacity; no implicit key fallback.
+    rag_enabled: bool = False
+    rag_ai_provider_enabled: bool = False
+    rag_ai_provider: Literal["openai_compatible"] = "openai_compatible"
+    rag_ai_model: str = Field(default="gpt-4.1-mini-2025-04-14", min_length=1, max_length=128)
+    rag_ai_api_key: SecretStr | None = None
+    rag_ai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    rag_ai_allow_unstable_model: bool = False
+    rag_ai_temperature: float = Field(default=0.2, ge=0, le=2)
+    rag_ai_max_output_tokens: int = Field(default=2_048, ge=64, le=131_072)
+    rag_ai_context_window_tokens: int = Field(default=128_000, ge=2_048, le=4_194_304)
+    rag_ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
+    rag_ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
+    rag_ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
+    rag_ai_retry_max_seconds: float = Field(default=30, ge=3, le=600)
+    rag_ai_concurrency: int = Field(default=1, ge=1, le=32)
+    rag_ai_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
+    rag_ai_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
+    rag_ai_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
+    rag_ai_max_job_input_tokens: int = Field(default=40_000, ge=1_024, le=20_000_000)
+    rag_ai_max_job_output_tokens: int = Field(default=4_096, ge=64, le=5_000_000)
+    rag_ai_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.40"), ge=0, le=10_000)
+    rag_ai_output_cost_per_million_usd: Decimal = Field(default=Decimal("1.60"), ge=0, le=10_000)
+    rag_ai_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
+    rag_ai_quota_bucket: str = Field(default="", max_length=128)
+
+    rag_embedding_provider_enabled: bool = False
+    rag_embedding_provider: Literal["openai_compatible"] = "openai_compatible"
+    rag_embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=128)
+    rag_embedding_api_key: SecretStr | None = None
+    rag_embedding_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    rag_embedding_dimensions: int = Field(default=1_536, ge=1_536, le=1_536)
+    rag_embedding_format_version: Literal["raw_text_v1"] = "raw_text_v1"
+    rag_embedding_space_revision: str = Field(default="v1", min_length=1, max_length=64)
+    rag_embedding_representation: Literal["float32"] = "float32"
+    rag_embedding_metric: Literal["cosine"] = "cosine"
+    rag_embedding_batch_size: int = Field(default=32, ge=1, le=256)
+    rag_embedding_max_input_tokens: int = Field(default=8_192, ge=128, le=1_000_000)
+    rag_embedding_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
+    rag_embedding_provider_max_retries: int = Field(default=3, ge=0, le=3)
+    rag_embedding_retry_base_seconds: float = Field(default=3, ge=3, le=60)
+    rag_embedding_retry_max_seconds: float = Field(default=30, ge=3, le=600)
+    rag_embedding_concurrency: int = Field(default=1, ge=1, le=32)
+    rag_embedding_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
+    rag_embedding_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
+    rag_embedding_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
+    rag_embedding_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.02"), ge=0, le=10_000)
+    rag_embedding_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
+    rag_embedding_quota_bucket: str = Field(default="", max_length=128)
 
     generation_source_encryption_key: SecretStr
 
@@ -286,43 +428,129 @@ class Settings(BaseSettings):
         return self
 
     @property
-    def ai_api_key_value(self) -> str | None:
+    def flashcard_ai_api_key_value(self) -> str | None:
         """Return the configured key without ever including it in model output."""
 
-        configured = self.ai_api_key
-        if configured is None and self.ai_provider == "gemini":
-            configured = self.gemini_api_key
+        configured = self.flashcard_ai_api_key
         if configured is None:
             return None
         value = configured.get_secret_value().strip()
         return value or None
 
     @property
-    def ai_provider_configured(self) -> bool:
+    def flashcard_ai_provider_configured(self) -> bool:
         """Return whether this process has the provider connection material."""
 
-        if self.ai_provider == "gemini":
-            return self.ai_api_key_value is not None
-        return self.ai_base_url is not None
+        if self.flashcard_ai_provider == "gemini":
+            return self.flashcard_ai_api_key_value is not None
+        return self.flashcard_ai_base_url is not None
 
     def require_generation_worker_config(self) -> "Settings":
         """Fail worker startup when an enabled provider lacks credentials."""
 
         if (
-            self.ai_provider_enabled
-            and self.ai_provider == "gemini"
-            and self.ai_api_key_value is None
+            self.flashcard_ai_provider_enabled
+            and self.flashcard_ai_provider == "gemini"
+            and self.flashcard_ai_api_key_value is None
         ):
             raise ValueError(
-                "Enabled Gemini generation requires AI_API_KEY or GEMINI_API_KEY"
+                "Enabled Gemini generation requires FLASHCARD_AI_API_KEY"
             )
+        if self.flashcard_ai_provider_enabled and not self.flashcard_ai_quota_bucket:
+            raise ValueError("Enabled flashcard generation requires FLASHCARD_AI_QUOTA_BUCKET")
+        return self
+
+    @staticmethod
+    def _secret_value(value: SecretStr | None) -> str | None:
+        if value is None:
+            return None
+        return value.get_secret_value().strip() or None
+
+    @property
+    def rag_ai_api_key_value(self) -> str | None:
+        return self._secret_value(self.rag_ai_api_key)
+
+    @property
+    def rag_embedding_api_key_value(self) -> str | None:
+        return self._secret_value(self.rag_embedding_api_key)
+
+    @property
+    def rag_answer_available(self) -> bool:
+        """Nonsecret admission metadata; authorization is checked elsewhere."""
+
+        return self.rag_enabled and self.rag_ai_provider_enabled and self.rag_embedding_provider_enabled
+
+    @property
+    def rag_index_available(self) -> bool:
+        return self.rag_enabled and self.rag_embedding_provider_enabled
+
+    @property
+    def rag_embedding_space_identity(self) -> tuple[str, str, str, str, str, int, str, str]:
+        """Nonsecret exact embedding-space identity for future revision fences."""
+
+        return (
+            self.rag_embedding_provider,
+            str(self.rag_embedding_base_url).rstrip("/"),
+            self.rag_embedding_model,
+            self.rag_embedding_space_revision,
+            self.rag_embedding_format_version,
+            self.rag_embedding_dimensions,
+            self.rag_embedding_representation,
+            self.rag_embedding_metric,
+        )
+
+    def text_provider_profile(self, role: Literal["flashcard", "rag_answer"] = "flashcard") -> TextProviderProfile:
+        prefix = "flashcard_ai" if role == "flashcard" else "rag_ai"
+        if role not in ("flashcard", "rag_answer"):
+            raise ValueError("Unknown text provider role")
+        return TextProviderProfile(
+            provider=getattr(self, f"{prefix}_provider"),
+            model=getattr(self, f"{prefix}_model"),
+            api_key_value=self._secret_value(getattr(self, f"{prefix}_api_key")),
+            base_url=getattr(self, f"{prefix}_base_url"),
+            temperature=getattr(self, f"{prefix}_temperature"),
+            max_output_tokens=getattr(self, f"{prefix}_max_output_tokens"),
+            timeout_seconds=getattr(self, f"{prefix}_provider_timeout_seconds"),
+            max_retries=getattr(self, f"{prefix}_provider_max_retries"),
+            retry_base_seconds=getattr(self, f"{prefix}_retry_base_seconds"),
+            retry_max_seconds=getattr(self, f"{prefix}_retry_max_seconds"),
+            concurrency=getattr(self, f"{prefix}_concurrency"),
+            requests_per_minute=getattr(self, f"{prefix}_requests_per_minute"),
+            input_tokens_per_minute=getattr(self, f"{prefix}_input_tokens_per_minute"),
+            rate_limit_safety_percent=getattr(self, f"{prefix}_rate_limit_safety_percent"),
+            quota_bucket=getattr(self, f"{prefix}_quota_bucket"),
+        )
+
+    def require_rag_answer_worker_config(self) -> "Settings":
+        """Require only answer/query credentials when that role is enabled."""
+
+        if not self.rag_enabled or not self.rag_ai_provider_enabled:
+            return self
+        if not self.rag_embedding_provider_enabled:
+            raise ValueError("Ask AI requires RAG_EMBEDDING_PROVIDER_ENABLED")
+        if self.rag_ai_api_key_value is None:
+            raise ValueError("Ask AI worker requires RAG_AI_API_KEY")
+        if self.rag_embedding_api_key_value is None:
+            raise ValueError("Ask AI worker requires RAG_EMBEDDING_API_KEY")
+        if not self.rag_ai_quota_bucket or not self.rag_embedding_quota_bucket:
+            raise ValueError("Ask AI worker requires RAG_AI_QUOTA_BUCKET and RAG_EMBEDDING_QUOTA_BUCKET")
+        return self
+
+    def require_rag_index_worker_config(self) -> "Settings":
+        """Require only document-embedding credentials for an enabled index role."""
+
+        if self.rag_index_available:
+            if self.rag_embedding_api_key_value is None:
+                raise ValueError("Index worker requires RAG_EMBEDDING_API_KEY")
+            if not self.rag_embedding_quota_bucket:
+                raise ValueError("Index worker requires RAG_EMBEDDING_QUOTA_BUCKET")
         return self
 
     @property
-    def ai_pricing_configured(self) -> bool:
+    def flashcard_ai_pricing_configured(self) -> bool:
         return bool(
-            self.ai_input_cost_per_million_usd > 0
-            or self.ai_output_cost_per_million_usd > 0
+            self.flashcard_ai_input_cost_per_million_usd > 0
+            or self.flashcard_ai_output_cost_per_million_usd > 0
         )
 
     @property
@@ -429,25 +657,50 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("ai_model")
+    @field_validator("flashcard_ai_model", "rag_ai_model", "rag_embedding_model")
     @classmethod
-    def validate_ai_model_name(cls, value: str) -> str:
+    def validate_ai_model_name(cls, value: str, info: ValidationInfo) -> str:
         normalized = value.strip()
         if not normalized or any(ord(character) < 32 for character in normalized):
-            raise ValueError("AI_MODEL must be a non-empty printable model identifier")
+            raise ValueError(f"{info.field_name.upper()} must be a non-empty printable model identifier")
         return normalized
 
-    @field_validator("ai_base_url")
+    @field_validator("flashcard_ai_base_url", "rag_ai_base_url", "rag_embedding_base_url")
     @classmethod
-    def validate_ai_base_url(cls, value: AnyHttpUrl | None) -> AnyHttpUrl | None:
+    def validate_ai_base_url(cls, value: AnyHttpUrl | None, info: ValidationInfo) -> AnyHttpUrl | None:
         if value is None:
             return None
         if value.username or value.password or value.query or value.fragment:
-            raise ValueError("AI_BASE_URL cannot contain credentials, a query, or a fragment")
+            raise ValueError(f"{info.field_name.upper()} cannot contain credentials, a query, or a fragment")
+        return value
+
+    @field_validator("rag_embedding_space_revision")
+    @classmethod
+    def validate_embedding_revision(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value):
+            raise ValueError("RAG_EMBEDDING_SPACE_REVISION must be a non-secret stable label")
+        return value
+
+    @field_validator("flashcard_ai_quota_bucket", "rag_ai_quota_bucket", "rag_embedding_quota_bucket")
+    @classmethod
+    def validate_quota_bucket(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value):
+            raise ValueError("Quota bucket must be a non-secret provider account/project label")
         return value
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":
+        if self.telemetry_endpoint is not None:
+            endpoint = urlsplit(str(self.telemetry_endpoint))
+            if (endpoint.scheme != "https" or endpoint.username or endpoint.password
+                    or endpoint.query or endpoint.fragment):
+                raise ValueError("TELEMETRY_ENDPOINT must use HTTPS without credentials, query or fragment")
+        if self.telemetry_enabled and self.telemetry_endpoint is None:
+            raise ValueError("Enabled telemetry requires TELEMETRY_ENDPOINT")
+        if self.worker_health_stale_seconds < 2 * max(
+            self.generation_worker_poll_seconds, self.email_worker_poll_seconds, 5
+        ):
+            raise ValueError("Worker health stale threshold must cover two scheduling poll intervals")
         if not self.database_url:
             if not self.postgres_password or not self.postgres_password.get_secret_value():
                 raise ValueError("DATABASE_URL or POSTGRES_PASSWORD is required")
@@ -486,57 +739,71 @@ class Settings(BaseSettings):
             raise ValueError(
                 "GENERATION_RETRY_BASE_SECONDS cannot exceed GENERATION_RETRY_MAX_SECONDS"
             )
-        if self.ai_retry_base_seconds > self.ai_retry_max_seconds:
-            raise ValueError("AI_RETRY_BASE_SECONDS cannot exceed AI_RETRY_MAX_SECONDS")
-        if self.ai_chunk_overlap_tokens >= self.ai_chunk_input_tokens:
-            raise ValueError("AI_CHUNK_OVERLAP_TOKENS must be lower than AI_CHUNK_INPUT_TOKENS")
-        if self.ai_chunk_input_tokens > self.ai_request_input_target_tokens:
+        if self.flashcard_ai_retry_base_seconds > self.flashcard_ai_retry_max_seconds:
+            raise ValueError("FLASHCARD_AI_RETRY_BASE_SECONDS cannot exceed FLASHCARD_AI_RETRY_MAX_SECONDS")
+        if self.flashcard_ai_chunk_overlap_tokens >= self.flashcard_ai_chunk_input_tokens:
+            raise ValueError("FLASHCARD_AI_CHUNK_OVERLAP_TOKENS must be lower than FLASHCARD_AI_CHUNK_INPUT_TOKENS")
+        if self.flashcard_ai_chunk_input_tokens > self.flashcard_ai_request_input_target_tokens:
             raise ValueError(
-                "AI_CHUNK_INPUT_TOKENS cannot exceed AI_REQUEST_INPUT_TARGET_TOKENS"
+                "FLASHCARD_AI_CHUNK_INPUT_TOKENS cannot exceed FLASHCARD_AI_REQUEST_INPUT_TARGET_TOKENS"
             )
-        if self.ai_summary_output_tokens > self.ai_max_output_tokens:
-            raise ValueError("AI_SUMMARY_OUTPUT_TOKENS cannot exceed AI_MAX_OUTPUT_TOKENS")
-        if self.ai_max_output_tokens >= self.ai_context_window_tokens:
-            raise ValueError("AI_MAX_OUTPUT_TOKENS must be lower than AI_CONTEXT_WINDOW_TOKENS")
+        if self.flashcard_ai_summary_output_tokens > self.flashcard_ai_max_output_tokens:
+            raise ValueError("FLASHCARD_AI_SUMMARY_OUTPUT_TOKENS cannot exceed FLASHCARD_AI_MAX_OUTPUT_TOKENS")
+        if self.flashcard_ai_max_output_tokens >= self.flashcard_ai_context_window_tokens:
+            raise ValueError("FLASHCARD_AI_MAX_OUTPUT_TOKENS must be lower than FLASHCARD_AI_CONTEXT_WINDOW_TOKENS")
         if (
-            self.ai_request_input_target_tokens + self.ai_max_output_tokens
-            > self.ai_context_window_tokens
+            self.flashcard_ai_request_input_target_tokens + self.flashcard_ai_max_output_tokens
+            > self.flashcard_ai_context_window_tokens
         ):
             raise ValueError(
                 "AI request input and output token budgets exceed "
-                "AI_CONTEXT_WINDOW_TOKENS"
+                "FLASHCARD_AI_CONTEXT_WINDOW_TOKENS"
             )
         effective_input_tpm = (
-            self.ai_input_tokens_per_minute * self.ai_rate_limit_safety_percent // 100
+            self.flashcard_ai_input_tokens_per_minute * self.flashcard_ai_rate_limit_safety_percent // 100
         )
-        if self.ai_request_input_target_tokens > effective_input_tpm:
+        if self.flashcard_ai_request_input_target_tokens > effective_input_tpm:
             raise ValueError(
-                "AI_REQUEST_INPUT_TARGET_TOKENS cannot exceed the safety-adjusted "
-                "AI_INPUT_TOKENS_PER_MINUTE budget"
+                "FLASHCARD_AI_REQUEST_INPUT_TARGET_TOKENS cannot exceed the safety-adjusted "
+                "FLASHCARD_AI_INPUT_TOKENS_PER_MINUTE budget"
             )
         if (
-            self.ai_chunk_input_tokens
-            + self.ai_summary_output_tokens
-            + self.ai_max_output_tokens
-            > self.ai_context_window_tokens
+            self.flashcard_ai_chunk_input_tokens
+            + self.flashcard_ai_summary_output_tokens
+            + self.flashcard_ai_max_output_tokens
+            > self.flashcard_ai_context_window_tokens
         ):
             raise ValueError(
-                "AI chunk, summary, and output token budgets exceed AI_CONTEXT_WINDOW_TOKENS"
+                "AI chunk, summary, and output token budgets exceed FLASHCARD_AI_CONTEXT_WINDOW_TOKENS"
             )
-        if self.ai_max_job_input_tokens < self.ai_chunk_input_tokens:
-            raise ValueError("AI_MAX_JOB_INPUT_TOKENS cannot be lower than AI_CHUNK_INPUT_TOKENS")
-        if self.ai_max_job_output_tokens < self.ai_max_output_tokens:
-            raise ValueError("AI_MAX_JOB_OUTPUT_TOKENS cannot be lower than AI_MAX_OUTPUT_TOKENS")
+        if self.flashcard_ai_max_job_input_tokens < self.flashcard_ai_chunk_input_tokens:
+            raise ValueError("FLASHCARD_AI_MAX_JOB_INPUT_TOKENS cannot be lower than FLASHCARD_AI_CHUNK_INPUT_TOKENS")
+        if self.flashcard_ai_max_job_output_tokens < self.flashcard_ai_max_output_tokens:
+            raise ValueError("FLASHCARD_AI_MAX_JOB_OUTPUT_TOKENS cannot be lower than FLASHCARD_AI_MAX_OUTPUT_TOKENS")
         prices = (
-            self.ai_input_cost_per_million_usd,
-            self.ai_output_cost_per_million_usd,
+            self.flashcard_ai_input_cost_per_million_usd,
+            self.flashcard_ai_output_cost_per_million_usd,
         )
         if (prices[0] == 0) != (prices[1] == 0):
             raise ValueError("AI input and output prices must both be configured or both be zero")
-        if self.ai_provider == "openai_compatible" and self.ai_base_url is None:
-            raise ValueError("AI_BASE_URL is required for the openai_compatible provider")
-        if self.ai_provider == "gemini" and self.ai_base_url is not None:
-            raise ValueError("AI_BASE_URL is only valid for the openai_compatible provider")
+        if self.flashcard_ai_provider == "openai_compatible" and self.flashcard_ai_base_url is None:
+            raise ValueError("FLASHCARD_AI_BASE_URL is required for the openai_compatible provider")
+        if self.flashcard_ai_provider == "gemini" and self.flashcard_ai_base_url is not None:
+            raise ValueError("FLASHCARD_AI_BASE_URL is only valid for the openai_compatible provider")
+        if self.rag_ai_retry_base_seconds > self.rag_ai_retry_max_seconds:
+            raise ValueError("RAG_AI_RETRY_BASE_SECONDS cannot exceed RAG_AI_RETRY_MAX_SECONDS")
+        if self.rag_embedding_retry_base_seconds > self.rag_embedding_retry_max_seconds:
+            raise ValueError("RAG_EMBEDDING_RETRY_BASE_SECONDS cannot exceed RAG_EMBEDDING_RETRY_MAX_SECONDS")
+        if self.rag_ai_max_output_tokens >= self.rag_ai_context_window_tokens:
+            raise ValueError("RAG_AI_MAX_OUTPUT_TOKENS must be lower than RAG_AI_CONTEXT_WINDOW_TOKENS")
+        if self.rag_ai_max_job_input_tokens + self.rag_ai_max_output_tokens > self.rag_ai_context_window_tokens:
+            raise ValueError("RAG_AI_MAX_JOB_INPUT_TOKENS and RAG_AI_MAX_OUTPUT_TOKENS exceed RAG_AI_CONTEXT_WINDOW_TOKENS")
+        if self.rag_ai_max_job_output_tokens < self.rag_ai_max_output_tokens:
+            raise ValueError("RAG_AI_MAX_JOB_OUTPUT_TOKENS cannot be lower than RAG_AI_MAX_OUTPUT_TOKENS")
+        if self.rag_ai_max_job_input_tokens > self.rag_ai_input_tokens_per_minute * self.rag_ai_rate_limit_safety_percent // 100:
+            raise ValueError("RAG_AI_MAX_JOB_INPUT_TOKENS exceeds safety-adjusted RAG_AI_INPUT_TOKENS_PER_MINUTE")
+        if self.rag_embedding_max_input_tokens > self.rag_embedding_input_tokens_per_minute * self.rag_embedding_rate_limit_safety_percent // 100:
+            raise ValueError("RAG_EMBEDDING_MAX_INPUT_TOKENS exceeds safety-adjusted RAG_EMBEDDING_INPUT_TOKENS_PER_MINUTE")
         if self.generation_heartbeat_seconds >= self.generation_lease_seconds:
             raise ValueError("GENERATION_HEARTBEAT_SECONDS must be lower than GENERATION_LEASE_SECONDS")
         if self.generation_worker_concurrency > self.generation_max_active_jobs_deployment:
@@ -547,11 +814,13 @@ class Settings(BaseSettings):
         self.generation_source_encryption_key_bytes
 
         if self.environment == "production":
-            if not self.ai_allow_unstable_model and UNSTABLE_MODEL_PATTERN.search(self.ai_model):
+            if not self.flashcard_ai_allow_unstable_model and UNSTABLE_MODEL_PATTERN.search(self.flashcard_ai_model):
                 raise ValueError(
                     "Preview, latest, and experimental AI models require "
-                    "AI_ALLOW_UNSTABLE_MODEL=true in production"
+                    "FLASHCARD_AI_ALLOW_UNSTABLE_MODEL=true in production"
                 )
+            if not self.rag_ai_allow_unstable_model and UNSTABLE_MODEL_PATTERN.search(self.rag_ai_model):
+                raise ValueError("Unstable RAG_AI_MODEL requires RAG_AI_ALLOW_UNSTABLE_MODEL=true in production")
             if self.debug:
                 raise ValueError("DEBUG must be false in production")
             if not self.refresh_cookie_secure:

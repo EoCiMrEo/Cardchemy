@@ -1,49 +1,68 @@
 """FastAPI application and production-aware runtime lifecycle."""
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException
 
-from app.config import Settings, get_settings
-from app.database import check_database_readiness, close_database, verify_database_revision
-from app.routers import (
-    auth_router,
-    flashcards_router,
-    generation_router,
-    study_router,
-    subjects_router,
+from app.observability import (
+    RequestDiagnosticsMiddleware,
+    configure_logging,
+    http_exception_handler,
+    unexpected_exception_handler,
+    validation_exception_handler,
 )
+configure_logging()
+try:
+    from app.config import Settings, get_settings
+    from app.database import check_database_readiness, close_database, verify_database_revision
+    from app.routers import (
+        auth_router,
+        flashcards_router,
+        generation_router,
+        study_router,
+        subjects_router,
+    )
+except Exception:
+    logging.getLogger(__name__).critical("process_failed", extra={"kind": "api"})
+    raise SystemExit("Application startup failed; validate root configuration and runtime dependencies") from None
 
 
 CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 CORS_ALLOWED_HEADERS = ["Accept", "Authorization", "Content-Type", "Idempotency-Key"]
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Verify migrations on startup and close pooled connections on exit."""
 
-    print("🚀 Starting Flashcard Generator API...")
+    logger.info("api_started")
     try:
         await verify_database_revision()
-        print("✅ Database migration revision verified")
+        logger.info("database_revision_verified")
         yield
     finally:
         await close_database()
-        print("👋 Shutting down...")
+        logger.info("api_stopped")
 
 
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     """Build an application using validated runtime settings."""
 
     configured = app_settings or get_settings()
+    configure_logging(configured.log_level)
     docs_enabled = configured.api_docs_are_enabled
     application = FastAPI(
         title=configured.app_name,
         description="""
-        ## AI-Powered Flashcard Generator
+        ## Cardchemy
+
+        Turn documents into memory.
 
         A platform for instructors to create and manage flashcard sets from PDFs,
         and for students to study using spaced repetition.
@@ -73,7 +92,12 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=CORS_ALLOWED_METHODS,
         allow_headers=CORS_ALLOWED_HEADERS,
+        expose_headers=["X-Request-ID"],
     )
+    application.add_middleware(RequestDiagnosticsMiddleware, settings=configured)
+    application.add_exception_handler(HTTPException, http_exception_handler)
+    application.add_exception_handler(RequestValidationError, validation_exception_handler)
+    application.add_exception_handler(Exception, unexpected_exception_handler)
 
     application.include_router(auth_router)
     application.include_router(subjects_router)

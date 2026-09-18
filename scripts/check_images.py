@@ -29,6 +29,9 @@ from uuid import uuid4
 
 assert os.getuid() == 10001, "Backend runtime must run as UID 10001"
 assert not Path("/.env").exists() and not Path("/app/.env").exists()
+assert "Apache License" in Path("/app/legal/LICENSE").read_text()
+assert "Copyright 2026 EoCiMrEo" in Path("/app/legal/NOTICE").read_text()
+assert "does not cover" in Path("/app/legal/BRANDING.md").read_text()
 for name in ("pip", "setuptools", "wheel"):
     assert importlib.util.find_spec(name) is None, "Unexpected runtime build package: " + name
 for name in ("gcc", "cc", "g++", "clang"):
@@ -52,8 +55,9 @@ from app.workers.email import EmailWorker
 from app.workers.generation import GenerationWorker
 
 assert "/auth/login" in app.openapi()["paths"]
+assert app.openapi()["info"]["title"] == "Cardchemy"
 assert "/health/live" in app.openapi()["paths"]
-assert GenerationWorker().settings.ai_provider_enabled is False
+assert GenerationWorker().settings.flashcard_ai_provider_enabled is False
 assert EmailWorker().settings.smtp_host == "127.0.0.1"
 
 password = "Generated runtime compatibility password"
@@ -163,7 +167,7 @@ for tool in gcc cc pip; do
     fi
 done
 nginx -t
-nginx
+nginx >/tmp/probe-edge-log 2>&1
 trap 'nginx -s quit >/dev/null 2>&1 || true' EXIT
 attempt=0
 until wget -q -O /tmp/probe-health http://127.0.0.1:8080/healthz; do
@@ -179,13 +183,41 @@ grep -qi 'X-Frame-Options: DENY' /tmp/probe-headers
 grep -qi 'X-Content-Type-Options: nosniff' /tmp/probe-headers
 grep -qi 'Referrer-Policy: strict-origin-when-cross-origin' /tmp/probe-headers
 grep -qi 'Permissions-Policy:' /tmp/probe-headers
+grep -q '<title>Cardchemy</title>' /tmp/probe-index
+grep -q 'href="/favicon.ico"' /tmp/probe-index
+wget -q -O /tmp/probe-license http://127.0.0.1:8080/legal/LICENSE
+grep -q 'Apache License' /tmp/probe-license
+wget -q -O /tmp/probe-brand-terms http://127.0.0.1:8080/legal/BRANDING.md
+grep -q 'does not cover' /tmp/probe-brand-terms
+wget -S -O /tmp/probe-wordmark http://127.0.0.1:8080/brand/cardchemy-wordmark.png 2>/tmp/probe-wordmark-headers
+grep -qi 'Content-Type: image/png' /tmp/probe-wordmark-headers
+test "$(od -An -tx1 -N8 /tmp/probe-wordmark | tr -d ' \n')" = 89504e470d0a1a0a
+wget -S -O /tmp/probe-icon http://127.0.0.1:8080/favicon.ico 2>/tmp/probe-icon-headers
+grep -qi 'Content-Type: image/x-icon' /tmp/probe-icon-headers
+test "$(od -An -tx1 -N4 /tmp/probe-icon | tr -d ' \n')" = 00000100
+if wget -S -O /tmp/probe-missing-brand http://127.0.0.1:8080/brand/missing.png 2>/tmp/probe-missing-brand-headers; then
+    echo 'Missing brand unexpectedly returned success' >&2
+    exit 1
+fi
+grep -q '404 Not Found' /tmp/probe-missing-brand-headers
 asset=$(sed -n 's/.*src="\(\/assets\/[^" ]*\.js\)".*/\1/p' /tmp/probe-index | head -n 1)
 test -n "$asset"
 wget -S -O /tmp/probe-asset "http://127.0.0.1:8080$asset" 2>/tmp/probe-asset-headers
 test -s /tmp/probe-asset
 grep -qi 'Cache-Control: public, max-age=31536000, immutable' /tmp/probe-asset-headers
 grep -qi 'Content-Security-Policy:' /tmp/probe-asset-headers
-echo 'Frontend runtime smoke passed: UID 101, nginx config, health/index/asset, security/cache headers'
+wget -q -O /tmp/probe-private-query 'http://127.0.0.1:8080/index.html?token=phase10-private-query-sentinel'
+if wget -q --post-data='phase10-private-body-sentinel' -O /tmp/probe-private-error 'http://127.0.0.1:8080/index.html?token=phase10-private-query-sentinel'; then
+    echo 'Static POST unexpectedly succeeded' >&2
+    exit 1
+fi
+grep -q '"event":"edge_request","status":200' /tmp/probe-edge-log
+grep -q '"event":"edge_request","status":405' /tmp/probe-edge-log
+if grep -q 'phase10-private-' /tmp/probe-edge-log; then
+    echo 'Private request target leaked into edge logs' >&2
+    exit 1
+fi
+echo 'Frontend runtime smoke passed: UID 101, nginx config, health/index/asset, PNG/ICO and missing-brand 404, security/cache headers, private target redaction'
 '''
 
 
@@ -210,7 +242,7 @@ def main() -> int:
             "DATABASE_URL": "postgresql+asyncpg://probe:probe@127.0.0.1:5432/runtime_probe_test",
             "SECRET_KEY": secrets.token_urlsafe(48),
             "GENERATION_SOURCE_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"),
-            "AI_PROVIDER_ENABLED": "false",
+            "FLASHCARD_AI_PROVIDER_ENABLED": "false",
             "SMTP_HOST": "127.0.0.1",
             "SMTP_PORT": "1025",
             "SMTP_FROM_EMAIL": "runtime-probe@example.com",
