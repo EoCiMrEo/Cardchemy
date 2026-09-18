@@ -60,3 +60,49 @@ GitHub merged it normally into protected main at
 subsequent PR metadata (`merged=true`, 2026-09-18T17:46:43Z). No protections
 were bypassed. The remaining dependency and historical-plan PRs are being
 prepared against that exact main revision.
+
+## Dependency and runtime integration prepared
+
+The remaining infrastructure integration was prepared through normal local
+merges from exact protected-main commit
+`94aef49feb23ac18af4abffddb197f9a509c1388` and the current heads of PR #3
+(`5aea34e66fe085571dc316359a9353342d40468f`), PR #9
+(`afea6f8b57f5cf9cdf4811227c5d298dd6c03014`), PR #11
+(`dad178b66a0fc266a7a13a863337bcf01a079bb7`) and PR #14
+(`a23bf15ee2dc9a1f7e202dc8acbe0f230512da41`). Their histories are retained;
+no rebase, force push, protected-main write or branch-protection change was
+used.
+
+Lock conflicts were resolved from the direct `.in` inputs. The final graph
+keeps the compatible-group upgrades, direct bcrypt 5 without Passlib, Google
+GenAI 2.23, Phase 13's pgvector client, and `uvicorn[standard]`. Windows lock
+generation retains the portable standard-server dependencies and does not make
+Linux-only `uvloop` unconditional. Both generated hash locks were first rebuilt
+from no existing output, then the canonical generator reproduced them without
+a diff. The merged runtime proposal stays within the supported majors: Python
+3.11.16/Alpine 3.24, Node 24.21.0/Alpine 3.24, and unprivileged Nginx 1.31.6,
+all with immutable base digests. The action update retains immutable commit
+pins across every current workflow and its documented provenance.
+
+Local validation of this combined state passed:
+
+- final development hash-lock installation on Windows;
+- 73 focused password-compatibility and installed Gemini SDK transport/retry
+  tests;
+- the complete offline backend selection: 660 passed in 79.05 seconds, with
+  78.34% combined, 81.79% line and 63.64% branch coverage, all maintained
+  global and critical-module floors passing;
+- a fresh strict audit of 80 Python dependencies with zero known
+  vulnerabilities;
+- CI/protection structure, runtime-artifact identity, and repository context
+  validation (37 required files, 67 active guides, 895 local links);
+- native backend, OCR backend and frontend production image builds, followed by
+  their isolated no-network runtime smoke harnesses; and
+- Gitleaks over 75 commits plus the isolated source-secret and all three
+  HIGH/CRITICAL image vulnerability/SBOM gates.
+
+No provider request or paid evaluation was made. PostgreSQL, Mailpit, journey
+and production-rehearsal services were not repeated for this dependency-only
+integration; exact current-base hosted CI remains mandatory before GitHub can
+merge it. The local scanner cleaned its owned containers and snapshots and
+retained only ignored reports/checksums under `artifacts/security/`.

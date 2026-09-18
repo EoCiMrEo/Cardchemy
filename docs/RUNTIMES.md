@@ -4,9 +4,9 @@ This file is the source of truth for local, CI, and container runtime support.
 
 | Component | Supported | Baseline verified for this remediation |
 | --- | --- | --- |
-| Node.js | 24.x | 24.7.0 |
+| Node.js | 24.x | 24.21.0 reference build; 24.7.0 local |
 | npm | 11.x | 11.19.1 |
-| Python | 3.11 through 3.13 | 3.11 container target; 3.13.7 local |
+| Python | 3.11 through 3.13 | 3.11.16 container target; 3.13.7 local |
 | PostgreSQL | 16.x with pgvector 0.8.6 and ICU en-US UTF8 | Reviewed PostgreSQL 16.15/Alpine 3.24 recipe in `runtime-artifacts.json`; final immutable image/platform, extension, ICU, entrypoint and Unicode probes verified on disposable services |
 | Docker Engine | 24 or newer | 29.8.0 |
 | Docker Compose | 2.20 or newer | 5.5.1 |
@@ -84,11 +84,18 @@ Both random labeled source/target volumes survive until verification finishes;
 exact ownership and final container/volume absence are checked before cleanup.
 This disposable proof does not authorize migrating an operator's data.
 
-The reference frontend build pins Node 24.7.0 for compilation and runs on an
-unprivileged Nginx 1.31.3 Alpine image. The backend runtime uses Python 3.11 on
+The reference frontend build pins Node 24.21.0 for compilation and runs on an
+unprivileged Nginx 1.31.6 Alpine image. The backend runtime uses Python 3.11.16 on
 Alpine 3.24, runs as a non-root application user, and omits the compiler/header
 toolchain used in its dependency-builder stage. Exact reference sizes and release inspection
 commands are in [Deployment and self-hosting](DEPLOYMENT.md).
+
+Reference build/runtime bases are pinned to immutable OCI index digests in the
+Dockerfiles. Dependency PR #3's Python 3.14 and Node 26 suggestions are reconciled
+to current patches of the supported majors; a dependency merge does not expand
+the application runtime contract. The official image manifests and source
+revisions were verified before pinning. Native and OCR smoke tests accompany
+these patches, and hosted CI still tests Python 3.11 and 3.13.
 
 The npm version is declared in `frontend/package.json` and explicitly installed
 in the frontend Docker builder before `npm ci`; host CI and image builds use
