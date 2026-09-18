@@ -3,19 +3,44 @@
 The `CI` workflow runs on pull requests, pushes to `main`, `v*` tags, merge
 queues and manual dispatch. Its stable required check is **`ci-required`**.
 That check fails when any mandatory job fails, is cancelled or is skipped,
-including any matrix member. Jobs use read-only tokens, full action commit pins,
+including any matrix member. CI jobs use read-only tokens, full action commit pins,
 bounded timeouts and fresh dependency installations. Paid AI requests are excluded.
 
 | Mandatory job | Contract |
 | --- | --- |
-| `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow contract validation |
+| `backend-offline (3.11)` / `(3.13)` | Hashed development install; offline unit/API contracts; line and branch coverage; critical-file floors; workflow and repository-context/link validation |
 | `postgres-migrations` | Disposable PostgreSQL; constraints, transactions and concurrency; Alembic head and drift checks; full downgrade to base and upgrade to head |
-| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts |
+| `database-artifact` | Validate pinned PostgreSQL/pgvector recipe inputs, LF/hash/platform/data path; build/probe immutable Linux/amd64 bytes; prove vector and legacy-to-ICU logical recovery; fail on HIGH/CRITICAL Trivy findings and retain configuration/archive/recipe-bound CycloneDX and provenance |
+| `mailpit` | Disposable PostgreSQL and Mailpit; SMTP outbox delivery, retry and invitation contracts; authenticated local STARTTLS/implicit-TLS, certificate rejection and failure recovery |
 | `frontend` | `npm run check`: types, lint, unit tests, component coverage, production build and Chromium browser contracts; emitted bundle budgets |
 | `journey` | `python scripts/test_journey.py`: real instructor creation, PDF generation with an offline provider, review/publication, invitation, student study and persisted progress |
 | `dependency-audit` | Fresh `pip-audit --require-hashes --strict` against the complete development lock; `npm audit --audit-level=low` across all npm scopes, plus explicit shipped-dependency audit |
 | `secret-scan` | Gitleaks scans full Git history with redacted findings; Trivy scans the current source worktree |
 | `containers (backend)` / `(backend-ocr)` / `(frontend)` | Final Linux runtime builds; native-library/auth/PDF/OCR and edge smoke probes; Trivy fails on HIGH/CRITICAL OS and application vulnerabilities, including vulnerabilities without fixes; CycloneDX SBOM artifacts |
+
+The database artifact inventory is [`runtime-artifacts.json`](../runtime-artifacts.json).
+It records the reviewed local recipe and immutable base/source/input identities.
+The shared helper verifies recipe label, supported platform and actual runtime
+prerequisites, then returns immutable bytes for every disposable consumer.
+The CI-equivalent archive harness exports that identity and binds the audit to
+the archive's image-configuration digest. Docker's local identity can represent
+an OCI index; a configuration digest is recorded separately rather than equated
+with it. Reports retain inventory/recipe inputs, image/index/configuration and
+archive hashes, fresh advisory metadata, scanner identity and report checksums.
+Keep this evidence with deployment records. Database reports are retained for
+30 days in CI. The three-image signed application release workflow does not
+publish/sign this database image; upstream signature verification is not claimed.
+Any changed recipe/input requires a new identity and passing scan/recovery proof.
+
+The local equivalent is `python scripts/test_database_artifact.py` using the
+backend development Python. It exports the immutable reviewed database image,
+downloads a fresh public advisory database into a disposable 4 GiB cache, then
+disconnects scanner networking before analysis. It fails on HIGH/CRITICAL
+findings, including unfixed vulnerabilities. Audit, CycloneDX SBOM, image and
+scanner identities, archive hash and report checksums remain under ignored
+`artifacts/database-artifact/<run-id>`. Owned scanner containers and exports
+are removed; no operator environment, application content or database volume is
+mounted. A local pass does not establish a hosted CI pass.
 
 Service runners generate isolated credentials, bind random ports to loopback,
 use no persistent volumes and remove containers in cleanup. They do not use the
@@ -39,16 +64,27 @@ python -m pytest -q -m "not postgres and not mailpit and not ai_live" \
 ```
 
 From the repository root run
+`python scripts/check_context.py` for required context files and active local
+documentation links (external URLs and historical bodies are excluded),
 `python scripts/check_coverage.py backend/coverage.json`,
 `python scripts/test_services.py postgres`,
 `python scripts/test_services.py mailpit`,
-`python scripts/test_journey.py` and `python scripts/check_ci.py`.
+`python scripts/test_smtp_tls.py`,
+`python scripts/test_journey.py`, `python scripts/check_runtime_artifacts.py`
+and `python scripts/check_ci.py`.
 From `frontend`, `npm run check` is the authoritative frontend gate; run
 `node ../scripts/check_bundle.mjs` after its production build. See
 [AI evaluation](AI_EVALUATION.md) for explicit opt-in live-provider validation.
 
+The manual read-only [production recovery rehearsal](PRODUCTION_REHEARSAL.md)
+runs on a fresh Ubuntu runner from protected main. It separately verifies a
+clean clone, strict production Compose, trusted HTTPS edge and a checksummed
+backup restored into a second empty volume. It is release evidence rather than
+part of the required per-PR aggregator. No operator secrets or external AI/mail
+services are injected.
+
 Backend coverage includes every application module, including operational
-entry points; only `TYPE_CHECKING` guards are excluded. The successful measured
+entry points; only `TYPE_CHECKING` guards are excluded. The Phase 9 measured
 offline baseline was 203 tests, 78.20% statement/line coverage, 57.56% branch
 coverage and 74.25% combined coverage. Floors are 77%, 55% and 73%, respectively. Combined
 critical-file floors in `.github/coverage-budget.json` are 88% for authentication,
@@ -59,7 +95,7 @@ offline report. Frontend component floors live in `frontend/vitest.config.ts`.
 Coverage reports expose remaining gaps; raising floors should follow new
 behavioral coverage, rather than excluding production code.
 
-After lazy route loading the production build measured **120,400 bytes initial
+After Phase 9 lazy route loading the production build measured **120,400 bytes initial
 JavaScript gzip**, **360,202 bytes largest JavaScript asset uncompressed**, and
 **222,704 bytes total JavaScript gzip**. `.github/bundle-budget.json` limits
 these to 130,000, 400,000 and 240,000 bytes. `check_bundle.mjs` measures emitted
@@ -93,8 +129,8 @@ runtime probe, with VARIANT equal to backend, backend-ocr or frontend.
 
 GitHub's native `dependency-review` job checks new pull-request dependencies
 at severity LOW or higher across runtime, development and unknown scopes.
-For this private repository it requires GitHub Advanced Security and the
-repository variable `DEPENDENCY_REVIEW_ENABLED=true`. Enable the dependency
+For a private repository it requires GitHub Advanced Security; the optional job
+also requires the repository variable `DEPENDENCY_REVIEW_ENABLED=true`. Enable the dependency
 graph/dependency-review feature first, then enable that variable and verify an
 actual pull-request run. The conditional native job is not the required
 aggregator: full locked registry audits across all scopes run regardless.
@@ -117,19 +153,43 @@ lock incorporates the final production lock. npm updates must keep the
 manifest and npm-11 lock aligned. Require the complete CI gate before merging.
 [Dependabot's option reference defines grouping and security-update behavior](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 
-The release workflow builds all three final images when a release is published
-or on manual dispatch, audits them and generates CycloneDX SBOMs. Each 90-day
-artifact contains the SBOM, vulnerability report, source commit/ref, image ID,
-platform, run URL and SHA256 checksums. These describe the exact images built
-by that run; mutable base tags mean a later rebuild may differ. Download and
-archive artifacts with release records before expiration. A deployment
-pipeline should retain the SBOM from its exact deployed image digest. This
-workflow does not push images or attach files to a release automatically.
-[Trivy documents final-image scanning and CycloneDX output](https://github.com/aquasecurity/trivy-action).
+## Signed release workflow
+
+`release-sbom.yml` is a separate manual **Prepare signed release** workflow,
+restricted to the approved public repository's `main` and an exact reviewed
+main SHA with successful mandatory CI. It does not run on release publication,
+which avoids recursive preparation. Its preflight is read-only; only the
+release job can write contents/packages and request an OIDC signing identity.
+A short-lived `CARDCHEMY_RELEASE_READINESS_TOKEN` secret, scoped to this
+repository with Administration read-only and mapped to the job's
+`RELEASE_READINESS_TOKEN` environment variable, supplies the protection read
+unavailable to the ordinary workflow token. See [the release procedure](RELEASING.md) for setup
+and revocation; tokens do not belong in source, settings files or logs.
+
+The job builds/probes/scans all three final Linux/amd64 runtimes, rejects
+HIGH/CRITICAL findings, and creates CycloneDX SBOMs. It pushes one unique
+`v<version>-<source SHA>-<run ID>-<attempt>` GHCR tag per image, records each
+manifest digest, and keylessly signs/verifies those digests. The tags may be
+immediately visible on later releases once the GHCR packages are public; the
+signed digests are the supported pull identities. The workflow packages
+exact-commit source, notes and provenance, signs the complete checksum manifest
+with a Sigstore bundle, verifies the remote tags against its digest inventory,
+then creates an annotated Git version tag and attaches verified files to a
+**draft** GitHub Release. It never pushes a short `:<version>` GHCR tag. The
+maintainer verifies downloaded artifacts, source/tag bindings and anonymous
+access to all three GHCR packages/signatures before publishing the draft.
+
+Release evidence artifacts expire after 90 days; preflight artifacts after 14
+days. Preserve the published attachments and verified digest inventory with
+release/operator records. Mutable base tags mean a later rebuild can differ;
+retain the SBOM/audit belonging to the exact deployed digest. A prepared draft,
+an expiring Actions artifact and a public verified release are different states.
+[Trivy documents image scanning and CycloneDX output](https://github.com/aquasecurity/trivy-action).
 
 ## Remote enforcement runbook
 
-The actual GitHub repository is `EoCiMrEo/Cardchemy`, private. On 2026-09-16,
+The canonical GitHub repository is `EoCiMrEo/Cardchemy`. On 2026-09-16, while
+the repository was private,
 the Phase 9 protection payload was applied to `main` using the existing
 authenticated account. The controlled first run on review PR #1 passed all
 mandatory suites but deliberately failed its authentication coverage threshold;
@@ -138,9 +198,10 @@ threshold is restored to 88%; repaired hosted run
 [35129468986](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35129468986)
 passed every mandatory gate and GitHub reported the PR clean.
 Local workflow files and the payload alone cannot prevent merges. Main
-protection is active for this private repository; native dependency review
-requires its separate Advanced Security entitlement, with full locked registry
-audits across all scopes enforced regardless.
+protection was verified during that private-repository review. Recheck live
+visibility/protection before release or operational claims. Native dependency
+review requires the appropriate repository feature/entitlement, with full
+locked registry audits across all scopes enforced regardless.
 [GitHub documents protected-branch availability and required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
 Publish the reviewed changes
@@ -181,7 +242,16 @@ Pins were checked against the maintainers' release commit links:
 [upload-artifact v4.6.2](https://github.com/actions/upload-artifact/commit/ea165f8d65b6e75b540449e92b4886f43607fa02),
 [dependency-review v4.8.2](https://github.com/actions/dependency-review-action/commit/3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261)
 and [Trivy action v0.36.0](https://github.com/aquasecurity/trivy-action/commit/ed142fd0673e97e23eac54620cfb913e5ce36c25).
+Release preparation additionally uses
+[download-artifact v4.3.0](https://github.com/actions/download-artifact/commit/d3f86a106a0bac45b974a628896c90dbdf5c8093)
+and [Cosign installer v4.1.2](https://github.com/sigstore/cosign-installer/commit/6f9f17788090df1f26f669e9d70d6ae9567deba6),
+with Cosign explicitly pinned to v3.1.3. The release-only action owner and
+permissions are checked by `scripts/check_ci.py`.
 Trivy's scanner version is explicitly v0.70.0 and
+[its release cache is held in the runner's temporary directory](https://github.com/aquasecurity/trivy-action#inputs)
+so later release readiness checks see the same clean source checkout.
+The patched Cosign pin addresses the legacy-bundle verification advisory
+[GHSA-fx35-mq7g-6g98](https://github.com/sigstore/cosign/security/advisories/GHSA-fx35-mq7g-6g98).
 [Gitleaks is v8.24.2 with the official GHCR manifest digest](https://github.com/gitleaks/gitleaks/pkgs/container/gitleaks).
 When updating pins verify the official release/commit and review upstream
 changes; a version comment does not replace commit verification.

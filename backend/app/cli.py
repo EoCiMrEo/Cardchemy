@@ -13,18 +13,34 @@ public instructor-signup path.
 import argparse
 import asyncio
 import getpass
+import json
+from pathlib import Path
+import sys
 from typing import Sequence
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
-from app.database import async_session_maker
-from app.models.email import EmailOutboxMessage, EmailOutboxStatus
-from app.models.user import User, UserRole
-from app.schemas.user import UserCreate
-from app.services.auth import AuthService
-from app.time_utils import as_utc, utcnow
+from app.observability import configure_logging
+
+configure_logging()
+try:
+    from app.config import get_settings
+    from app.database import async_session_maker, close_database, verify_database_revision
+    from app.models.email import EmailOutboxMessage, EmailOutboxStatus
+    from app.models.user import User, UserRole
+    from app.schemas.user import UserCreate
+    from app.services.auth import AuthService
+    from app.services.privacy import PrivacyOperationError
+    from app.time_utils import as_utc, utcnow
+except Exception:
+    raise SystemExit("Operator startup failed; validate root configuration and runtime dependencies") from None
+
+
+def write_result(value: object) -> None:
+    """Write requested operational data, never documents or free-form errors."""
+    sys.stdout.write(json.dumps(value, default=str, separators=(",", ":")) + "\n")
 
 
 async def create_instructor(email: str, full_name: str | None, allow_additional: bool) -> None:
@@ -35,10 +51,14 @@ async def create_instructor(email: str, full_name: str | None, allow_additional:
 
     try:
         user_data = UserCreate(email=email, password=password, full_name=full_name)
-    except ValidationError as exc:
-        raise SystemExit(str(exc)) from None
+    except ValidationError:
+        raise SystemExit("Invalid instructor account fields") from None
 
     async with async_session_maker() as db:
+        if db.get_bind().dialect.name == "postgresql":
+            # Serialize the existing bootstrap guard across concurrent operator
+            # processes; the lock ends with the account/audit transaction.
+            await db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": 7_314_159_266})
         instructor_count = await db.scalar(
             select(func.count()).select_from(User).where(User.role == UserRole.INSTRUCTOR)
         )
@@ -48,7 +68,7 @@ async def create_instructor(email: str, full_name: str | None, allow_additional:
             )
         user = await AuthService.create_user(db, user_data, UserRole.INSTRUCTOR)
         await db.commit()
-        print(f"Instructor created: {user.email}")
+        write_result({"event": "instructor_created", "account_id": str(user.id)})
 
 
 async def email_outbox_status(limit: int) -> None:
@@ -63,8 +83,6 @@ async def email_outbox_status(limit: int) -> None:
             )
         ).all()
         counts = {status: count for status, count in rows}
-        for status in EmailOutboxStatus:
-            print(f"{status.value}: {counts.get(status.value, 0)}")
 
         failures = list(
             (
@@ -76,14 +94,15 @@ async def email_outbox_status(limit: int) -> None:
                 )
             ).all()
         )
-        if failures:
-            print("recent_failures:")
-        for outbox in failures:
-            print(
-                f"  id={outbox.id} type={outbox.message_type} "
-                f"attempts={outbox.attempt_count}/{outbox.max_attempts} "
-                f"code={outbox.last_error_code or 'unknown'}"
-            )
+        from app.observability import safe_error_code
+        write_result({
+            "counts": {state.value: counts.get(state.value, 0) for state in EmailOutboxStatus},
+            "recent_failures": [{"id": str(outbox.id),
+                                 "attempts": outbox.attempt_count,
+                                 "max_attempts": outbox.max_attempts,
+                                 "code": safe_error_code(outbox.last_error_code)}
+                                for outbox in failures],
+        })
 
 
 async def retry_email(outbox_id: UUID, *, allow_ambiguous: bool) -> None:
@@ -121,11 +140,61 @@ async def retry_email(outbox_id: UUID, *, allow_ambiguous: bool) -> None:
             outbox.last_error_code = None
             outbox.delivery_started_at = None
             outbox.updated_at = now
-        print(f"Email outbox message requeued: {outbox_id}")
+        write_result({"event": "email_requeued", "outbox_id": str(outbox_id)})
+
+
+async def export_account_file(user_id: UUID, destination: Path) -> None:
+    """Export private data exclusively into a new owner-only file."""
+    import os
+    from app.services.privacy import export_account
+
+    async with async_session_maker() as db:
+        exported = await export_account(db, user_id)
+    # O_EXCL prevents overwriting another user's work or following a symlink.
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if os.name == "nt":
+            import csv
+            import subprocess
+            identity = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"],
+                                      capture_output=True, text=True, check=True)
+            sid = next(csv.reader([identity.stdout.strip()]))[1]
+            if not sid.startswith("S-1-") or any(part and not part.isdigit() for part in sid[2:].split("-")):
+                raise OSError("Private export permissions could not be established")
+            subprocess.run(["icacls", str(destination), "/inheritance:r", "/grant:r", f"*{sid}:(F)"],
+                           capture_output=True, check=True)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            descriptor = -1  # fdopen owns the descriptor from this point.
+            json.dump(exported, output, ensure_ascii=False, default=str)
+            output.write("\n")
+    except BaseException:
+        if descriptor != -1:
+            os.close(descriptor)
+        destination.unlink(missing_ok=True)
+        raise
+    write_result({"event": "account_exported", "account_id": str(user_id)})
+
+
+async def remove_account(user_id: UUID, *, apply: bool, writers_stopped: bool) -> None:
+    from app.services.privacy import delete_account
+    if not apply or not writers_stopped:
+        raise SystemExit("Account deletion requires --apply --writers-stopped after backup and draining")
+    async with async_session_maker() as db:
+        async with db.begin():
+            counts = await delete_account(db, user_id)
+    write_result({"event": "account_deleted", "counts": counts})
+
+
+async def retain_metadata(*, apply: bool) -> None:
+    from app.services.privacy import cleanup_retention
+    async with async_session_maker() as db:
+        async with db.begin():
+            counts = await cleanup_retention(db, get_settings(), dry_run=not apply)
+    write_result({"event": "retention_completed", "applied": apply, "counts": counts})
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Flashcard Generator operator commands")
+    parser = argparse.ArgumentParser(description="Cardchemy operator commands")
     subparsers = parser.add_subparsers(dest="command", required=True)
     create = subparsers.add_parser("create-instructor", help="Create an instructor without a public secret")
     create.add_argument("--email", required=True)
@@ -143,17 +212,77 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Accept possible duplicate delivery after an ambiguous SMTP failure",
     )
+    export = subparsers.add_parser("export-account", help="Write an authorized private account export to a new file")
+    export.add_argument("--id", required=True, type=UUID)
+    export.add_argument("--output", required=True, type=Path)
+    remove = subparsers.add_parser("delete-account", help="Explicitly delete an account and owned dependents")
+    remove.add_argument("--id", required=True, type=UUID)
+    remove.add_argument("--apply", action="store_true")
+    remove.add_argument("--writers-stopped", action="store_true")
+    retention = subparsers.add_parser("cleanup-retention", help="Preview bounded metadata cleanup; --apply commits")
+    retention.add_argument("--apply", action="store_true")
+    metrics = subparsers.add_parser("operations-status", help="Show private aggregate diagnostics")
+    metrics.add_argument("--job-id", type=UUID, help="Include content-free diagnostics for one generation job")
+    audit = subparsers.add_parser("audit-status", help="Show bounded content-free privileged-action history")
+    audit.add_argument("--target-id", type=UUID)
+    audit.add_argument("--limit", type=int, choices=range(1, 101), default=20)
+    subparsers.add_parser("report-telemetry", help="Explicitly send numeric aggregates to the enabled HTTPS collector")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.command == "create-instructor":
-        asyncio.run(create_instructor(args.email, args.full_name, args.allow_additional))
-    elif args.command == "email-outbox-status":
-        asyncio.run(email_outbox_status(args.limit))
-    elif args.command == "retry-email":
-        asyncio.run(retry_email(args.id, allow_ambiguous=args.allow_ambiguous))
+    configure_logging(get_settings().log_level)
+
+    async def execute() -> None:
+        try:
+            await verify_database_revision()
+            if args.command == "create-instructor":
+                await create_instructor(args.email, args.full_name, args.allow_additional)
+            elif args.command == "email-outbox-status":
+                await email_outbox_status(args.limit)
+            elif args.command == "retry-email":
+                await retry_email(args.id, allow_ambiguous=args.allow_ambiguous)
+            elif args.command == "export-account":
+                await export_account_file(args.id, args.output)
+            elif args.command == "delete-account":
+                await remove_account(args.id, apply=args.apply, writers_stopped=args.writers_stopped)
+            elif args.command == "cleanup-retention":
+                await retain_metadata(apply=args.apply)
+            elif args.command == "audit-status":
+                from app.models.audit import AuditEvent
+                async with async_session_maker() as db:
+                    query = select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id).limit(args.limit)
+                    if args.target_id is not None:
+                        query = query.where(AuditEvent.target_id == args.target_id)
+                    events = (await db.scalars(query)).all()
+                    write_result({"events": [{column.name: getattr(event, column.name)
+                                              for column in AuditEvent.__table__.columns}
+                                             for event in events]})
+            elif args.command in {"operations-status", "report-telemetry"}:
+                from app.services.operations import operations_status, report_telemetry
+                async with async_session_maker() as db:
+                    if args.command == "operations-status":
+                        write_result(await operations_status(db, get_settings(), job_id=args.job_id))
+                    else:
+                        write_result(await report_telemetry(db, get_settings()))
+        finally:
+            await close_database()
+    try:
+        asyncio.run(execute())
+    except FileExistsError:
+        raise SystemExit("Export destination already exists; choose a new private file") from None
+    except PrivacyOperationError as failure:
+        messages = {
+            "account_not_found": "Account was not found",
+            "account_work_active": "Stop and drain account generation work before deletion",
+            "account_email_active": "Stop and drain related email delivery before deletion",
+        }
+        message = messages.get(failure.code, "Privacy operation failed")
+        raise SystemExit(f"{failure.code if failure.code in messages else 'privacy_operation_failed'}: {message}") from None
+    except Exception:
+        # Exceptions may contain SQL bind parameters, SMTP details or content.
+        raise SystemExit("Operator command failed; check safe operational logs and configuration") from None
 
 
 if __name__ == "__main__":

@@ -52,3 +52,7 @@ secret. Account email verification is not a supported workflow.
 See [Transactional email delivery](EMAIL_DELIVERY.md) for local Mailpit usage,
 production SMTP security modes, retry and retention behavior, and sender-domain
 responsibilities.
+
+Authorized operators use [privacy controls](PRIVACY.md) for exclusive private
+account exports and explicit deletion after stopping/draining writers. Expired
+auth metadata cleanup is bounded and preserves linked email history.

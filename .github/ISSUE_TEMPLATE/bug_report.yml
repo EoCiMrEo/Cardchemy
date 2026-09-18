@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible nonsensitive problem
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report vulnerabilities privately through [SECURITY.md](https://github.com/EoCiMrEo/Cardchemy/blob/main/SECURITY.md).
+        Do not include secrets, emails, real documents, prompts/responses, cookies or invitation/reset links.
+  - type: input
+    id: version
+    attributes:
+      label: Release or commit
+      description: Include the deployment mode and supported runtime versions.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and authored reproduction
+      description: Use synthetic data and identify prerequisite roles.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Safe evidence
+      description: Safe error codes, request/job IDs and relevant checks; redact content and credentials.

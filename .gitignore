@@ -16,6 +16,8 @@ local_prompts.mda
 # testing
 /coverage
 /.playwright-cli/
+/frontend/.playwright-cli/
+/output/
 
 # production
 /build

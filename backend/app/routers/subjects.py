@@ -42,6 +42,8 @@ from app.services.subject import SubjectService
 from app.services.auth import AuthService
 from app.services.email import EmailOutboxService
 from app.services.rate_limit import limit_invitation, limit_join
+from app.models.audit import AuditAction
+from app.services.audit import AuditService
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 email_outbox = EmailOutboxService()
@@ -316,7 +318,16 @@ async def update_flashcard_set(
             detail="Flashcard set not found"
         )
     
+    previous_publication = flashcard_set.is_published
     updated = await SubjectService.update_flashcard_set(db, flashcard_set, data)
+    if previous_publication != updated.is_published:
+        AuditService.record(
+            db,
+            action=AuditAction.SET_PUBLISHED if updated.is_published else AuditAction.SET_UNPUBLISHED,
+            actor_id=user.id, target_type="set", target_id=updated.id,
+            subject_id=subject_id,
+            state_before=previous_publication, state_after=updated.is_published,
+        )
     await db.commit()
     return updated
 

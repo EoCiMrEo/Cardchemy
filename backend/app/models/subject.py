@@ -15,10 +15,12 @@ import uuid
 
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -72,6 +74,10 @@ class Subject(Base):
     
     created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
+    corpus_revision = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
+    active_embedding_space_hash = Column(String(64), ForeignKey("rag_embedding_spaces.identity_hash"), nullable=True)
+    staged_embedding_space_hash = Column(String(64), ForeignKey("rag_embedding_spaces.identity_hash"), nullable=True)
+
     # Relationships
     instructor = relationship("User", back_populates="subjects")
     flashcard_sets = relationship("FlashcardSet", back_populates="subject", passive_deletes=True)
@@ -79,12 +85,21 @@ class Subject(Base):
     invite_links = relationship("InviteLink", back_populates="subject", passive_deletes=True)
 
     __table_args__ = (
+        UniqueConstraint("id", "instructor_id", name="uq_subjects_owner_scope"),
+        CheckConstraint("corpus_revision >= 0", name="ck_subjects_corpus_revision"),
+        CheckConstraint(
+            "(active_embedding_space_hash IS NULL OR length(active_embedding_space_hash) = 64) AND "
+            "(staged_embedding_space_hash IS NULL OR length(staged_embedding_space_hash) = 64)",
+            name="ck_subjects_embedding_spaces",
+        ),
         CheckConstraint("length(trim(name)) BETWEEN 1 AND 255", name="ck_subjects_name_length"),
         CheckConstraint(
             "description IS NULL OR length(trim(description)) BETWEEN 1 AND 10000",
             name="ck_subjects_description_length",
         ),
         Index("ix_subjects_instructor_id", "instructor_id"),
+        Index("ix_subjects_active_space", "active_embedding_space_hash"),
+        Index("ix_subjects_staged_space", "staged_embedding_space_hash"),
     )
 
 
@@ -139,6 +154,10 @@ class FlashcardSet(Base):
         nullable=True,
     )
     
+    document_id = Column(
+        UUID(as_uuid=True), ForeignKey("subject_documents.id", ondelete="SET NULL"), nullable=True,
+    )
+
     # Only published sets are visible to students
     is_published = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     
@@ -148,11 +167,15 @@ class FlashcardSet(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False)
     
     # Relationships
-    subject = relationship("Subject", back_populates="flashcard_sets")
+    subject = relationship("Subject", back_populates="flashcard_sets", foreign_keys=[subject_id])
     flashcards = relationship("Flashcard", back_populates="flashcard_set", passive_deletes=True)
     generation_job = relationship("GenerationJob", back_populates="result_set")
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "subject_id"], ["subject_documents.id", "subject_documents.subject_id"],
+            name="fk_flashcard_sets_document_subject", deferrable=True, initially="DEFERRED",
+        ),
         CheckConstraint("length(trim(title)) BETWEEN 1 AND 255", name="ck_flashcard_sets_title_length"),
         CheckConstraint(
             "description IS NULL OR length(trim(description)) BETWEEN 1 AND 10000",
@@ -168,4 +191,5 @@ class FlashcardSet(Base):
         ),
         UniqueConstraint("generation_job_id", name="uq_flashcard_sets_generation_job_id"),
         Index("ix_flashcard_sets_subject_id", "subject_id"),
+        Index("ix_flashcard_sets_document", "document_id", "subject_id"),
     )

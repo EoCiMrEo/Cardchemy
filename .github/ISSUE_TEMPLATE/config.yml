@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Confidential security report
+    url: https://github.com/EoCiMrEo/Cardchemy/security/advisories/new
+    about: Report vulnerabilities privately; never include sensitive details in public issues.
+  - name: Setup and operations guides
+    url: https://github.com/EoCiMrEo/Cardchemy/blob/main/docs/README.md
+    about: Consult maintained setup, configuration, privacy and troubleshooting guidance.
+  - name: Confidential conduct complaint
+    url: https://github.com/EoCiMrEo/Cardchemy/blob/main/CODE_OF_CONDUCT.md
+    about: Use the private contact in the Code of Conduct; do not post complaints or private evidence publicly.
