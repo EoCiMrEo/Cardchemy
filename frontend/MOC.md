@@ -18,7 +18,7 @@ headers or bodies. See [observability](../docs/OBSERVABILITY.md); the operator's
 TLS proxy and collector need the same redaction and their own expiry policy.
 
 The stack is React 19, TypeScript, React Router 7, Redux Toolkit, Axios, Tailwind
-CSS 4, Radix primitives, and Framer Motion, built by Vite 7. Supported Node/npm
+CSS 4, Radix primitives, and Framer Motion, built by Vite 8. Supported Node/npm
 versions are maintained in [Runtimes](../docs/RUNTIMES.md); exact dependencies
 are in [package.json](package.json) and [package-lock.json](package-lock.json).
 
@@ -55,6 +55,13 @@ still independently verifies roles, ownership/enrollment, publication, and
 approval. Read [Authentication](../docs/architecture/AUTH-FLOW.md).
 
 ## Important control flows
+
+**Loading and navigation:** Initial loading is declared in state; route loading
+is derived from the completed Subject/set/session key. Event retries explicitly
+enter loading. Loaders pass abort signals and ignore late canceled responses.
+Subject/set instructor forms remount when their route ID changes; study cards
+remount for a changed set/mode/card. Generation jobs and limits remain scoped to
+the current Subject, including failed polls and delayed cancel/retry responses.
 
 **Session:** Login calls `authService.login`, then AuthContext stores the access
 token in memory and reads `/auth/me`. On reload, bootstrap uses the HttpOnly

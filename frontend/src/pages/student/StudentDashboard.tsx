@@ -21,7 +21,9 @@ import { copy } from "@/i18n/en"
 
 export default function StudentDashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([])
-  const [loading, setLoading] = useState(true)
+  const [ready, setReady] = useState(false)
+  const loading = !ready
+  const loadControllerRef = useRef<AbortController | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [joinDialogOpen, setJoinDialogOpen] = useState(false)
   const [joinToken, setJoinToken] = useState("")
@@ -29,22 +31,33 @@ export default function StudentDashboard() {
   const [joinError, setJoinError] = useState("")
   const joinControllerRef = useRef<AbortController | null>(null)
 
-  const loadSubjects = useCallback(async () => {
-    setLoadError(null)
-    try {
-      setLoading(true)
-      const data = await subjectService.getSubjects()
+  const loadSubjects = useCallback(() => {
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    return subjectService.getSubjects(controller.signal).then((data) => {
+      if (controller.signal.aborted) return
       setSubjects(data)
-    } catch (caught: unknown) {
-      setLoadError(apiErrorMessage(caught, copy.dashboard.loadSubjectsFailed))
-    } finally {
-      setLoading(false)
-    }
+      setLoadError(null)
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setLoadError(apiErrorMessage(caught, copy.dashboard.loadSubjectsFailed))
+    }).finally(() => {
+      if (!controller.signal.aborted) setReady(true)
+    })
   }, [])
+
+  const reloadSubjects = () => {
+    setReady(false)
+    void loadSubjects()
+  }
 
   useEffect(() => {
     void loadSubjects()
-    return () => joinControllerRef.current?.abort()
+    return () => {
+      loadControllerRef.current?.abort()
+      joinControllerRef.current?.abort()
+      joinControllerRef.current = null
+    }
   }, [loadSubjects])
 
   const handleJoinCourse = async () => {
@@ -57,8 +70,10 @@ export default function StudentDashboard() {
     
     try {
       await subjectService.joinCourse(joinToken.trim(), controller.signal)
+      if (controller.signal.aborted) return
       setJoinDialogOpen(false)
       setJoinToken("")
+      setReady(false)
       await loadSubjects() // Refresh the list
     } catch (caught: unknown) {
       if (!controller.signal.aborted) {
@@ -83,7 +98,7 @@ export default function StudentDashboard() {
 
   if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
 
-  if (loadError) return <PageError message={loadError} onRetry={() => void loadSubjects()} />
+  if (loadError) return <PageError message={loadError} onRetry={reloadSubjects} />
 
   return (
     <div className="space-y-6">

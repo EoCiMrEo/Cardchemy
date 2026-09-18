@@ -10,8 +10,8 @@ import type {
 } from './types'
 
 export const flashcardService = {
-  async getCards(setId: string): Promise<Flashcard[]> {
-    const response = await api.get<Flashcard[]>(`/flashcards/sets/${setId}/cards`)
+  async getCards(setId: string, signal?: AbortSignal): Promise<Flashcard[]> {
+    const response = await api.get<Flashcard[]>(`/flashcards/sets/${setId}/cards`, { signal })
     return response.data
   },
 

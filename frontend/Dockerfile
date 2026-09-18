@@ -5,7 +5,7 @@ FROM node:24.7.0-alpine3.22 AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --global npm@11.19.1 && npm ci
 
 COPY index.html postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts ./
 COPY config ./config

@@ -28,10 +28,18 @@ import { copy } from '@/i18n/en'
 
 export default function SubjectDetails() {
   const { id } = useParams<{ id: string }>()
+  return <SubjectDetailsContent key={id} />
+}
+
+function SubjectDetailsContent() {
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [subject, setSubject] = useState<Subject | null>(null)
   const [sets, setSets] = useState<FlashcardSet[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadedId, setLoadedId] = useState<string | null>(null)
+  const loading = loadedId !== id
+  const loadControllerRef = useRef<AbortController | null>(null)
+  const refreshControllerRef = useRef<AbortController | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -53,38 +61,54 @@ export default function SubjectDetails() {
 
   const refreshSets = useCallback(async () => {
     if (!id) return
-    const nextSets = await subjectService.getSets(id)
-    setSets(nextSets)
+    refreshControllerRef.current?.abort()
+    const controller = new AbortController()
+    refreshControllerRef.current = controller
+    try {
+      const nextSets = await subjectService.getSets(id, controller.signal)
+      if (!controller.signal.aborted) setSets(nextSets)
+    } catch (caught: unknown) {
+      if (!controller.signal.aborted) setActionError(apiErrorMessage(caught, copy.subject.loadFailed))
+    }
   }, [id])
 
   const handleJobCompleted = useCallback(() => {
-    void refreshSets().catch((caught: unknown) => {
-      setActionError(apiErrorMessage(caught, copy.subject.loadFailed))
-    })
+    void refreshSets()
   }, [refreshSets])
 
   const generation = useGenerationJobs(id ?? null, handleJobCompleted)
 
-  const loadData = useCallback(async () => {
-    if (!id) return
-    setLoadError(null)
-    setLoading(true)
-    try {
-      const [subjectData, setsData] = await Promise.all([
-        subjectService.getSubject(id),
-        subjectService.getSets(id),
-      ])
+  const loadData = useCallback(() => {
+    if (!id) return Promise.resolve()
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    return Promise.all([
+      subjectService.getSubject(id, controller.signal),
+      subjectService.getSets(id, controller.signal),
+    ]).then(([subjectData, setsData]) => {
+      if (controller.signal.aborted) return
+      setLoadError(null)
       setSubject(subjectData)
       setSets(setsData)
-    } catch (caught: unknown) {
-      setLoadError(apiErrorMessage(caught, copy.subject.loadFailed))
-    } finally {
-      setLoading(false)
-    }
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setLoadError(apiErrorMessage(caught, copy.subject.loadFailed))
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadedId(id)
+    })
   }, [id])
+
+  const reloadData = () => {
+    setLoadedId(null)
+    void loadData()
+  }
 
   useEffect(() => {
     void loadData()
+    return () => {
+      loadControllerRef.current?.abort()
+      refreshControllerRef.current?.abort()
+    }
   }, [loadData])
 
   useEffect(() => () => uploadControllerRef.current?.abort(), [])
@@ -124,6 +148,7 @@ export default function SubjectDetails() {
         key,
         controller.signal,
       )
+      if (controller.signal.aborted) return
       uploadJobIdRef.current = reserved.id
       generation.trackJob(reserved)
       setUploadMessage(copy.subject.uploadingPdf)
@@ -132,6 +157,7 @@ export default function SubjectDetails() {
         file,
         controller.signal,
       )
+      if (controller.signal.aborted) return
       generation.trackJob(queued)
       setUploadMessage(copy.subject.uploadComplete)
       setSubmissionKey(null)
@@ -140,6 +166,7 @@ export default function SubjectDetails() {
       setFileInputKey((value) => value + 1)
       uploadJobIdRef.current = null
     } catch (error) {
+      if (controller.signal.aborted) return
       setUploadMessage(
         apiErrorMessage(
           error,
@@ -169,13 +196,13 @@ export default function SubjectDetails() {
   const handleDeleteSubject = async () => {
     if (!id || !confirm(copy.subject.confirmDelete)) return
     setActionError(null)
-    setLoading(true)
+    setLoadedId(null)
     try {
       await subjectService.deleteSubject(id)
       navigate('/dashboard')
     } catch (caught: unknown) {
       setActionError(apiErrorMessage(caught, copy.subject.deleteFailed))
-      setLoading(false)
+      setLoadedId(id)
     }
   }
 
@@ -201,7 +228,7 @@ export default function SubjectDetails() {
 
   if (loading) return <div className="p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
 
-  if (loadError) return <PageError message={loadError} onRetry={() => void loadData()} />
+  if (loadError) return <PageError message={loadError} onRetry={reloadData} />
 
   const limits = generation.limits
   const submissionDisabled = Boolean(

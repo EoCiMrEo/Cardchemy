@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { subjectService } from "@/services/subjects"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,28 +12,40 @@ import { copy } from "@/i18n/en"
 
 export default function InstructorDashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([])
-  const [loading, setLoading] = useState(true)
+  const [ready, setReady] = useState(false)
+  const loading = !ready
+  const loadControllerRef = useRef<AbortController | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [newSubjectName, setNewSubjectName] = useState("")
   const [creatingLoading, setCreatingLoading] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const loadSubjects = useCallback(async () => {
-    setLoadError(null)
-    try {
-      setLoading(true)
-      const data = await subjectService.getSubjects()
+  const loadSubjects = useCallback(() => {
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    return subjectService.getSubjects(controller.signal).then((data) => {
+      if (controller.signal.aborted) return
       setSubjects(data)
-    } catch (caught: unknown) {
-      setLoadError(apiErrorMessage(caught, copy.dashboard.loadSubjectsFailed))
-    } finally {
-      setLoading(false)
-    }
+      setLoadError(null)
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setLoadError(apiErrorMessage(caught, copy.dashboard.loadSubjectsFailed))
+    }).finally(() => {
+      if (!controller.signal.aborted) setReady(true)
+    })
   }, [])
+
+  const reloadSubjects = () => {
+    setReady(false)
+    void loadSubjects()
+  }
 
   useEffect(() => {
     void loadSubjects()
+    return () => {
+      loadControllerRef.current?.abort()
+    }
   }, [loadSubjects])
 
   const handleCreateSubject = async (e: React.FormEvent) => {
@@ -46,6 +58,7 @@ export default function InstructorDashboard() {
       await subjectService.createSubject({ name: newSubjectName })
       setNewSubjectName("")
       setIsCreating(false)
+      setReady(false)
       await loadSubjects()
     } catch (caught: unknown) {
       setCreateError(apiErrorMessage(caught, copy.dashboard.createSubjectFailed))
@@ -58,7 +71,7 @@ export default function InstructorDashboard() {
     return <div className="flex justify-center p-8" role="status" aria-label={copy.common.loading}><Loader2 className="animate-spin" aria-hidden="true" /></div>
   }
 
-  if (loadError) return <PageError message={loadError} onRetry={() => void loadSubjects()} />
+  if (loadError) return <PageError message={loadError} onRetry={reloadSubjects} />
 
   return (
     <div className="space-y-6">

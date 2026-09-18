@@ -18,12 +18,15 @@ function retryDelay(error: unknown, failures: number): number {
 
 export function useGenerationJobs(subjectId: string | null, onCompleted: () => void) {
   const [jobs, setJobs] = useState<GenerationJob[]>([])
+  const [loadedSubjectId, setLoadedSubjectId] = useState<string | null>(null)
   const [limits, setLimits] = useState<GenerationLimits | null>(null)
+  const [limitsSubjectId, setLimitsSubjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(Boolean(subjectId))
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [wakeVersion, setWakeVersion] = useState(0)
   const onCompletedRef = useRef(onCompleted)
   const previousStatuses = useRef(new Map<string, string>())
+  const subjectScope = useRef(subjectId)
 
   useEffect(() => {
     onCompletedRef.current = onCompleted
@@ -43,10 +46,8 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
   }, [])
 
   useEffect(() => {
+    subjectScope.current = subjectId
     if (!subjectId) {
-      setJobs([])
-      setLimits(null)
-      setLoading(false)
       return
     }
 
@@ -67,8 +68,10 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
         ])
         if (disposed) return
         applyJobs(nextJobs, !initial)
+        setLoadedSubjectId(subjectId)
         if (nextLimits) {
           setLimits(nextLimits)
+          setLimitsSubjectId(subjectId)
           limitsLoaded = true
         }
         setStatusMessage(null)
@@ -79,6 +82,8 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
         }
       } catch (error) {
         if (disposed || controller.signal.aborted) return
+        setJobs((current) => current.filter((job) => job.subject_id === subjectId))
+        setLoadedSubjectId(subjectId)
         setLoading(false)
         setStatusMessage(
           apiErrorMessage(error, copy.generation.statusUnavailable),
@@ -96,10 +101,12 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
   }, [applyJobs, subjectId, wakeVersion])
 
   const trackJob = useCallback((job: GenerationJob) => {
+    if (subjectScope.current !== job.subject_id) return
     setJobs((current) => {
-      const withoutJob = current.filter((item) => item.id !== job.id)
+      const withoutJob = current.filter((item) => item.subject_id === job.subject_id && item.id !== job.id)
       return [job, ...withoutJob]
     })
+    setLoadedSubjectId(job.subject_id)
     previousStatuses.current.set(job.id, job.status)
     setWakeVersion((version) => version + 1)
   }, [])
@@ -119,10 +126,10 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
   }, [])
 
   return {
-    jobs,
-    limits,
-    loading,
-    statusMessage,
+    jobs: subjectId && loadedSubjectId === subjectId ? jobs : [],
+    limits: subjectId && limitsSubjectId === subjectId ? limits : null,
+    loading: Boolean(subjectId) && (loadedSubjectId !== subjectId || loading),
+    statusMessage: subjectId && loadedSubjectId === subjectId ? statusMessage : null,
     trackJob,
     cancelJob,
     retryJob,

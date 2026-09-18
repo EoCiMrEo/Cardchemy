@@ -106,7 +106,6 @@ function StudyCardView({ card, current, total, timeLimit, onAnswered, onNext, on
   useEffect(() => {
     if (timeLimit === null || attempted || answerResult || saveError) return
 
-    setTimeLeft(timeLimit)
     const deadline = Date.now() + timeLimit * 1_000
     const updateCountdown = () => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1_000))
@@ -272,31 +271,49 @@ function StudyCardView({ card, current, total, timeLimit, onAnswered, onNext, on
 export default function StudyMode() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
+  const mode = searchParams.get('mode') === 'review_all' ? 'review_all' : 'due'
+  return <StudySessionContent key={`${id}:${mode}`} />
+}
+
+function StudySessionContent() {
+  const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const dispatch = useDispatch<AppDispatch>()
   const { cards, currentIndex, sessionComplete, timeLimit, results } = useSelector((state: RootState) => state.study)
-  const [loading, setLoading] = useState(true)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loadControllerRef = useRef<AbortController | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement>(null)
   const emptyHeadingRef = useRef<HTMLHeadingElement>(null)
   const mode: StudySessionMode = searchParams.get('mode') === 'review_all' ? 'review_all' : 'due'
+  const requestKey = `${id}:${mode}`
+  const loading = loadedKey !== requestKey
 
-  const loadData = useCallback(async () => {
-    if (!id) return
-    setLoading(true)
-    setLoadError(null)
-    try {
-      const data = await studyService.getStudySession(id, 20, mode)
+  const loadData = useCallback(() => {
+    if (!id) return Promise.resolve()
+    loadControllerRef.current?.abort()
+    const controller = new AbortController()
+    loadControllerRef.current = controller
+    return studyService.getStudySession(id, 20, mode, controller.signal).then((data) => {
+      if (controller.signal.aborted) return
+      setLoadError(null)
       dispatch(startSession({ sessionId: id, cards: data.cards, timeLimit: data.time_limit }))
-    } catch (caught: unknown) {
-      setLoadError(apiErrorMessage(caught, copy.study.loadFailed))
-    } finally {
-      setLoading(false)
-    }
-  }, [dispatch, id, mode])
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setLoadError(apiErrorMessage(caught, copy.study.loadFailed))
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadedKey(requestKey)
+    })
+  }, [dispatch, id, mode, requestKey])
+
+  const reloadData = () => {
+    setLoadedKey(null)
+    void loadData()
+  }
 
   useEffect(() => {
     void loadData()
+    return () => loadControllerRef.current?.abort()
   }, [loadData])
 
   useEffect(() => {
@@ -309,7 +326,7 @@ export default function StudyMode() {
   }, [dispatch])
 
   if (loading) return <div className="flex min-h-dvh items-center justify-center" role="status" aria-label={copy.study.loading}><Loader2 className="h-8 w-8 text-primary motion-safe:animate-spin" /></div>
-  if (loadError) return <div className="flex min-h-dvh items-center justify-center p-4"><PageError message={loadError} onRetry={() => void loadData()} /></div>
+  if (loadError) return <div className="flex min-h-dvh items-center justify-center p-4"><PageError message={loadError} onRetry={reloadData} /></div>
 
   if (cards.length === 0) {
     return (
@@ -338,7 +355,7 @@ export default function StudyMode() {
   const currentCard = cards[currentIndex]
   return (
     <StudyCardView
-      key={currentCard.id}
+      key={`${requestKey}:${currentCard.id}`}
       card={currentCard}
       current={currentIndex + 1}
       total={cards.length}
