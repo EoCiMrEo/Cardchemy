@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,6 +24,17 @@ from test_services import ROOT, cleanup_containers, system_environment
 
 
 TRIVY = "aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e"
+
+
+def scanner_filesystem_options() -> list[str]:
+    # docker save creates a private archive owned by the calling POSIX user.
+    # Match that user rather than granting DAC_OVERRIDE or widening host modes.
+    # Docker Desktop maps Windows bind ACLs; it has no native POSIX UID/GID.
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    gid = os.getgid() if hasattr(os, "getgid") else 0
+    return ["--user", f"{uid}:{gid}",
+            "--tmpfs", f"/tmp:rw,size=2g,uid={uid},gid={gid},mode=0700",
+            "--tmpfs", f"/cache:rw,size=4g,uid={uid},gid={gid},mode=0700"]
 
 
 def docker(*arguments: str, label: str, check: bool = True,
@@ -79,7 +91,7 @@ def main() -> int:
         owned.append(scanner)
         docker("run", "-d", "--rm", "--platform", platform, "--name", scanner, "--cap-drop", "ALL",
                "--security-opt", "no-new-privileges", "--read-only",
-               "--tmpfs", "/tmp:rw,size=2g", "--tmpfs", "/cache:rw,size=4g",
+               *scanner_filesystem_options(),
                "-v", f"{archive}:/image.tar:ro", "-v", f"{reports}:/reports",
                "--entrypoint", "sleep", TRIVY, "infinity",
                label="Start disposable public-artifact scanner")
