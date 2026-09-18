@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,11 +26,30 @@ from test_services import ROOT, cleanup_containers, system_environment
 TRIVY = "aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e"
 
 
-def docker(*arguments: str, label: str, check: bool = True) -> subprocess.CompletedProcess:
+def scanner_filesystem_options() -> list[str]:
+    # docker save creates a private archive owned by the calling POSIX user.
+    # Match that user rather than granting DAC_OVERRIDE or widening host modes.
+    # Docker Desktop maps Windows bind ACLs; it has no native POSIX UID/GID.
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    gid = os.getgid() if hasattr(os, "getgid") else 0
+    return ["--user", f"{uid}:{gid}",
+            "--tmpfs", f"/tmp:rw,size=2g,uid={uid},gid={gid},mode=0700",
+            "--tmpfs", f"/cache:rw,size=4g,uid={uid},gid={gid},mode=0700"]
+
+
+def docker(*arguments: str, label: str, check: bool = True,
+           diagnostic_file: Path | None = None) -> subprocess.CompletedProcess:
     result = subprocess.run(["docker", *arguments], cwd=ROOT,
                             env=system_environment(), capture_output=True, text=True)
+    if diagnostic_file is not None:
+        # Only public-image scanner commands use this path. Never record operator
+        # configuration or logs from application/database containers here.
+        diagnostic_file.write_text((result.stdout + result.stderr)[-65536:], encoding="utf-8")
+        if result.returncode:
+            print(f"Public image scanner diagnostic ({label}):\n{(result.stdout + result.stderr)[-8192:]}")
     if check and result.returncode:
-        raise RuntimeError(f"{label} failed (exit {result.returncode}); details withheld")
+        detail = f"; public scanner diagnostics retained in {diagnostic_file.relative_to(ROOT)}" if diagnostic_file else "; details withheld"
+        raise RuntimeError(f"{label} failed (exit {result.returncode}){detail}")
     return result
 
 
@@ -71,7 +91,7 @@ def main() -> int:
         owned.append(scanner)
         docker("run", "-d", "--rm", "--platform", platform, "--name", scanner, "--cap-drop", "ALL",
                "--security-opt", "no-new-privileges", "--read-only",
-               "--tmpfs", "/tmp:rw,size=2g", "--tmpfs", "/cache:rw,size=4g",
+               *scanner_filesystem_options(),
                "-v", f"{archive}:/image.tar:ro", "-v", f"{reports}:/reports",
                "--entrypoint", "sleep", TRIVY, "infinity",
                label="Start disposable public-artifact scanner")
@@ -87,9 +107,13 @@ def main() -> int:
         audit = docker(*common, "--scanners", "vuln", "--severity", "HIGH,CRITICAL",
                        "--ignore-unfixed=false", "--exit-code", "1", "--format", "json",
                        "--output", "/reports/database-audit.json",
-                       label="Scan exact database artifact", check=False)
+                       label="Scan exact database artifact", check=False,
+                       diagnostic_file=reports / "database-audit.log")
+        if not (reports / "database-audit.json").is_file():
+            raise RuntimeError(f"Database scanner produced no audit report; public diagnostics retained in {reports.relative_to(ROOT)}")
         docker(*common, "--format", "cyclonedx", "--output", "/reports/database.sbom.json",
-               label="Generate exact database artifact SBOM")
+               label="Generate exact database artifact SBOM",
+               diagnostic_file=reports / "database-sbom.log")
         audit_report = json.loads((reports / "database-audit.json").read_text(encoding="utf-8"))
         sbom = json.loads((reports / "database.sbom.json").read_text(encoding="utf-8"))
         if (audit_report.get("Metadata", {}).get("ImageID") != config_digest

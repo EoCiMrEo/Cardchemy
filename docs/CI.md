@@ -39,8 +39,17 @@ disconnects scanner networking before analysis. It fails on HIGH/CRITICAL
 findings, including unfixed vulnerabilities. Audit, CycloneDX SBOM, image and
 scanner identities, archive hash and report checksums remain under ignored
 `artifacts/database-artifact/<run-id>`. Owned scanner containers and exports
-are removed; no operator environment, application content or database volume is
-mounted. A local pass does not establish a hosted CI pass.
+are cleaned. Bounded public-image scanner diagnostics are retained there and
+uploaded even when scanning fails before producing a JSON report. These logs
+contain scanner output for the public runtime archive only, never operator
+configuration or application/database container output. Scanner failures remain
+gate failures. No operator environment, application content or database volume
+is mounted. A local pass does not establish a hosted CI pass.
+The capability-free scanner matches the POSIX runner's user/group and uses
+private temporary filesystems owned by that identity. This allows reading the
+runner-owned Docker archive and writing reports without widening host file
+permissions or restoring Linux capabilities. Docker Desktop uses its Windows
+bind-mount ACL mapping with an explicit `0:0` fallback.
 
 Service runners generate isolated credentials, bind random ports to loopback,
 use no persistent volumes and remove containers in cleanup. They do not use the

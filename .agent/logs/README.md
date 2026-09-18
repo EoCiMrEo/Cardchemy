@@ -17,6 +17,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-18 | [Pull request merge and compatibility remediation](2026-09-18/2026-09-18-pull-request-merge.md) | Protected-main merge work, real hosted scan failure diagnostics and dependency compatibility remediation; results recorded as checks and merges complete. |
 | 2026-09-18 | [RAG foundation and Knowledge schema closure](2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md) | Phase 12 guarded PG16/pgvector runtime and Phase 13 private Knowledge schema, exact artifact and disposable migration/recovery/integrity evidence, plus authorized legacy-volume and private `.env` key migration. |
 | 2026-09-17 | [RAG through Phase 13 implementation](2026-09-17/2026-09-17-rag-through-phase-13-implementation.md) | Preparation A/B implementation after G1/G2/G4/G6 approval and delegated G5 selection; accepted ADR/model boundaries, preserved working state and per-phase evidence. |
 | 2026-09-17 | [Flashcard quality offline comparison](2026-09-17/2026-09-17-flashcard-quality-offline-comparison.md) | Authored baseline-generation-renderer/refill replay, measured local outcomes and concrete four-card instructor review sample; no remote-model quality or paid-call claim. |
