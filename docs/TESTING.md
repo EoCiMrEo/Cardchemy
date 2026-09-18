@@ -9,6 +9,7 @@ repository root unless a working directory is specified.
 | --- | --- | --- |
 | Backend offline | `python -m pytest -q` from `backend` | Core test configuration is injected; PostgreSQL and Mailpit cases skip without their dedicated process values; live AI is deselected. |
 | PostgreSQL and migration chain | `python scripts/test_services.py postgres` | Docker running. Creates a randomly addressed loopback PostgreSQL container and a disposable `regression_test` database, waits for an authenticated TCP query on that database, migrates/checks heads and drift, tests constraints/transactions/races, then rehearses downgrade to base/re-upgrade. |
+| Database artifact and legacy recovery | `python scripts/test_database_artifact.py`, `python scripts/test_database_volume_upgrade.py`, `python scripts/test_pgvector_restore.py` | Docker running. Build/verify the reviewed PG16/pgvector recipe; scan exact immutable bytes and SBOM; refuse a legacy volume unchanged; logically restore synthetic prior-head records into a separate ICU target; verify vector infrastructure. Reports are ignored artifacts; no operator data. |
 | Mailpit request/delivery | `python scripts/test_services.py mailpit` | Docker running. Creates disposable PostgreSQL and Mailpit containers; verifies request/outbox/SMTP capture, invitation/password semantics and delivery retry. No production relay. |
 | Local encrypted SMTP/recovery | `python scripts/test_smtp_tls.py` | Backend development Python and Docker. Actual authenticated STARTTLS/implicit-TLS delivery, certificate/hostname rejection, durable retry and guarded operator recovery on disposable local capture. See [SMTP verification](SMTP-VERIFICATION.md). Required email CI. |
 | Clean production installation/restore | `python scripts/test_production_rehearsal.py --evidence /private/path/result.json` | Clean committed checkout on Linux/amd64 with Docker Compose/OpenSSL. Fresh clone, generated settings, production profile, trusted loopback HTTPS, current-head backup and restore into a separate empty volume, upgrade and recovered application checks. Also manually dispatch [production rehearsal](PRODUCTION_REHEARSAL.md) on protected main. |
@@ -34,6 +35,11 @@ generated credentials and are withheld. Host-run PostgreSQL fixtures require
 `postgresql+asyncpg` on loopback and a database named `*_test`; controlled CI
 service hosts are allowed explicitly. They verify the connected database
 identity and the dynamically resolved Alembic head before any write/cleanup.
+The PostgreSQL suite additionally restores a populated synthetic 1,536-vector
+Subject Knowledge document into a separate guarded child database, then checks
+publication eligibility, page numbering, indexes, capacity counters, linked
+cards and deletion effects. This is local recovery proof, not an operator
+database restore or live embedding-quality evaluation.
 
 The full journey exercises operator instructor creation, browser subject
 creation, real PDF upload/extraction, durable generation/grounding, instructor
@@ -51,10 +57,11 @@ browser case. Its seed helper refuses any database except
 `password-reset-browser-*@example.com` accounts. The complete journey command
 uses its own automatically generated accounts and needs no manual credentials.
 
-The live smoke evaluation admits only `AI_PROVIDER=openai_compatible`,
-`AI_BASE_URL=https://api.openai.com/v1`, and
-`AI_MODEL=gpt-4o-mini-2024-07-18`. Supply `AI_PROVIDER_ENABLED=true`, `AI_API_KEY`,
-and reviewed `AI_INPUT_COST_PER_MILLION_USD` / `AI_OUTPUT_COST_PER_MILLION_USD`
+The live smoke evaluation admits only `FLASHCARD_AI_PROVIDER=openai_compatible`,
+`FLASHCARD_AI_BASE_URL=https://api.openai.com/v1`, and
+`FLASHCARD_AI_MODEL=gpt-4o-mini-2024-07-18`. Supply `FLASHCARD_AI_PROVIDER_ENABLED=true`, `FLASHCARD_AI_API_KEY`,
+an explicit `FLASHCARD_AI_QUOTA_BUCKET` with a separately divided worker/replica quota,
+and reviewed `FLASHCARD_AI_INPUT_COST_PER_MILLION_USD` / `FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD`
 through the process environment, using shell-specific assignment syntax.
 Prices must be at least USD 0.15 / 0.60 per million tokens, respectively,
 reviewed against the [official model pricing](https://developers.openai.com/api/docs/models/gpt-4o-mini)

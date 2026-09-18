@@ -125,7 +125,14 @@ def test_root_example_covers_application_and_compose_settings():
             "docker-compose.prod.yml",
         )
     )
-    compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", compose_text))
+    # Deliberate fail-fast interpolation references removed keys, but those
+    # names are not supported template settings. Their guard contract has
+    # separate migration tests; keep this check about active Compose inputs.
+    active_compose_text = "\n".join(
+        line for line in compose_text.splitlines()
+        if "CARDCH_LEGACY_AI_CONFIGURATION_ERROR" not in line
+    )
+    compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", active_compose_text))
     assert application_names | compose_names <= set(names)
     assert "SMTP_PORT=1025" in example
     assert "GENERATION_DAILY_JOBS_PER_USER=20" in example
@@ -155,6 +162,19 @@ def test_bootstrap_template_validates_without_operator_environment_and_never_ove
     assert temporary_env.read_bytes() == before
 
 
+def test_unrelated_root_environment_key_remains_accepted(tmp_path):
+    root_env = tmp_path / ".env"
+    root_env.write_text("UNRELATED_OPERATOR_SETTING=retained\n", encoding="utf-8")
+    configured = Settings(
+        _env_file=root_env,
+        database_url="postgresql+asyncpg://user:password@database/app",
+        secret_key="a-test-secret-with-real-entropy-1234567890",
+        generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    )
+    assert configured.flashcard_ai_provider_enabled is False
+    assert configured.rag_enabled is False
+
+
 def test_removed_email_verification_switch_cannot_create_a_partial_workflow():
     assert "email_verification_required" not in Settings.model_fields
 
@@ -171,14 +191,14 @@ def test_ai_request_pack_must_fit_context_and_safety_adjusted_tpm():
     with pytest.raises(ValidationError):
         Settings(
             **base,
-            ai_request_input_target_tokens=10_000,
-            ai_max_output_tokens=2_000,
-            ai_context_window_tokens=11_000,
+            flashcard_ai_request_input_target_tokens=10_000,
+            flashcard_ai_max_output_tokens=2_000,
+            flashcard_ai_context_window_tokens=11_000,
         )
     with pytest.raises(ValidationError):
         Settings(
             **base,
-            ai_request_input_target_tokens=10_000,
-            ai_input_tokens_per_minute=10_000,
-            ai_rate_limit_safety_percent=80,
+            flashcard_ai_request_input_target_tokens=10_000,
+            flashcard_ai_input_tokens_per_minute=10_000,
+            flashcard_ai_rate_limit_safety_percent=80,
         )

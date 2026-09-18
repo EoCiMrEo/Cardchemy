@@ -18,14 +18,14 @@ def settings(**overrides) -> Settings:
         "database_url": "sqlite+aiosqlite:///:memory:",
         "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
         "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "ai_api_key": "test-key",
-        "ai_chunk_input_tokens": 128,
-        "ai_chunk_overlap_tokens": 0,
-        "ai_summary_output_tokens": 64,
-        "ai_max_output_tokens": 256,
-        "ai_max_job_output_tokens": 100_000,
-        "ai_request_input_target_tokens": 4_096,
-        "ai_cards_per_request": 10,
+        "flashcard_ai_api_key": "test-key",
+        "flashcard_ai_chunk_input_tokens": 128,
+        "flashcard_ai_chunk_overlap_tokens": 0,
+        "flashcard_ai_summary_output_tokens": 64,
+        "flashcard_ai_max_output_tokens": 256,
+        "flashcard_ai_max_job_output_tokens": 100_000,
+        "flashcard_ai_request_input_target_tokens": 4_096,
+        "flashcard_ai_cards_per_request": 10,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -123,8 +123,8 @@ async def test_pipeline_returns_exact_corpus_targets_with_grounding_and_cost(tar
     )
 
     configured = settings(
-        ai_input_cost_per_million_usd="0.10",
-        ai_output_cost_per_million_usd="0.20",
+        flashcard_ai_input_cost_per_million_usd="0.10",
+        flashcard_ai_output_cost_per_million_usd="0.20",
     )
     result = await FlashcardGenerationPipeline(configured, provider).run(
         document, target_count
@@ -185,7 +185,7 @@ async def test_summary_failure_is_visible_and_recoverable():
     )
     with pytest.raises(PipelineError) as error:
         await FlashcardGenerationPipeline(
-            settings(ai_request_input_target_tokens=2_048), provider
+            settings(flashcard_ai_request_input_target_tokens=2_048), provider
         ).run(document, 1)
     assert error.value.code == "ai_provider_timeout"
     assert error.value.retryable is True
@@ -212,7 +212,7 @@ async def test_permanent_summary_error_stops_after_single_canary_call():
 
     with pytest.raises(PipelineError) as error:
         await FlashcardGenerationPipeline(
-            settings(ai_request_input_target_tokens=2_048), provider
+            settings(flashcard_ai_request_input_target_tokens=2_048), provider
         ).run(document, 1)
 
     assert error.value.code == "ai_provider_invalid_request"
@@ -239,7 +239,7 @@ async def test_shared_provider_gate_caps_concurrency_across_jobs():
 
     provider = TrackingProvider()
     gate = asyncio.Semaphore(1)
-    configured = settings(ai_concurrency=3)
+    configured = settings(flashcard_ai_concurrency=3)
     document = ExtractedDocument(
         pages=[ExtractedPage(page_number=1, text="Alpha is evidence. " * 600)]
     )
@@ -260,7 +260,7 @@ async def test_preflight_limit_rejects_before_provider_call():
     )
     with pytest.raises(PipelineError) as error:
         await FlashcardGenerationPipeline(
-            settings(ai_max_job_input_tokens=1_024), provider
+            settings(flashcard_ai_max_job_input_tokens=1_024), provider
         ).run(document, 1)
     assert error.value.code == "ai_input_token_limit"
     assert provider.calls == []
@@ -273,7 +273,7 @@ async def test_duplicate_exhaustion_fails_atomically_with_reason():
         pages=[ExtractedPage(page_number=1, text="Alpha is the first letter.")]
     )
     with pytest.raises(PipelineError) as error:
-        await FlashcardGenerationPipeline(settings(ai_refill_rounds=1), provider).run(document, 2)
+        await FlashcardGenerationPipeline(settings(flashcard_ai_refill_rounds=1), provider).run(document, 2)
     assert error.value.code == "insufficient_grounded_cards"
     assert error.value.rejected_card_count > 0
 
@@ -302,8 +302,8 @@ async def test_long_document_packs_every_chunk_beyond_former_character_cutoff():
     )
     assert len(document.text) > 30_000
     configured = settings(
-        ai_chunk_input_tokens=512,
-        ai_request_input_target_tokens=2_048,
+        flashcard_ai_chunk_input_tokens=512,
+        flashcard_ai_request_input_target_tokens=2_048,
     )
     expected_chunks = chunk_document(document, max_tokens=512, overlap_tokens=0)
 
@@ -337,12 +337,12 @@ async def test_context_window_refusal_happens_before_provider_call():
         pages=[ExtractedPage(page_number=1, text="Alpha is evidence. " * 1_000)]
     )
     configured = settings(
-        ai_context_window_tokens=4_608,
-        ai_max_output_tokens=2_048,
-        ai_summary_output_tokens=512,
-        ai_chunk_input_tokens=2_048,
-        ai_request_input_target_tokens=2_048,
-        ai_cards_per_request=1,
+        flashcard_ai_context_window_tokens=4_608,
+        flashcard_ai_max_output_tokens=2_048,
+        flashcard_ai_summary_output_tokens=512,
+        flashcard_ai_chunk_input_tokens=2_048,
+        flashcard_ai_request_input_target_tokens=2_048,
+        flashcard_ai_cards_per_request=1,
     )
 
     with pytest.raises(PipelineError) as error:
@@ -371,7 +371,7 @@ async def test_one_pack_fast_path_skips_summaries_and_batches_cards():
     )
 
     result = await FlashcardGenerationPipeline(
-        settings(ai_cards_per_request=2), provider
+        settings(flashcard_ai_cards_per_request=2), provider
     ).run(document, 5)
 
     operations = [call["operation"] for call in provider.calls]
@@ -450,7 +450,7 @@ async def test_one_pack_with_more_chunks_than_cards_keeps_final_page_context():
             for index in range(1, 41)
         ]
     )
-    configured = settings(ai_request_input_target_tokens=8_192)
+    configured = settings(flashcard_ai_request_input_target_tokens=8_192)
     expected_chunks = chunk_document(document, max_tokens=128, overlap_tokens=0)
 
     result = await FlashcardGenerationPipeline(configured, provider).run(document, 20)
@@ -479,7 +479,7 @@ async def test_summary_coverage_over_five_hundred_chunks_is_server_owned():
     )
 
     result = await FlashcardGenerationPipeline(
-        settings(ai_request_input_target_tokens=40_000), provider
+        settings(flashcard_ai_request_input_target_tokens=40_000), provider
     ).run(document, 1)
 
     map_calls = [call for call in provider.calls if call["operation"] == "summary_map"]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
 import re
 
@@ -13,6 +14,17 @@ RELEASE_PERMISSIONS = {
     "contents": "write", "packages": "write", "id-token": "write",
     "actions": "read", "checks": "read",
 }
+
+
+def validate_runtime_artifacts() -> None:
+    """Load the sibling checker from its path for CLI and importlib test callers."""
+    path = ROOT / "scripts" / "check_runtime_artifacts.py"
+    spec = importlib.util.spec_from_file_location("check_runtime_artifacts", path)
+    require(spec is not None and spec.loader is not None,
+            "Cannot load the database runtime artifact checker")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.validate(ROOT)
 
 
 def require(condition: bool, message: str) -> None:
@@ -132,12 +144,36 @@ def main() -> None:
     require(any(step.get("run") == "python scripts/prepare_release_notices.py --check"
                 for step in jobs["backend-offline"]["steps"]),
             "Backend CI must validate redistributed code and brand notices")
-    mandatory = {"backend-offline", "postgres-migrations", "mailpit", "frontend", "journey",
+    mandatory = {"backend-offline", "postgres-migrations", "database-artifact", "mailpit", "frontend", "journey",
                  "dependency-audit", "secret-scan", "containers"}
     require(any(step.get("run") == "python scripts/test_smtp_tls.py"
                 for step in jobs["mailpit"]["steps"]),
             "Mandatory email CI must verify actual authenticated TLS delivery and recovery")
     require(mandatory <= set(jobs), "A mandatory CI gate is missing")
+    database_steps = jobs["database-artifact"]["steps"]
+    require(any(step.get("run") == "python scripts/check_runtime_artifacts.py"
+                for step in database_steps), "Database CI must validate the artifact inventory")
+    require(any(step.get("run") == "python scripts/runtime_database.py"
+                for step in database_steps), "Database CI must inspect the reviewed extension runtime")
+    require(any(step.get("run") == "python scripts/test_pgvector_restore.py"
+                for step in database_steps),
+            "Database CI must verify a populated pgvector backup and restore")
+    require(any(step.get("run") == "python scripts/test_database_volume_upgrade.py"
+                for step in database_steps),
+            "Database CI must verify prior PostgreSQL16 data-path compatibility on an owned disposable volume")
+    require(sum(step.get("run") == "python scripts/test_database_artifact.py"
+                for step in database_steps) == 1,
+            "Database CI must run one immutable-archive vulnerability/SBOM/provenance owner")
+    database_upload = next((step for step in database_steps
+                            if step.get("uses", "").startswith("actions/upload-artifact@")), {})
+    retained = set(database_upload.get("with", {}).get("path", "").splitlines())
+    require({"runtime-artifacts.json", "artifacts/database-artifact/*/database-audit.json",
+             "artifacts/database-artifact/*/database.sbom.json",
+             "artifacts/database-artifact/*/metadata.json",
+             "artifacts/database-artifact/*/SHA256SUMS",
+             "artifacts/database-volume-upgrade/*/metadata.json"} <= retained,
+            "Database CI must retain exact image/config/archive/recipe audit/SBOM/recovery provenance")
+    validate_runtime_artifacts()
     require(set(jobs["ci-required"]["needs"]) == set(jobs) - {"ci-required"},
             "ci-required must depend on every mandatory job")
     require(jobs["ci-required"].get("if") == "always()", "ci-required must report earlier failures")

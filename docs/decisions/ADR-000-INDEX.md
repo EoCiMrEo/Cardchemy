@@ -19,6 +19,7 @@ changing a decision. Code remains the implementation authority.
 | [009: Session and role boundaries](ADR-009-session-and-role-boundaries.md) | Accepted | Tokens, sessions, signup and authorization |
 | [010: Transactional email](ADR-010-transactional-email.md) | Accepted | Atomic intent and SMTP ambiguity |
 | [011: Operational privacy controls](ADR-011-operational-privacy-controls.md) | Accepted | Content-free diagnostics/audits and operator-mediated lifecycle controls |
+| [012: Subject Knowledge and RAG boundaries](ADR-012-subject-knowledge-and-rag-boundaries.md) | Accepted design; implementation follows the RAG plan | Installation/privacy/versioning/model/worker contracts for Subject Knowledge |
 
 ## Maintenance
 

@@ -1,6 +1,6 @@
 # Backend Map of Content
 
-Current code verified: 2026-09-16. This is navigation, not an API specification.
+Current code verified: 2026-09-17. This is navigation, not an API specification.
 Start with [project orientation](../docs/00-START-HERE.md) and the
 [project map](../PROJECT-MAP.md).
 
@@ -22,13 +22,13 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 | [app/routers/](app/routers/) | Auth, subjects/sets/invitations, flashcard CRUD, generation jobs and study HTTP contracts. |
 | [app/services/](app/services/) | Auth/session/invitation logic, content CRUD, progress/idempotency, generation lifecycle/quotas, PDF extraction/storage and email composition. |
 | [app/schemas/](app/schemas/) | Pydantic request/response validation. Student study cards have a separate answer-free response. |
-| [app/models/](app/models/) | SQLAlchemy application and operational tables; database constraints and foreign-key ownership. |
+| [app/models/](app/models/) | SQLAlchemy application, operational and Subject Knowledge tables; database constraints and foreign-key ownership. |
 | [app/observability.py](app/observability.py), [app/services/operations.py](app/services/operations.py) | Closed JSON logs/errors, request/job correlation, retained metrics and local/durable loop heartbeats. |
 | [app/services/privacy.py](app/services/privacy.py), [app/services/audit.py](app/services/audit.py) | Consistent allowlisted export, guarded explicit deletion, bounded metadata expiry and fixed-field transactional audits. |
 | [app/workers/](app/workers/) | Generation/email claiming, leases, fencing, retention and graceful shutdown. |
-| [app/ai/](app/ai/) | Provider-neutral pipeline, closed contracts, chunking, grounding, provider adapters and worker-wide quota admission. |
+| [app/ai/](app/ai/) | Provider-neutral pipeline, closed contracts, chunking, versioned prompt renderers, grounding, provider adapters and worker-wide quota admission. |
 | [app/agents/graph.py](app/agents/graph.py) | Active `ainvoke` compatibility facade used by the generation worker; delegates to `FlashcardGenerationPipeline`, without LangGraph. |
-| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260917_0008`. |
+| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260918_0010` requires PostgreSQL 16/pgvector 0.8.6 and private Subject Knowledge storage. |
 
 ## Common change paths
 
@@ -44,6 +44,11 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
   [workers/generation.py](app/workers/generation.py) → graph facade →
   [ai/pipeline.py](app/ai/pipeline.py) → atomic result persistence.
   Read [AI generation flow](../docs/architecture/AI-GENERATION-FLOW.md).
+- Flashcard prompt quality: [ai/prompts.py](app/ai/prompts.py) renders versioned
+  map/reduce/generation prompts and bounded untrusted refill exclusions;
+  [ai/grounding.py](app/ai/grounding.py) enforces trusted evidence and duplicates;
+  the pipeline reports fixed content-free per-round diagnostics. Read
+  [AI evaluation](../docs/AI_EVALUATION.md) for offline evidence and live limits.
 - Study: [routers/study.py](app/routers/study.py) → `FlashcardService` answer
   resolution, receipt reservation and row-locked progress mutation →
   [models/flashcard.py](app/models/flashcard.py).
@@ -54,6 +59,13 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
   Read [email operations](../docs/EMAIL_DELIVERY.md).
 - Schema changes: models + a new [Alembic revision](alembic/versions/) +
   [PostgreSQL regressions](tests/postgres/) + [data model](../docs/architecture/DATA-MODEL.md).
+- Subject Knowledge foundation: [models/knowledge.py](app/models/knowledge.py)
+  and [migration `0010`](alembic/versions/20260918_0010_subject_knowledge.py)
+  define private content/index revisions, capacity, eligibility and durable
+  index-job target. [knowledge_lock.py](app/services/knowledge_lock.py) orders
+  existing account/retention deletion with schema writes. Capture/indexing,
+  retrieval and Ask AI execution are later phases; read the
+  [Knowledge flow](../docs/architecture/SUBJECT-KNOWLEDGE-FLOW.md).
 
 ## Verification and operations
 

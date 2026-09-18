@@ -144,13 +144,23 @@ class ProviderRateGovernor:
     @classmethod
     def from_settings(cls, settings: object) -> ProviderRateGovernor:
         return cls(
-            requests_per_minute=int(getattr(settings, "ai_requests_per_minute", 0)),
+            requests_per_minute=int(getattr(settings, "flashcard_ai_requests_per_minute", 0)),
             input_tokens_per_minute=int(
-                getattr(settings, "ai_input_tokens_per_minute", 0)
+                getattr(settings, "flashcard_ai_input_tokens_per_minute", 0)
             ),
             safety_percent=float(
-                getattr(settings, "ai_rate_limit_safety_percent", 100)
+                getattr(settings, "flashcard_ai_rate_limit_safety_percent", 100)
             ),
+        )
+
+    @classmethod
+    def from_profile(cls, profile: object) -> ProviderRateGovernor:
+        """Use the explicit divided limits for one role/process."""
+
+        return cls(
+            requests_per_minute=int(getattr(profile, "requests_per_minute")),
+            input_tokens_per_minute=int(getattr(profile, "input_tokens_per_minute")),
+            safety_percent=float(getattr(profile, "rate_limit_safety_percent")),
         )
 
     @staticmethod

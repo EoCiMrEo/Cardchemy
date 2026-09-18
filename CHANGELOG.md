@@ -5,6 +5,23 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Hard-renamed the flashcard profile to `FLASHCARD_AI_*`, rejected nonempty
+  legacy names and added independent disabled-by-default answer/embedding
+  profiles with explicit worker quota ownership. Existing operators must follow
+  the [configuration migration guide](docs/AI_PROFILE_MIGRATION.md).
+- Added mandatory PostgreSQL 16/pgvector 0.8.6 foundation with a reviewed,
+  scanned Alpine build, fail-closed legacy-volume guard and separate ICU logical
+  restore procedure. Existing installations must follow
+  [database operations](docs/DATABASE_OPERATIONS.md) before migration.
+- Added private Subject Knowledge document/content/index revisions, bounded
+  page/chunk/vector storage, aggregate reservations, publication eligibility,
+  durable index-job target and optional generation/set links. Capture,
+  indexing execution, retrieval, chat and Ask AI remain later phases.
+- Refined versioned flashcard and summary prompts with bounded untrusted
+  refill exclusions, fixed content-free quality diagnostics and concurrent
+  request-budget reservations. Strict grounding, duplicate rules, output caps
+  and exact-count atomic results remain enforced; authored offline comparisons
+  are separate from instructor judgment and real-model evaluation.
 - Added actual authenticated local STARTTLS/implicit-TLS email verification
   and a clean-machine production-profile installation/backup/restore rehearsal.
 - Made the database healthcheck use internal TCP so the official PostgreSQL

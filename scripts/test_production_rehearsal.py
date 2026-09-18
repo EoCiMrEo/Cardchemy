@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import secrets
 import socket
 import ssl
@@ -23,6 +24,11 @@ import tempfile
 import time
 from urllib.parse import urlencode
 from uuid import uuid4
+
+
+ensure_no_legacy_configuration = runpy.run_path(
+    str(Path(__file__).with_name("check_config_migration.py"))
+)["ensure_no_legacy_configuration"]
 
 ROOT = Path(__file__).resolve().parents[1]
 HOST = "cards.rehearsal.test"
@@ -194,7 +200,9 @@ class Stack:
         values = shared_secrets | {
             "POSTGRES_DB": "cardchemy_rehearsal", "POSTGRES_USER": "rehearsal",
             "APP_PORT": "0", "ENVIRONMENT": "production", "DEBUG": "false",
-            "AI_PROVIDER_ENABLED": "false", "AI_API_KEY": "", "GEMINI_API_KEY": "",
+            "FLASHCARD_AI_PROVIDER_ENABLED": "false", "FLASHCARD_AI_API_KEY": "",
+            "RAG_AI_PROVIDER_ENABLED": "false", "RAG_AI_API_KEY": "",
+            "RAG_EMBEDDING_PROVIDER_ENABLED": "false", "RAG_EMBEDDING_API_KEY": "",
             "FRONTEND_BASE_URL": f"https://{HOST}:{tls_port}", "CORS_ORIGINS": f"https://{HOST}:{tls_port}",
             "API_DOCS_ENABLED": "false", "REFRESH_COOKIE_SECURE": "true",
             # No outbox events are created. This reserved .test host cannot be a live relay.
@@ -219,6 +227,7 @@ class Stack:
         self.started = False
 
     def compose(self, *arguments: str, input_data: bytes | None = None, timeout: int = 900) -> bytes:
+        ensure_no_legacy_configuration(self.env_file, environment=self.environment)
         # Commands never contain secret values; stdin may contain a generated password.
         category = "_".join(arguments[:1])
         if arguments[0] in {"exec", "run"}:
@@ -246,7 +255,9 @@ class Stack:
             if (values["ENVIRONMENT"] != "production" or values["DEBUG"] != "false"
                     or values["API_DOCS_ENABLED"] != "false" or values["REFRESH_COOKIE_SECURE"] != "true"):
                 raise RehearsalError("production_settings")
-        if any(key in services["backend"]["environment"] for key in ("AI_API_KEY", "GEMINI_API_KEY", "SMTP_PASSWORD")):
+        if any(key in services["backend"]["environment"] for key in (
+            "FLASHCARD_AI_API_KEY", "RAG_AI_API_KEY", "RAG_EMBEDDING_API_KEY", "SMTP_PASSWORD"
+        )):
             raise RehearsalError("credential_isolation")
         return document
 

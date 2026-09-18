@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 import re
-from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
+from typing import Any, Generic, Literal, Protocol, TypeVar, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -284,7 +284,7 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
     if status_code == 400:
         return AIProviderError(
             "ai_provider_invalid_request",
-            "The configured AI model rejected the request format. Check AI_MODEL compatibility.",
+            "The configured AI model rejected the request format. Check the selected model compatibility.",
             retryable=False,
         )
     if status_code == 401:
@@ -302,7 +302,7 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
     if status_code == 404:
         return AIProviderError(
             "ai_model_unavailable",
-            "The configured AI model is unavailable. Update AI_MODEL and create a new generation job.",
+            "The configured AI model is unavailable. Update the selected model and create a new job.",
             retryable=False,
         )
     if status_code == 429:
@@ -338,9 +338,11 @@ class _RetryingProvider:
         settings: Settings,
         *,
         rate_governor: ProviderRateGovernor | None = None,
+        role: Literal["flashcard", "rag_answer"] = "flashcard",
     ) -> None:
         self.settings = settings
-        self.rate_governor = rate_governor or ProviderRateGovernor.from_settings(settings)
+        self.profile = settings.text_provider_profile(role)
+        self.rate_governor = rate_governor or ProviderRateGovernor.from_profile(self.profile)
         self._request_count = 0
         self._retry_count = 0
         self._rate_limit_wait_seconds = 0.0
@@ -361,7 +363,7 @@ class _RetryingProvider:
         estimated_input_tokens: int,
         operation: str,
     ) -> ProviderResponse[Any]:
-        for attempt in range(self.settings.ai_provider_max_retries + 1):
+        for attempt in range(self.profile.max_retries + 1):
             try:
                 reservation = await self.rate_governor.reserve(
                     estimated_input_tokens,
@@ -377,7 +379,7 @@ class _RetryingProvider:
                 self._request_counts_by_stage[operation] = (
                     self._request_counts_by_stage.get(operation, 0) + 1
                 )
-                async with asyncio.timeout(self.settings.ai_provider_timeout_seconds):
+                async with asyncio.timeout(self.profile.timeout_seconds):
                     response = await call()
                 await reservation.commit(response.usage.input_tokens)
                 return response
@@ -391,13 +393,13 @@ class _RetryingProvider:
                 ) from exc
             except Exception as exc:
                 normalized = _normalize_provider_error(exc)
-                if not normalized.retryable or attempt >= self.settings.ai_provider_max_retries:
+                if not normalized.retryable or attempt >= self.profile.max_retries:
                     raise normalized from exc
                 delay = max(
-                    self.settings.ai_retry_base_seconds,
+                    self.profile.retry_base_seconds,
                     normalized.retry_after_seconds or 0,
                 )
-                if delay > self.settings.ai_retry_max_seconds:
+                if delay > self.profile.retry_max_seconds:
                     # Never retry before a provider's explicit hint. If that
                     # hint exceeds our bounded wait, retain the retryable error
                     # for a later manual job retry instead.
@@ -416,7 +418,7 @@ class GeminiProvider(_RetryingProvider):
         rate_governor: ProviderRateGovernor | None = None,
     ) -> None:
         super().__init__(settings, rate_governor=rate_governor)
-        api_key = settings.ai_api_key_value
+        api_key = self.profile.api_key_value
         if client is None:
             if not api_key:
                 raise AIProviderConfigurationError()
@@ -444,17 +446,17 @@ class GeminiProvider(_RetryingProvider):
         max_output_tokens: int,
         operation: str,
     ) -> ProviderResponse[T]:
-        output_limit = min(max_output_tokens, self.settings.ai_max_output_tokens)
+        output_limit = min(max_output_tokens, self.profile.max_output_tokens)
         if output_limit < 1:
             raise AIProviderConfigurationError("The AI output-token limit must be positive.")
 
         async def call() -> ProviderResponse[T]:
             response = await self._client.aio.models.generate_content(
-                model=self.settings.ai_model,
+                model=self.profile.model,
                 contents=user_prompt,
                 config={
                     "system_instruction": system_prompt,
-                    "temperature": self.settings.ai_temperature,
+                    "temperature": self.profile.temperature,
                     "max_output_tokens": output_limit,
                     "response_mime_type": "application/json",
                     "response_json_schema": _gemini_schema(response_model),
@@ -491,13 +493,14 @@ class OpenAICompatibleProvider(_RetryingProvider):
         *,
         client: httpx.AsyncClient | None = None,
         rate_governor: ProviderRateGovernor | None = None,
+        role: Literal["flashcard", "rag_answer"] = "flashcard",
     ) -> None:
-        super().__init__(settings, rate_governor=rate_governor)
-        if settings.ai_base_url is None:
+        super().__init__(settings, rate_governor=rate_governor, role=role)
+        if self.profile.base_url is None:
             raise AIProviderConfigurationError(
-                "AI_BASE_URL is required for the OpenAI-compatible provider."
+                "The selected profile requires a base URL for the OpenAI-compatible provider."
             )
-        self._base_url = str(settings.ai_base_url).rstrip("/")
+        self._base_url = str(self.profile.base_url).rstrip("/")
         self._client = client
 
     async def generate_structured(
@@ -509,17 +512,17 @@ class OpenAICompatibleProvider(_RetryingProvider):
         max_output_tokens: int,
         operation: str,
     ) -> ProviderResponse[T]:
-        output_limit = min(max_output_tokens, self.settings.ai_max_output_tokens)
+        output_limit = min(max_output_tokens, self.profile.max_output_tokens)
         if output_limit < 1:
             raise AIProviderConfigurationError("The AI output-token limit must be positive.")
         schema_name = _SCHEMA_NAME.sub("_", operation).strip("_")[:64] or "structured_output"
         payload = {
-            "model": self.settings.ai_model,
+            "model": self.profile.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": self.settings.ai_temperature,
+            "temperature": self.profile.temperature,
             "max_tokens": output_limit,
             "response_format": {
                 "type": "json_schema",
@@ -533,13 +536,13 @@ class OpenAICompatibleProvider(_RetryingProvider):
 
         async def call_with(client: httpx.AsyncClient) -> ProviderResponse[T]:
             headers = {"Content-Type": "application/json"}
-            if self.settings.ai_api_key_value:
-                headers["Authorization"] = f"Bearer {self.settings.ai_api_key_value}"
+            if self.profile.api_key_value:
+                headers["Authorization"] = f"Bearer {self.profile.api_key_value}"
             response = await client.post(
                 f"{self._base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=self.settings.ai_provider_timeout_seconds,
+                timeout=self.profile.timeout_seconds,
             )
             response.raise_for_status()
             maximum_response_bytes = max(65_536, output_limit * 16)
@@ -583,11 +586,13 @@ def get_ai_provider(
     settings: Settings,
     *,
     rate_governor: ProviderRateGovernor | None = None,
+    role: Literal["flashcard", "rag_answer"] = "flashcard",
 ) -> AIProvider:
-    if settings.ai_provider == "gemini":
+    profile = settings.text_provider_profile(role)
+    if profile.provider == "gemini" and role == "flashcard":
         return GeminiProvider(settings, rate_governor=rate_governor)
-    if settings.ai_provider == "openai_compatible":
-        return OpenAICompatibleProvider(settings, rate_governor=rate_governor)
+    if profile.provider == "openai_compatible":
+        return OpenAICompatibleProvider(settings, rate_governor=rate_governor, role=role)
     raise AIProviderConfigurationError("The configured AI provider is not supported.")
 
 

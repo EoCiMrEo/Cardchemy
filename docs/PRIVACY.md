@@ -15,7 +15,7 @@ invitation state, encrypted temporary PDFs, generation metadata, email outbox
 and content-free diagnostics/audits. Access tokens remain in browser memory;
 refresh tokens use protected cookies. There is no offline answer store.
 
-When generation is enabled with `AI_PROVIDER=gemini`, extracted document text
+When generation is enabled with `FLASHCARD_AI_PROVIDER=gemini`, extracted document text
 and evidence, instructions, derived summaries and prior generation context are
 sent from the generation worker to Google's Gemini Developer API. Google
 returns summaries/cards for local validation. This flow sends document content
@@ -23,8 +23,25 @@ outside the deployment; encrypting the retained PDF does not prevent it.
 The application does not intentionally include account email or student
 progress in AI requests, but a lecture PDF can itself contain personal data.
 OCR runs locally. The OpenAI-compatible profile sends equivalent evidence to
-the operator-selected endpoint, which can be hosted or local. No RAG/vector
-store is part of this implementation.
+the operator-selected endpoint, which can be hosted or local.
+
+The approved [Subject Knowledge boundary](architecture/SUBJECT-KNOWLEDGE-FLOW.md)
+adds durable extracted pages, chunks and vectors independently from temporary
+PDFs and flashcard publication. Phase 13 establishes their schema; upload,
+indexing, retrieval and chat arrive in later phases. Before any real Knowledge
+write, the operator notice must disclose this permanent text retention and
+embedding transfer to the configured endpoint. Embedding requests contain
+document chunks or a question; answer requests contain the question, eligible
+evidence and bounded private history. These transfers occur only in their
+authorized workers after those phases are implemented. Provider enablement or
+a key being present does not authorize evaluation spending.
+
+The initial embedding/answer profiles use the official OpenAI endpoint and the
+models in [ADR-012](decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
+Operators must review their current provider contract, retention and location
+before enabling any transfer. This guide makes no zero-retention or training-use
+claim about that provider. A disabled RAG flag suspends new RAG work and keeps
+stored Knowledge; disabling a provider suspends only its model work.
 
 As checked on 2026-09-17, Google's paid/unpaid data terms differ: unpaid content
 may improve products and undergo human review; paid prompts/responses are not
@@ -56,6 +73,8 @@ contains no document content.
 | Enrollment, study progress and answer receipts | Until owning account or related subject/card deletion. Receipts have no age-based purge, preserving logical retry idempotency. | Only the account's own records and allowlisted receipt results. |
 | Generation job history | Configurable terminal-history period; only terminal jobs without retained sources qualify. Content/result sets survive job-history deletion. Job reservation idempotency lasts while its history is retained. | Own safe job metadata/usage; no source bytes/hashes/claim tokens. |
 | Temporary encrypted PDFs | Success, cancellation and permanent failures remove sources atomically; retryable failures retain them for the configured 1–168 hours (default 24). Unfilled upload reservations expire (default 15 minutes). | Excluded; source storage is transient, not a document archive. |
+| Subject Knowledge (Phase 13 schema; write routes follow in Phase 14) | Extracted pages, chunks and vectors persist until explicit document/Subject/owner deletion. Private/staged/failed retained revisions count against permanent capacity. Reindexing uses retained pages; no permanent raw PDF is added. Document deletion preserves detached flashcards. | Design requires instructor-owned allowlisted pages/chunks/revision metadata; vectors, internal claims and other students' data excluded. Extend the operator exporter before first capture writes. |
+| Ask AI conversations (Phase 17 prerequisite) | Only their user can read them, including instructors. Each message and its sources expire 90 days after creation under bounded cleanup. Reads hide a stored answer/citations when any supporting content is unpublished, deleted or replaced, and recheck current Subject access. | Design permits only the requester's own threads/messages and currently eligible evidence. No instructor access to student chats. Implement before chat writes. |
 | Auth/reset/invitation metadata | Expired records may be pruned after the configured grace; linked outbox records prevent pruning. Consumed invitations remain consumed while retained. | Tokens/codes/hashes and email recipient bindings excluded. |
 | Email outbox | Worker cleanup: sent 7 days, failures 30 days by default; configurable. Active delivery and ambiguous-send recovery retain their existing guards. | Bodies/links/recipient lists excluded. |
 | Rate/quota metadata | Cleanup only after active rate/UTC quota windows and configured metadata grace. Quota operation receipts remain while linked job history exists, preserving manual-retry idempotency; detached charges survive subject/job deletion until their grace expires. | Excluded. |
@@ -98,6 +117,14 @@ the backend container using a private destination and a controlled copy-out.
 Exports intentionally contain authorized private content; never send them to
 logs, telemetry, issue trackers or this repository. They omit other accounts,
 credentials, invitation codes, rendered email and temporary PDFs.
+
+The current exporter/cleanup CLI covers existing account and learning records.
+Its Knowledge/chat extensions are prerequisites for the later capture/chat
+phases, not implemented by a new table alone. Before those writes, extend the
+same consistent-snapshot allowlist and bounded cleanup workflow, fence/drain
+affected index/answer writers for deletion, and test Subject/account cascades
+and revision invalidation. Backups, provider copies and private export files
+retain their separate deletion limits.
 
 Before account deletion, verify authorization, the UUID and a usable backup;
 stop admission and drain/stop generation and email workers. Use an operator

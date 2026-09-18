@@ -1,0 +1,4 @@
+Dockerfile text eol=lf
+*.sh text eol=lf
+.dockerignore text eol=lf
+.gitattributes text eol=lf

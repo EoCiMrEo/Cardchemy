@@ -18,6 +18,16 @@ from app.models.generation import (
 from app.models.email import EmailMessageType, EmailOutboxMessage, EmailOutboxStatus
 from app.models.audit import AuditAction, AuditEvent
 from app.models.operations import RequestEvent, WorkerHeartbeat
+from app.models.knowledge import (
+    KnowledgeStorageUsage,
+    RagEmbeddingSpace,
+    SubjectDocument,
+    SubjectDocumentContentRevision,
+    SubjectDocumentPage,
+    SubjectDocumentIndexRevision,
+    SubjectDocumentChunk,
+    SubjectDocumentIndexJob,
+)
 
 __all__ = [
     "User",
@@ -44,4 +54,12 @@ __all__ = [
     "AuditEvent",
     "RequestEvent",
     "WorkerHeartbeat",
+    "KnowledgeStorageUsage",
+    "RagEmbeddingSpace",
+    "SubjectDocument",
+    "SubjectDocumentContentRevision",
+    "SubjectDocumentPage",
+    "SubjectDocumentIndexRevision",
+    "SubjectDocumentChunk",
+    "SubjectDocumentIndexJob",
 ]

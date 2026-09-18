@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     JSON,
@@ -49,6 +50,13 @@ class GenerationJob(Base):
     subject_id = Column(
         UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False
     )
+    # Authoritative Knowledge capture association. Removing a document detaches
+    # this provenance without deleting the generation result or allowing retry
+    # to recapture removed content.
+    document_id = Column(
+        UUID(as_uuid=True), ForeignKey("subject_documents.id", ondelete="SET NULL"), nullable=True,
+    )
+    knowledge_capture_removed = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     idempotency_key_hash = Column(String(64), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
@@ -146,6 +154,13 @@ class GenerationJob(Base):
     )
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "subject_id", "user_id"],
+            ["subject_documents.id", "subject_documents.subject_id", "subject_documents.uploader_id"],
+            name="fk_generation_jobs_document_scope", deferrable=True, initially="DEFERRED",
+        ),
+        CheckConstraint("NOT knowledge_capture_removed OR document_id IS NULL", name="ck_generation_jobs_removed_capture"),
+        Index("ix_generation_jobs_document", "document_id", "subject_id", "user_id"),
         UniqueConstraint(
             "user_id", "idempotency_key_hash", name="uq_generation_jobs_user_idempotency"
         ),

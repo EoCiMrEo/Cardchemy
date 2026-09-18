@@ -20,8 +20,9 @@ def test_image_probe_imports_without_backend_dependencies():
 def test_service_harness_does_not_inherit_operator_settings(monkeypatch):
     script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
     namespace = runpy.run_path(str(script))
-    operator_keys = ("ENVIRONMENT", "DATABASE_URL", "SECRET_KEY", "AI_API_KEY",
-                     "GEMINI_API_KEY", "SMTP_HOST", "SMTP_PASSWORD", "RUN_LIVE_AI_TESTS",
+    operator_keys = ("ENVIRONMENT", "DATABASE_URL", "SECRET_KEY", "FLASHCARD_AI_API_KEY",
+                     "RAG_AI_API_KEY", "RAG_EMBEDDING_API_KEY", "AI_API_KEY", "GEMINI_API_KEY",
+                     "SMTP_HOST", "SMTP_PASSWORD", "RUN_LIVE_AI_TESTS",
                      "POSTGRES_TEST_DATABASE_URL", "JOURNEY_INSTRUCTOR_PASSWORD")
     for key in operator_keys:
         monkeypatch.setenv(key, "operator-setting-must-not-leak")

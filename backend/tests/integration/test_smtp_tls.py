@@ -41,7 +41,7 @@ async def tls_environment(request, postgres_engine, postgres_session_factory, po
         _env_file=None, environment="production", database_url=postgres_test_database_url,
         secret_key=os.environ["SECRET_KEY"],
         generation_source_encryption_key=os.environ["GENERATION_SOURCE_ENCRYPTION_KEY"],
-        ai_provider_enabled=False, ai_model="gemini-2.5-flash",
+        flashcard_ai_provider_enabled=False, flashcard_ai_model="gemini-2.5-flash",
         debug=False, refresh_cookie_secure=True,
         frontend_base_url="https://cards.example.test", cors_origins="https://cards.example.test",
         smtp_host="127.0.0.1", smtp_port=int(tcp_port), smtp_from_email="no-reply@example.com",

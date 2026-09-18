@@ -10,6 +10,7 @@ implementation remains the final source of truth.
 [System overview](architecture/SYSTEM-OVERVIEW.md),
 [data model](architecture/DATA-MODEL.md), [auth](architecture/AUTH-FLOW.md),
 [AI generation](architecture/AI-GENERATION-FLOW.md),
+[Subject Knowledge](architecture/SUBJECT-KNOWLEDGE-FLOW.md),
 [study/progress](architecture/STUDY-PROGRESS-FLOW.md) and
 [accepted ADRs](decisions/ADR-000-INDEX.md).
 
@@ -33,7 +34,9 @@ them for operational detail rather than copying their setting tables/commands.
 | [PDF generation](PDF_GENERATION.md) | Upload contract, bounds, encrypted-source retention, OCR and operations |
 | [AI generation](AI_GENERATION.md) | Grounding, packing, budgets, validation, quality and telemetry contracts |
 | [AI providers](AI_PROVIDERS.md) | Provider configuration, retry/error and request governance |
+| [AI profile migration](AI_PROFILE_MIGRATION.md) | Hard rename from `AI_*`, private credential migration and operator drain/restart order |
 | [AI evaluation](AI_EVALUATION.md) | Fixed corpus, thresholds and explicitly opted-in paid evaluation |
+| [RAG evaluation](RAG_EVALUATION.md) | Authored Subject Knowledge corpus, retrieval/support/security criteria and live-evaluation boundary |
 | [Email delivery](EMAIL_DELIVERY.md) | SMTP, Mailpit, outbox retry/ambiguity and operator recovery |
 | [SMTP verification](SMTP-VERIFICATION.md) | Actual authenticated local TLS delivery, certificate rejection and durable failure recovery |
 | [Testing](TESTING.md) | Maintained suites, safe harnesses and live/gated boundaries |

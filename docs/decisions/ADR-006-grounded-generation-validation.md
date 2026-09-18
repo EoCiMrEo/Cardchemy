@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Current implementation verified on 2026-09-16.
+Accepted. Prompt/diagnostic refinement added on 2026-09-17 without relaxing
+the existing validation or persistence decision.
 
 ## Context
 
@@ -32,6 +33,16 @@ Invalid output is rejected rather than coerced or truncated. A provider can
 fail a job even when some candidates are valid. Grounding verifies evidence
 containment and distinctness; it does not prove every question's educational
 quality. No model confidence score approves a card.
+
+The 2026-09-17 refinement versions generation/map/reduce prompts and supplies
+bounded accepted question/answer exclusions during refill. Summaries remain
+navigation aids; prior cards remain untrusted exclusions. Neither replaces raw
+trusted chunks as evidence. Fixed content-free rejection/round diagnostics
+support authored evaluation without persisting prompts, quotes or raw responses.
+Rendered prompt estimates include added overhead, and each request reserves
+remaining input/output/cost capacity, including concurrent calls. Failed or
+cancelled calls retain an uncertain envelope for that run; estimates and
+incomplete usage receipts do not establish exact tokenization or billing bounds.
 
 ## Related areas
 
