@@ -17,7 +17,7 @@ cryptography==50.0.1
 bcrypt==5.0.0
 python-multipart==0.0.31
 
-google-genai==1.75.0
+google-genai==2.23.0
 httpx==0.28.1
 pypdf==6.19.0
 
