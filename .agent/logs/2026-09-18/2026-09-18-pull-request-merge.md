@@ -25,3 +25,27 @@ Verification at this checkpoint: runtime contract tests passed (10 tests).
 Hosted SBOM failure is unresolved; no PR has been merged at this checkpoint.
 The local public-image diagnostic scan is running with a fresh advisory cache.
 Operator `.env`, application volumes and private content are not mounted.
+
+## Hosted scanner permission fix
+
+Diagnostic run `35375383077` established the actual error: Trivy could not open
+the runner-owned `/image.tar` (permission denied). A local synthetic classic
+Docker archive passed, excluding archive format as the cause. The scanner's
+default root identity combined with `--cap-drop ALL` cannot override the host
+user's archive permissions on native Linux. The scanner now explicitly matches
+the caller's POSIX UID/GID and owns private `0700` tmpfs caches under that
+identity; Docker Desktop uses its Windows ACL mapping and explicit `0:0`.
+Read-only root, no-new-privileges, dropped capabilities, offline scan and exact
+identity/vulnerability requirements remain intact. No host modes are widened.
+
+Both local public-image audit/SBOM runs passed with fresh advisory downloads:
+`ece799f73209` (native Desktop archive) and `c2a4785ba3ea` (synthetic classic
+archive). Owned scanner containers and archives were removed. Diagnostic and
+host-identity contracts passed before pushing; hosted verification of this
+fix is pending. No merge has occurred at this checkpoint.
+
+Live GitHub branch protection was inspected read-only in Settings: PR flow,
+`ci-required` from GitHub Actions, up-to-date branches, conversation resolution,
+and no administrator bypass are enabled; force pushes/deletions are disabled.
+No settings were modified. The 14 runtime/diagnostic/identity contracts pass,
+CI structure passes, and context validates 37 files/65 guides/874 local links.
