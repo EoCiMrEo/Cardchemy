@@ -5,6 +5,10 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Upgraded bcrypt to 5.0.0 and replaced Passlib with direct bcrypt while
+  preserving current full-password v2 hashes, historic v1 wrappers and legacy
+  raw bcrypt verification. Stored password records require no migration.
+
 - Hard-renamed the flashcard profile to `FLASHCARD_AI_*`, rejected nonempty
   legacy names and added independent disabled-by-default answer/embedding
   profiles with explicit worker quota ownership. Existing operators must follow

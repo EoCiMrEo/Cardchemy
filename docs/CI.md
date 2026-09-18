@@ -97,6 +97,7 @@ entry points; only `TYPE_CHECKING` guards are excluded. The Phase 9 measured
 offline baseline was 203 tests, 78.20% statement/line coverage, 57.56% branch
 coverage and 74.25% combined coverage. Floors are 77%, 55% and 73%, respectively. Combined
 critical-file floors in `.github/coverage-budget.json` are 88% for authentication,
+95% for password hash compatibility (measured at 100% lines and branches),
 68% for study/flashcard operations, 78% for generation admission/persistence,
 85% for the AI pipeline and grounding, and 83% for email-worker delivery.
 PostgreSQL and real-journey gates independently exercise behavior beyond the

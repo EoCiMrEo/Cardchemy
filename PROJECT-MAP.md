@@ -11,7 +11,7 @@ give the next level of detail.
 | --- | --- | --- |
 | API startup | [main.py](backend/app/main.py) | Router order, lifespan/migration verification, CORS and health |
 | Configuration/database | [config.py](backend/app/config.py), [database.py](backend/app/database.py) | Root settings, validated boundaries, async sessions and heads/readiness |
-| Authentication | [auth router](backend/app/routers/auth.py), [auth service](backend/app/services/auth.py), [user model](backend/app/models/user.py) | Purpose-scoped tokens, sessions, invitations, registration and reset |
+| Authentication | [auth router](backend/app/routers/auth.py), [auth service](backend/app/services/auth.py), [password records](backend/app/services/passwords.py), [user model](backend/app/models/user.py) | Purpose-scoped tokens, compatible password hashes, sessions, invitations, registration and reset |
 | Subjects/enrollment | [subjects router](backend/app/routers/subjects.py), [subject service](backend/app/services/subject.py), [subject model](backend/app/models/subject.py) | Subject ownership/deletion, invites/enrollment and set publication |
 | Sets/cards | [flashcards router](backend/app/routers/flashcards.py), [flashcard service](backend/app/services/flashcard.py), [schemas](backend/app/schemas/flashcard.py) | CRUD, strict four-option validation, approval/publication |
 | Generation admission | [generation router](backend/app/routers/generation.py), [generation service](backend/app/services/generation.py) | Job reservation, raw-PDF upload, quotas, polling/cancel/manual retry |

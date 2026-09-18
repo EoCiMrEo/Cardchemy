@@ -10,6 +10,10 @@ verify the supported Python versions in [RUNTIMES.md](RUNTIMES.md).
 The backend uses FastAPI, SQLAlchemy, PostgreSQL through `asyncpg`, and Alembic
 for schema migrations. PyJWT handles purpose-scoped HS256 tokens; token
 claims, issuer/audience, clock skew, and session verification remain enforced.
+The direct `bcrypt` backend replaces Passlib while preserving the existing
+password record formats and full-password v2 prehash. Historic v1 and raw
+bcrypt verification is covered by independent known vectors and fixtures from
+the prior runtime; see [password compatibility](decisions/ADR-013-password-hash-compatibility.md).
 The production lock excludes python-jose and its unfixable ECDSA dependency. `cryptography` protects temporary PDF source data with
 AES-256-GCM. Gemini uses the direct `google-genai` SDK; an OpenAI-compatible
 endpoint uses `httpx`. AI orchestration and grounding are typed application

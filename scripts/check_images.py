@@ -40,6 +40,7 @@ for name in ("gcc", "cc", "g++", "clang"):
 # These imports load the native extensions used by the actual musl runtime.
 import asyncpg
 import bcrypt
+assert importlib.util.find_spec("passlib") is None, "Obsolete password wrapper present"
 import cryptography.hazmat.bindings._rust
 import pydantic_core
 import jwt
@@ -64,6 +65,12 @@ password = "Generated runtime compatibility password"
 hashed = AuthService.hash_password(password)
 assert AuthService.verify_password(password, hashed)
 assert not AuthService.verify_password(password + "!", hashed)
+long_password = "\U0001f9ea" * 120 + "\0suffix"
+long_hash = AuthService.hash_password(long_password)
+assert AuthService.verify_password(long_password, long_hash)
+assert not AuthService.verify_password(long_password[:-1] + "!", long_hash)
+assert AuthService.verify_password("password",
+    "$bcrypt-sha256$v=2,t=2b,r=5$5Hg1DKFqPE8C2aflZ5vVoe$wOK1VFFtS8IGTrGa7.h5fs0u84qyPbS")
 user_id, session_id = uuid4(), uuid4()
 token = AuthService._encode_token(token_type="access", subject=user_id,
     session_id=session_id, expires_at=utcnow() + timedelta(minutes=1))
