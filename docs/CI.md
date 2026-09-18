@@ -240,14 +240,14 @@ phase's merge-blocking completion criterion unchecked.
 ## Action pin provenance
 
 Pins were checked against the maintainers' release commit links:
-[checkout v4.3.1](https://github.com/actions/checkout/commit/34e114876b0b11c390a56381ad16ebd13914f8d5),
-[setup-python v5.6.0](https://github.com/actions/setup-python/commit/a26af69be951a213d495a4c3e4e4022e16d87065),
-[setup-node v4.4.0](https://github.com/actions/setup-node/commit/49933ea5288caeca8642d1e84afbd3f7d6820020),
-[upload-artifact v4.6.2](https://github.com/actions/upload-artifact/commit/ea165f8d65b6e75b540449e92b4886f43607fa02),
-[dependency-review v4.8.2](https://github.com/actions/dependency-review-action/commit/3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261)
+[checkout v7.0.1](https://github.com/actions/checkout/commit/3d3c42e5aac5ba805825da76410c181273ba90b1),
+[setup-python v7.0.0](https://github.com/actions/setup-python/commit/5fda3b95a4ea91299a34e894583c3862153e4b97),
+[setup-node v7.0.0](https://github.com/actions/setup-node/commit/820762786026740c76f36085b0efc47a31fe5020),
+[upload-artifact v7.0.1](https://github.com/actions/upload-artifact/commit/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a),
+[dependency-review v5.0.0](https://github.com/actions/dependency-review-action/commit/a1d282b36b6f3519aa1f3fc636f609c47dddb294)
 and [Trivy action v0.36.0](https://github.com/aquasecurity/trivy-action/commit/ed142fd0673e97e23eac54620cfb913e5ce36c25).
 Release preparation additionally uses
-[download-artifact v4.3.0](https://github.com/actions/download-artifact/commit/d3f86a106a0bac45b974a628896c90dbdf5c8093)
+[download-artifact v8.0.1](https://github.com/actions/download-artifact/commit/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c)
 and [Cosign installer v4.1.2](https://github.com/sigstore/cosign-installer/commit/6f9f17788090df1f26f669e9d70d6ae9567deba6),
 with Cosign explicitly pinned to v3.1.3. The release-only action owner and
 permissions are checked by `scripts/check_ci.py`.

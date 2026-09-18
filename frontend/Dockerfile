@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:26.3.0-alpine3.22 AS build
+FROM node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 
-FROM nginxinc/nginx-unprivileged:1.31.6-alpine-slim AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.6-alpine-slim@sha256:dcc9bf9c084901dddbbce305130a7295c5637b6a8fce3e29cf678d86336982e4 AS runtime
 
 USER root
 RUN apk upgrade --no-cache

@@ -22,6 +22,17 @@ The database build's flattened final runtime uses pinned native privilege
 switching and a separately retained exact-image audit/SBOM. OCR uses external
 Poppler and Tesseract executables only in the explicitly enabled worker image.
 
+The direct `google-genai==2.23.0` upgrade retains SDK HTTP retries at one physical
+attempt; the application remains the sole bounded retry owner. Offline tests
+exercise the installed SDK configuration, structured schema, token usage and
+transient/permanent error behavior. See the
+[official SDK release](https://github.com/googleapis/python-genai/releases/tag/v2.23.0)
+and [SDK configuration reference](https://googleapis.github.io/python-genai/).
+The direct server/auth extras remain declared in the `.in` inputs. Windows lock
+generation evaluates their platform markers, omits Linux-only `uvloop` and keeps
+the portable standard-server dependencies. Locks strip extras while retaining
+explicit resolved packages and hashes.
+
 The frontend uses React and Redux Toolkit for study-session state. Radix
 packages support the shared UI controls. Build dependencies include Vite,
 Tailwind, TypeScript, and ESLint. Playwright and axe run the maintained browser
