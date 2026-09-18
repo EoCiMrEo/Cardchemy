@@ -111,6 +111,7 @@ jobs:
             runtime-artifacts.json
             artifacts/database-artifact/*/database-audit.json
             artifacts/database-artifact/*/database.sbom.json
+            artifacts/database-artifact/*/database-*.log
             artifacts/database-artifact/*/metadata.json
             artifacts/database-artifact/*/SHA256SUMS
             artifacts/database-volume-upgrade/*/metadata.json
