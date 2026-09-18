@@ -161,6 +161,6 @@ test('does not retry protected resources after refresh itself fails', async ({ p
   await page.waitForTimeout(150)
 
   expect(api.count('POST', '/auth/refresh')).toBe(2)
-  expect(api.count('GET', '/subjects/sets/set-1')).toBe(2)
-  expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(2)
+  expect(api.count('GET', '/subjects/sets/set-1')).toBe(1)
+  expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(1)
 })

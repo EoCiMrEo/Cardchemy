@@ -17,6 +17,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-18 | [Coupled frontend dependency PR remediation](2026-09-18/2026-09-18-coupled-frontend-dependency-merges.md) | PRs #4–8 preserved in normal merge history, aligned peers/npm resolver and loading/Subject/session fences with component, browser and image evidence. |
 | 2026-09-18 | [Historical plan PR reconciliation](2026-09-18/2026-09-18-rag-plan-pr-reconciliation.md) | Preserves PR #12 history and supersedes its obsolete parallel plan with active plan/ADR navigation. |
 | 2026-09-17 | [Historical Subject-scoped RAG plan review](2026-09-17/2026-09-17-subject-rag-plan-review.md) | Original PR #12 proposal decisions, superseded by later operator-approved G1/G2/G4/G5/G6 and the implementation plan; historical body unchanged. |
 | 2026-09-18 | [Pull request merge and compatibility remediation](2026-09-18/2026-09-18-pull-request-merge.md) | Protected-main merge work, real hosted scan failure diagnostics and dependency compatibility remediation; results recorded as checks and merges complete. |

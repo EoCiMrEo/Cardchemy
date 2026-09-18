@@ -90,6 +90,8 @@ Alpine 3.24, runs as a non-root application user, and omits the compiler/header
 toolchain used in its dependency-builder stage. Exact reference sizes and release inspection
 commands are in [Deployment and self-hosting](DEPLOYMENT.md).
 
-The npm version is declared in `frontend/package.json`. Python runtime packages
+The npm version is declared in `frontend/package.json` and explicitly installed
+in the frontend Docker builder before `npm ci`; host CI and image builds use
+the same lockfile resolver. Python runtime packages
 are pinned with hashes in `backend/requirements*.txt`; update them only through
 `backend/scripts/lock_dependencies.ps1` and verify both Python 3.11 and 3.13.

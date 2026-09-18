@@ -69,14 +69,13 @@ test.describe('access-token refresh', () => {
 
     await expect(page.getByRole('heading', { name: fixtures.set.title })).toBeVisible()
     await expect.poll(() => api.count('POST', '/auth/refresh')).toBe(2)
-    // React Strict Mode intentionally runs the idempotent loader twice in development.
-    // Each initial request must be retried once with the one shared refreshed token.
-    expect(attempts.get('/subjects/sets/set-1')).toBe(4)
-    expect(attempts.get('/flashcards/sets/set-1/cards')).toBe(4)
+    // Strict Mode cleanup cancels its discarded loader before HTTP dispatch.
+    // Each live request retries exactly once with the one shared refreshed token.
+    expect(attempts.get('/subjects/sets/set-1')).toBe(2)
+    expect(attempts.get('/flashcards/sets/set-1/cards')).toBe(2)
     for (const path of ['/subjects/sets/set-1', '/flashcards/sets/set-1/cards']) {
       const authorizations = api.callsFor('GET', path).map((call) => call.headers.authorization)
-      expect(authorizations.filter((value) => value === 'Bearer boot-access-token')).toHaveLength(2)
-      expect(authorizations.filter((value) => value === 'Bearer refreshed-access-token')).toHaveLength(2)
+      expect(authorizations).toEqual(['Bearer boot-access-token', 'Bearer refreshed-access-token'])
     }
   })
 
@@ -117,8 +116,8 @@ test.describe('access-token refresh', () => {
       .toBe(1)
     await page.waitForTimeout(150)
     expect(api.count('POST', '/auth/refresh')).toBe(2)
-    expect(api.count('GET', '/subjects/sets/set-1')).toBe(2)
-    expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(2)
+    expect(api.count('GET', '/subjects/sets/set-1')).toBe(1)
+    expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(1)
   })
 
   test('does not refresh again when a retried request is also unauthorized', async ({ page }) => {
@@ -149,8 +148,8 @@ test.describe('access-token refresh', () => {
     await expect(page.getByRole('alert')).toContainText(/unable|failed|unauthorized/i)
     await page.waitForTimeout(150)
     expect(api.count('POST', '/auth/refresh')).toBe(2)
-    expect(api.count('GET', '/subjects/sets/set-1')).toBe(4)
-    expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(4)
+    expect(api.count('GET', '/subjects/sets/set-1')).toBe(2)
+    expect(api.count('GET', '/flashcards/sets/set-1/cards')).toBe(2)
   })
 
   test('cancels a stale successful bootstrap refresh before explicit login', async ({ page }) => {

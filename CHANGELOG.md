@@ -5,6 +5,11 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Aligned coupled frontend dependency upgrades (Vite 8/React plugin 6, ESLint 10
+  and Vitest/coverage 5), with the declared npm resolver in the Docker builder.
+  Route loaders cancel old requests and hide previous Subject/session data;
+  generation polling preserves Subject scope through failures and late retries.
+
 - Hard-renamed the flashcard profile to `FLASHCARD_AI_*`, rejected nonempty
   legacy names and added independent disabled-by-default answer/embedding
   profiles with explicit worker quota ownership. Existing operators must follow
