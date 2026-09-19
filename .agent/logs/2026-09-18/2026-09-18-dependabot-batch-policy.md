@@ -15,13 +15,16 @@ new PRs for deliberate features or batch updates.
 
 ## Change
 
-Each Dependabot ecosystem now permits one open routine version-update PR.
-Npm, pip and Docker minor/patch updates are grouped by ecosystem; Actions
-updates remain one group. Major npm, pip and Docker version-update PRs are
-ignored across dependencies. Dependabot's `update-types` ignore applies to
-version updates, so the existing npm/pip security-update groups remain eligible.
-Major runtime or toolchain work must be initiated as a deliberate, reviewed
-upgrade rather than a stream of independent bot proposals.
+Each Dependabot ecosystem now checks monthly and permits one open routine
+version-update PR. Npm, pip and Docker minor/patch updates are grouped by
+ecosystem; Actions updates remain one group. Major npm, pip and Docker version
+updates are ignored across dependencies. Python's Docker tags use the language
+major as the tag's SemVer minor, so an explicit `>=3.12` ignore keeps the image
+on the reviewed 3.11 line. Dependabot's update-type ignore applies to version
+updates, so npm/pip/Actions security groups remain eligible. Major runtime or
+toolchain work must be initiated as a deliberate, reviewed upgrade rather than
+a stream of independent bot proposals. Future pip batches still require the
+repository's Windows lock generator before merge.
 
 The seven pre-existing bot PRs are closed separately after this policy reaches
 protected main, preventing freed PR slots from producing another unnecessary
