@@ -17,6 +17,7 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-18 | [Dependabot batch policy](2026-09-18/2026-09-18-dependabot-batch-policy.md) | Groups routine minor/patch updates, limits each ecosystem to one open version PR, and reserves major upgrades for planned work while retaining security updates. |
 | 2026-09-18 | [Final runtime-image PR reconciliation](2026-09-18/2026-09-18-final-runtime-image-pr-reconciliation.md) | Records bot-closed PR #24 and reconciles replacement PR #25 while retaining Node 24 and ignoring unsupported major Docker updates. |
 | 2026-09-18 | [Coupled frontend dependency PR remediation](2026-09-18/2026-09-18-coupled-frontend-dependency-merges.md) | PRs #4–8 preserved in normal merge history, aligned peers/npm resolver and loading/Subject/session fences with component, browser and image evidence. |
 | 2026-09-18 | [bcrypt 5 password compatibility](2026-09-18/2026-09-18-bcrypt5-password-compatibility.md) | Direct bcrypt with preserved historic/current password records, regenerated Windows hashed locks, independent fixtures, passing auth/offline/coverage and both native backend image probes; current-head security/hosted gates remain required. |

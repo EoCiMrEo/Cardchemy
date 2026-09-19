@@ -51,6 +51,18 @@ installs, and verify a clean `npm ci`, the complete frontend gate and the image
 runtime smoke. Resolve incompatible peers instead of using forced installs or
 disabling lint rules, coverage or browser checks.
 
+Dependabot checks monthly and opens at most one routine version-update pull
+request per ecosystem. Routine npm, Python and Docker minor/patch updates are
+grouped into ecosystem batches; GitHub Actions updates are grouped together.
+Automatic npm/pip/Docker major-version PRs are ignored, and Docker's Python
+image stays on the reviewed 3.11 line. Runtime/toolchain line changes need an
+explicit planned upgrade with compatibility research, lock regeneration and
+the full applicable gate. Security updates remain eligible and are grouped
+separately for npm, Python and Actions. Operators may open a focused major-
+upgrade PR when the project chooses to expand support; closing a generated PR
+does not establish support. Pip updates must still be regenerated with the
+repository's Windows lock script before merge.
+
 Normal tests use injected providers and fixtures. The live AI evaluation is
 separately opted in with `RUN_LIVE_AI_TESTS=1` and configured provider
 credentials, and may consume quota. See [AI_EVALUATION.md](AI_EVALUATION.md).

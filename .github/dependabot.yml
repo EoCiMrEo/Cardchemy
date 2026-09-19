@@ -3,11 +3,15 @@ updates:
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compatible:
+        applies-to: version-updates
+        patterns: ["*"]
         update-types: [minor, patch]
       security:
         applies-to: security-updates
@@ -15,11 +19,15 @@ updates:
   - package-ecosystem: pip
     directory: /backend
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compatible:
+        applies-to: version-updates
+        patterns: ["*"]
         update-types: [minor, patch]
       security:
         applies-to: security-updates
@@ -27,19 +35,27 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    open-pull-requests-limit: 1
     groups:
       actions:
+        applies-to: version-updates
+        patterns: ["*"]
+      security:
+        applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: docker
     directories: [/backend, /frontend]
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    open-pull-requests-limit: 1
     ignore:
-      - dependency-name: node
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: python
+        versions: [">=3.12"]
     groups:
       runtime-images:
+        applies-to: version-updates
         patterns: ["*"]
+        update-types: [minor, patch]
