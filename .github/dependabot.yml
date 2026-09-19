@@ -5,9 +5,13 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compatible:
+        patterns: ["*"]
         update-types: [minor, patch]
       security:
         applies-to: security-updates
@@ -17,9 +21,13 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compatible:
+        patterns: ["*"]
         update-types: [minor, patch]
       security:
         applies-to: security-updates
@@ -29,6 +37,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    open-pull-requests-limit: 1
     groups:
       actions:
         patterns: ["*"]
@@ -37,9 +46,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    open-pull-requests-limit: 1
     ignore:
-      - dependency-name: node
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
     groups:
       runtime-images:
         patterns: ["*"]
+        update-types: [minor, patch]
