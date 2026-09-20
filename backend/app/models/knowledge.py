@@ -21,7 +21,9 @@ from app.models.vector import embedding_vector_type
 from app.time_utils import utcnow
 
 
-def embedding_space_hash(identity: tuple[str, str, str, str, str, int, str, str]) -> str:
+def embedding_space_hash(
+    identity: tuple[str, str, str, str, str, int, str, str, str, str]
+) -> str:
     """Hash the ordered Settings identity with unambiguous length framing.
 
     The PostgreSQL identity trigger uses the same UTF-8 byte lengths. Credentials
@@ -79,15 +81,25 @@ class RagEmbeddingSpace(Base):
     dimensions = Column(Integer, nullable=False)
     representation = Column(String(16), nullable=False)
     metric = Column(String(16), nullable=False)
+    document_task_mode = Column(String(32), nullable=False, server_default=text("'shared_input'"))
+    query_task_mode = Column(String(32), nullable=False, server_default=text("'shared_input'"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now())
 
     __table_args__ = (
         CheckConstraint(
-            "length(identity_hash) = 64 AND provider = 'openai_compatible' AND "
+            "length(identity_hash) = 64 AND provider IN ('openai_compatible','gemini') AND "
             "length(trim(base_url)) BETWEEN 1 AND 512 AND length(trim(model)) BETWEEN 1 AND 128 AND "
             "length(trim(space_revision)) BETWEEN 1 AND 64 AND format_version = 'raw_text_v1' AND "
-            "dimensions = 1536 AND representation = 'float32' AND metric = 'cosine'",
+            "dimensions = 1536 AND representation = 'float32' AND metric = 'cosine' AND "
+            "((provider = 'openai_compatible' AND document_task_mode = 'shared_input' "
+            "AND query_task_mode = 'shared_input') OR "
+            "(provider = 'gemini' AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
+            "AND query_task_mode = 'QUESTION_ANSWERING'))",
             name="ck_rag_embedding_spaces_identity",
+        ),
+        UniqueConstraint(
+            "identity_hash", "document_task_mode", "query_task_mode",
+            name="uq_rag_embedding_spaces_task_modes",
         ),
     )
 
@@ -238,6 +250,8 @@ class SubjectDocumentIndexRevision(Base):
     embedding_dimensions = Column(Integer, nullable=False)
     embedding_representation = Column(String(16), nullable=False)
     embedding_metric = Column(String(16), nullable=False)
+    document_task_mode = Column(String(32), nullable=False, server_default=text("'shared_input'"))
+    query_task_mode = Column(String(32), nullable=False, server_default=text("'shared_input'"))
     embedding_space_hash = Column(String(64), ForeignKey("rag_embedding_spaces.identity_hash"), nullable=False)
     status = Column(String(24), nullable=False, server_default=text("'pending_index'"))
     is_active = Column(Boolean, nullable=False, server_default=text("false"))
@@ -258,6 +272,12 @@ class SubjectDocumentIndexRevision(Base):
              "subject_document_content_revisions.subject_id", "subject_document_content_revisions.uploader_id"],
             ondelete="CASCADE", name="fk_knowledge_index_content",
         ),
+        ForeignKeyConstraint(
+            ["embedding_space_hash", "document_task_mode", "query_task_mode"],
+            ["rag_embedding_spaces.identity_hash", "rag_embedding_spaces.document_task_mode",
+             "rag_embedding_spaces.query_task_mode"],
+            name="fk_knowledge_index_task_modes",
+        ),
         UniqueConstraint("content_revision_id", "revision_no", name="uq_knowledge_index_number"),
         UniqueConstraint("id", "content_revision_id", "document_id", "subject_id", "uploader_id", name="uq_knowledge_index_scope"),
         UniqueConstraint("id", "embedding_space_hash", name="uq_knowledge_index_space"),
@@ -269,7 +289,11 @@ class SubjectDocumentIndexRevision(Base):
             "length(trim(embedding_model)) BETWEEN 1 AND 128 AND "
             "length(trim(embedding_space_revision)) BETWEEN 1 AND 64 AND "
             "length(trim(embedding_format_version)) BETWEEN 1 AND 64 AND "
-            "length(embedding_space_hash) = 64",
+            "length(embedding_space_hash) = 64 AND "
+            "((embedding_provider = 'openai_compatible' AND document_task_mode = 'shared_input' "
+            "AND query_task_mode = 'shared_input') OR "
+            "(embedding_provider = 'gemini' AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
+            "AND query_task_mode = 'QUESTION_ANSWERING'))",
             name="ck_knowledge_index_identity",
         ),
         CheckConstraint(
@@ -315,6 +339,7 @@ class SubjectDocumentChunk(Base):
     subject_id = Column(UUID(as_uuid=True), nullable=False)
     uploader_id = Column(UUID(as_uuid=True), nullable=False)
     chunk_index = Column(Integer, nullable=False)
+    local_chunk_id = Column(String(64), nullable=False)
     page_number = Column(Integer, nullable=False)
     section = Column(String(255), nullable=True)
     content = Column(Text, nullable=False)
@@ -341,10 +366,19 @@ class SubjectDocumentChunk(Base):
             ondelete="CASCADE", name="fk_knowledge_chunks_page",
         ),
         UniqueConstraint("index_revision_id", "chunk_index", name="uq_knowledge_chunks_index"),
+        UniqueConstraint("index_revision_id", "local_chunk_id", name="uq_knowledge_chunks_local_id"),
+        UniqueConstraint(
+            "id", "index_revision_id", "content_revision_id", "document_id", "subject_id",
+            name="uq_knowledge_chunks_rag_source_scope",
+        ),
         CheckConstraint("chunk_index BETWEEN 0 AND 511 AND page_number BETWEEN 1 AND 100", name="ck_knowledge_chunks_position"),
         CheckConstraint("length(trim(content)) BETWEEN 1 AND 500000 AND token_count BETWEEN 1 AND 8192", name="ck_knowledge_chunks_content"),
         CheckConstraint("section IS NULL OR length(section) BETWEEN 1 AND 255", name="ck_knowledge_chunks_section"),
         CheckConstraint("length(embedding_space_hash) = 64", name="ck_knowledge_chunks_space_hash"),
+        CheckConstraint(
+            "local_chunk_id ~ '^chunk-[0-9]{4,}-p[0-9]+$'",
+            name="ck_knowledge_chunks_local_id",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint(
             "embedding IS NULL OR (embedding OPERATOR(public.<#>) embedding) < 0",
             name="ck_knowledge_chunks_nonzero_vector",
@@ -366,6 +400,7 @@ class SubjectDocumentIndexJob(Base):
     document_id = Column(UUID(as_uuid=True), nullable=False)
     subject_id = Column(UUID(as_uuid=True), nullable=False)
     uploader_id = Column(UUID(as_uuid=True), nullable=False)
+    request_id = Column(UUID(as_uuid=True), nullable=True)
     status = Column(String(24), nullable=False, server_default=text("'queued'"))
     operation_key_hash = Column(String(64), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
@@ -380,6 +415,15 @@ class SubjectDocumentIndexJob(Base):
     lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     cancellation_requested_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    provider_call_started_at = Column(DateTime(timezone=True), nullable=True)
+    estimated_input_tokens = Column(Integer, nullable=False, server_default=text("0"))
+    actual_input_tokens = Column(Integer, nullable=True)
+    provider_request_count = Column(Integer, nullable=False, server_default=text("0"))
+    provider_retry_count = Column(Integer, nullable=False, server_default=text("0"))
+    provider_rate_limit_wait_milliseconds = Column(BigInteger, nullable=False, server_default=text("0"))
+    estimated_cost_microusd = Column(BigInteger, nullable=True)
+    actual_cost_microusd = Column(BigInteger, nullable=True)
+    usage_estimated = Column(Boolean, nullable=False, server_default=text("false"))
     error_code = Column(String(64), nullable=True)
     error_message = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now())
@@ -406,6 +450,14 @@ class SubjectDocumentIndexJob(Base):
         ).ddl_if(dialect="postgresql"),
         CheckConstraint("status IN ('queued', 'running', 'completed', 'failed', 'cancelled')", name="ck_knowledge_jobs_status"),
         CheckConstraint("attempt_count BETWEEN 0 AND max_attempts AND max_attempts BETWEEN 1 AND 10", name="ck_knowledge_jobs_attempts"),
+        CheckConstraint(
+            "estimated_input_tokens >= 0 AND (actual_input_tokens IS NULL OR actual_input_tokens >= 0) AND "
+            "provider_request_count >= 0 AND provider_retry_count >= 0 AND "
+            "provider_retry_count <= provider_request_count AND provider_rate_limit_wait_milliseconds >= 0 AND "
+            "(estimated_cost_microusd IS NULL OR estimated_cost_microusd >= 0) AND "
+            "(actual_cost_microusd IS NULL OR actual_cost_microusd >= 0)",
+            name="ck_knowledge_jobs_telemetry",
+        ),
         CheckConstraint(
             "status <> 'running' OR (worker_id IS NOT NULL AND claim_token IS NOT NULL AND "
             "attempt_count >= 1 AND "

@@ -19,6 +19,9 @@ class AuditAction(str, enum.Enum):
     CARDS_APPROVED = "cards.approved"
     SET_PUBLISHED = "set.published"
     SET_UNPUBLISHED = "set.unpublished"
+    KNOWLEDGE_PUBLISHED = "knowledge.published"
+    KNOWLEDGE_UNPUBLISHED = "knowledge.unpublished"
+    KNOWLEDGE_REMOVED = "knowledge.removed"
     INSTRUCTOR_PROVISIONED = "account.instructor_provisioned"
     ACCOUNT_ROLE_CHANGED = "account.role_changed"
     ACCOUNT_DELETED = "account.deleted"
@@ -53,11 +56,15 @@ class AuditEvent(Base):
         CheckConstraint(
             "action IN ('invitation.created', 'card.approved', 'card.unapproved', "
             "'cards.approved', 'set.published', 'set.unpublished', "
+            "'knowledge.published', 'knowledge.unpublished', 'knowledge.removed', "
             "'account.instructor_provisioned', 'account.role_changed', 'account.deleted')",
             name="ck_audit_events_action",
         ),
         CheckConstraint("actor_kind IN ('user', 'operator', 'operator_database')", name="ck_audit_events_actor_kind"),
-        CheckConstraint("target_type IN ('invitation', 'card', 'set', 'account')", name="ck_audit_events_target_type"),
+        CheckConstraint(
+            "target_type IN ('invitation', 'card', 'set', 'knowledge', 'account')",
+            name="ck_audit_events_target_type",
+        ),
         CheckConstraint("affected_count IS NULL OR affected_count >= 0", name="ck_audit_events_affected_count"),
         CheckConstraint("role_before IS NULL OR role_before IN ('student', 'instructor')", name="ck_audit_events_role_before"),
         CheckConstraint("role_after IS NULL OR role_after IN ('student', 'instructor')", name="ck_audit_events_role_after"),

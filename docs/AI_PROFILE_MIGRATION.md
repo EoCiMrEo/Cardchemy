@@ -53,14 +53,14 @@ The application does not rename values or write an existing `.env` automatically
    restoring new generation admission.
 
 `RAG_AI_*` and `RAG_EMBEDDING_*` are independent profiles. The initial answer
-profile is `gpt-4.1-mini-2025-04-14`; the initial vector space is
-`text-embedding-3-small`, 1,536-dimensional float32 cosine, with document and
+profile is `gemini-3.5-flash`; the initial vector space is
+`gemini-embedding-001`, 1,536-dimensional float32 cosine, with document and
 query formatting `raw_text_v1`. An answer worker needs its answer and query
 embedding credentials; an indexing worker needs only its embedding credential.
 The existing generation worker needs only the flashcard credential. The API,
-email worker and browser never receive provider keys. Index/answer execution
-belongs to later phases; merely defining these settings enables no paid RAG
-work in the current implementation.
+email worker and browser never receive provider keys. Dedicated index/answer
+execution is implemented, but defining or enabling these settings alone does
+not authorize paid RAG evaluation or provider spending.
 
 The provider/model snapshot on an existing generation job remains a durable
 contract; this migration does not rewrite used migrations or old job fields.

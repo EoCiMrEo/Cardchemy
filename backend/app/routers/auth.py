@@ -80,6 +80,11 @@ async def get_current_user(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Durable Ask AI admission snapshots the authenticated session so its
+    # worker can refuse costly work/results after logout, reset or reuse
+    # detection. This transient attribute is never serialized or persisted on
+    # the User row itself.
+    setattr(user, "_auth_session_id", claims.session_id)
     return user
 
 

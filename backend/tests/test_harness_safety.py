@@ -34,6 +34,61 @@ def test_service_harness_does_not_inherit_operator_settings(monkeypatch):
     assert all(key not in environment for key in operator_keys)
 
 
+def test_journey_rag_off_scenario_starts_no_rag_workers_or_credentials(monkeypatch):
+    script = Path(__file__).resolve().parents[2] / "scripts/test_journey.py"
+    monkeypatch.syspath_prepend(str(script.parent))
+    namespace = runpy.run_path(str(script))
+
+    disabled = namespace["rag_environment"](False)
+    assert disabled == {
+        "RAG_ENABLED": "false",
+        "RAG_AI_PROVIDER_ENABLED": "false",
+        "RAG_EMBEDDING_PROVIDER_ENABLED": "false",
+    }
+    assert namespace["journey_worker_actions"](False) == (
+        "worker",
+        "email-worker",
+    )
+
+    enabled = namespace["rag_environment"](True)
+    assert enabled["RAG_ENABLED"] == "true"
+    assert enabled["RAG_EMBEDDING_MODEL"] == "gemini-embedding-001"
+    assert enabled["RAG_AI_PROVIDER_MAX_RETRIES"] == "0"
+    assert enabled["RAG_EMBEDDING_PROVIDER_MAX_RETRIES"] == "0"
+    assert namespace["journey_worker_actions"](True) == (
+        "worker",
+        "index-worker",
+        "answer-worker",
+        "email-worker",
+    )
+
+
+def test_service_harness_reports_only_static_failure_identity_and_location(monkeypatch, capsys):
+    script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
+    namespace = runpy.run_path(str(script))
+    captured = subprocess.CompletedProcess(
+        args=["pytest"],
+        returncode=1,
+        stdout=(
+            "FAILED tests/postgres/test_example.py::test_safe_case - AssertionError\n"
+            "tests/postgres/test_example.py:42: GENERATED_CREDENTIAL_MUST_NOT_PRINT\n"
+            "sqlalchemy.exc.IntegrityError: private database detail\n"
+        ),
+        stderr="private fixture text must not print",
+    )
+    monkeypatch.setattr(namespace["subprocess"], "run", lambda *args, **kwargs: captured)
+
+    assert namespace["run_service_tests"](
+        ["pytest"], cwd=Path.cwd(), environment={}
+    ) == 1
+    output = capsys.readouterr().out
+    assert "Failed service test: tests/postgres/test_example.py::test_safe_case" in output
+    assert "Safe failure location: tests/postgres/test_example.py:42" in output
+    assert "Safe failure type: sqlalchemy.exc.IntegrityError" in output
+    assert "GENERATED_CREDENTIAL_MUST_NOT_PRINT" not in output
+    assert "private fixture text" not in output
+
+
 def test_postgres_readiness_waits_for_authenticated_tcp_and_target_database(monkeypatch):
     import asyncpg
     script = Path(__file__).resolve().parents[2] / "scripts/test_services.py"
@@ -119,3 +174,47 @@ async def test_private_journey_worker_refuses_an_ordinary_application_database(m
     monkeypatch.setenv("RUN_JOURNEY_TESTS", "0")
     with pytest.raises(RuntimeError, match="generated disposable journey database"):
         await namespace["require_disposable_database"]()
+
+
+async def test_journey_rag_providers_satisfy_grounding_and_support_contracts():
+    from uuid import uuid4
+
+    from app.ai.answering import (
+        ClaimSupportOutput,
+        GroundedAnswerOutput,
+        render_answer_prompts,
+        render_support_prompts,
+        validate_grounded_answer,
+        validate_support_output,
+    )
+    from app.services.knowledge_retrieval import RetrievedKnowledgeChunk
+    from tests.support.journey_runtime import JourneyAnswerProvider, JourneyEmbeddingProvider
+
+    chunk = RetrievedKnowledgeChunk(
+        chunk_id=uuid4(), document_id=uuid4(), document_title="Journey Leaf Facts",
+        content_revision_id=uuid4(), index_revision_id=uuid4(), page_number=1,
+        section=None,
+        content="Chlorophyll gives leaves their Green color. Photosynthesis converts light into chemical energy.",
+        token_count=16, embedding_space_hash="a" * 64, corpus_revision=1,
+        vector_similarity=1.0, lexical_score=1.0, vector_rank=1, lexical_rank=1,
+        fusion_score=1.0,
+    )
+    provider = JourneyAnswerProvider()
+    system, user = render_answer_prompts(
+        question="What color does chlorophyll give leaves?", history=(), chunks=(chunk,)
+    )
+    answer = await provider.generate_structured(
+        response_model=GroundedAnswerOutput, system_prompt=system, user_prompt=user,
+        max_output_tokens=512, operation="rag_answer",
+    )
+    claims = validate_grounded_answer(answer.data, (chunk,))
+    support_system, support_user = render_support_prompts(
+        question="What color does chlorophyll give leaves?", claims=claims, chunks=(chunk,)
+    )
+    support = await provider.generate_structured(
+        response_model=ClaimSupportOutput, system_prompt=support_system,
+        user_prompt=support_user, max_output_tokens=256, operation="rag_support",
+    )
+    assert validate_support_output(support.data, len(claims))
+    embedding = await JourneyEmbeddingProvider().embed_query("chlorophyll color")
+    assert len(embedding.vectors[0]) == 1536

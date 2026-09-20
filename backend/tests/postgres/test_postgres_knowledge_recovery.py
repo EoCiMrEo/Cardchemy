@@ -31,7 +31,7 @@ async def docker_bytes(environment, *arguments, input_bytes=None):
 
 
 async def assert_restored_knowledge(connection, values):
-    assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260918_0010"
+    assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260920_0013"
     assert await connection.scalar(text("SELECT extversion FROM pg_extension WHERE extname='vector'")) == "0.8.6"
     assert (await connection.execute(text("""
         SELECT page_number,length(content) FROM subject_document_pages

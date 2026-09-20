@@ -1,6 +1,6 @@
 # Backend Map of Content
 
-Current code verified: 2026-09-17. This is navigation, not an API specification.
+Current code verified: 2026-09-20. This is navigation, not an API specification.
 Start with [project orientation](../docs/00-START-HERE.md) and the
 [project map](../PROJECT-MAP.md).
 
@@ -12,6 +12,8 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 | [app/database.py](app/database.py) | Async SQLAlchemy engine/session dependency, rollback cleanup and Alembic-head verification. |
 | [app/worker.py](app/worker.py) | Generation-worker process entry. |
 | [app/email_worker.py](app/email_worker.py) | Email-worker process entry. |
+| [app/index_worker.py](app/index_worker.py) | Independent Subject Knowledge embedding/index-worker process entry. |
+| [app/answer_worker.py](app/answer_worker.py) | Independent Subject Ask AI answer/query-embedding worker process entry. |
 | [app/cli.py](app/cli.py) | Operator bootstrap/email retry, content-free diagnostics/audits, private export, explicit account deletion, bounded retention and optional aggregate reporting. |
 | [app/config.py](app/config.py) | Validated settings from process environment and the sole root `.env`; test mode suppresses file loading. |
 
@@ -19,16 +21,16 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
 
 | Area | Responsibility |
 | --- | --- |
-| [app/routers/](app/routers/) | Auth, subjects/sets/invitations, flashcard CRUD, generation jobs and study HTTP contracts. |
-| [app/services/](app/services/) | Auth/session/invitation logic, content CRUD, progress/idempotency, generation lifecycle/quotas, PDF extraction/storage and email composition. |
+| [app/routers/](app/routers/) | Auth, subjects/sets/invitations, flashcard CRUD, generation jobs, private Subject Ask AI and study HTTP contracts. |
+| [app/services/](app/services/) | Auth/session/invitation logic, content CRUD, progress/idempotency, generation/Ask AI lifecycle and quotas, authorized retrieval, PDF extraction/storage and email composition. |
 | [app/schemas/](app/schemas/) | Pydantic request/response validation. Student study cards have a separate answer-free response. |
 | [app/models/](app/models/) | SQLAlchemy application, operational and Subject Knowledge tables; database constraints and foreign-key ownership. |
 | [app/observability.py](app/observability.py), [app/services/operations.py](app/services/operations.py) | Closed JSON logs/errors, request/job correlation, retained metrics and local/durable loop heartbeats. |
 | [app/services/privacy.py](app/services/privacy.py), [app/services/audit.py](app/services/audit.py) | Consistent allowlisted export, guarded explicit deletion, bounded metadata expiry and fixed-field transactional audits. |
-| [app/workers/](app/workers/) | Generation/email claiming, leases, fencing, retention and graceful shutdown. |
-| [app/ai/](app/ai/) | Provider-neutral pipeline, closed contracts, chunking, versioned prompt renderers, grounding, provider adapters and worker-wide quota admission. |
+| [app/workers/](app/workers/) | Generation/email/index/answer claiming, leases, fencing, retention and graceful shutdown. |
+| [app/ai/](app/ai/) | Provider-neutral generation pipeline, strict embedding contract, shared page-aware preparation, versioned prompts, grounding, provider adapters and worker-wide quota admission. |
 | [app/agents/graph.py](app/agents/graph.py) | Active `ainvoke` compatibility facade used by the generation worker; delegates to `FlashcardGenerationPipeline`, without LangGraph. |
-| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260918_0010` requires PostgreSQL 16/pgvector 0.8.6 and private Subject Knowledge storage. |
+| [alembic/](alembic/) | Sole deployed schema evolution mechanism; current code head `20260920_0013` requires PostgreSQL 16/pgvector 0.8.6 and adds native Gemini embedding identity, request correlation/timings and Knowledge lifecycle audits. |
 
 ## Common change paths
 
@@ -60,13 +62,29 @@ Start with [project orientation](../docs/00-START-HERE.md) and the
   Read [email operations](../docs/EMAIL_DELIVERY.md).
 - Schema changes: models + a new [Alembic revision](alembic/versions/) +
   [PostgreSQL regressions](tests/postgres/) + [data model](../docs/architecture/DATA-MODEL.md).
-- Subject Knowledge foundation: [models/knowledge.py](app/models/knowledge.py)
-  and [migration `0010`](alembic/versions/20260918_0010_subject_knowledge.py)
-  define private content/index revisions, capacity, eligibility and durable
-  index-job target. [knowledge_lock.py](app/services/knowledge_lock.py) orders
-  existing account/retention deletion with schema writes. Capture/indexing,
-  retrieval and Ask AI execution are later phases; read the
+- Subject Knowledge: [models/knowledge.py](app/models/knowledge.py),
+  [migration `0011`](alembic/versions/20260919_0011_rag_capture_indexing.py),
+  [capture](app/services/knowledge_capture.py),
+  [index operations](app/services/knowledge_indexing.py),
+  [index worker](app/workers/knowledge_index.py) and
+  [authorized retrieval](app/services/knowledge_retrieval.py) implement private
+  capture, exact-space indexing, explicit cutover and exact hybrid retrieval.
+  [knowledge_lock.py](app/services/knowledge_lock.py) orders deletion/capture/
+  indexing/final-answer writes. Phase 17 adds [private Ask AI models](app/models/rag.py),
+  [HTTP contracts](app/routers/rag.py), [admission/history](app/services/rag_answers.py),
+  [strict answer validation](app/ai/answering.py), migration
+  [`0012`](alembic/versions/20260919_0012_subject_ask_ai.py) and the
+  [fenced answer worker](app/workers/rag_answer.py). Read the
   [Knowledge flow](../docs/architecture/SUBJECT-KNOWLEDGE-FLOW.md).
+  Phase 18 adds owner-only [Knowledge management](app/services/knowledge_management.py)
+  and [routes](app/routers/knowledge.py). Phase 19 evaluation lives in the
+  [authored v2 corpus](tests/fixtures/rag_eval/subject_knowledge_v2.json),
+  [metric support](tests/support/rag_evaluation.py) and actual PostgreSQL
+  retrieval cases; its separately gated live harness is under
+  [integration tests](tests/integration/test_live_rag_evaluation.py).
+  Phase 20/21 closure adds native Gemini embedding/answer profiles and
+  operational metadata in
+  [`0013`](alembic/versions/20260920_0013_rag_phase20_21_closure.py).
 
 ## Verification and operations
 

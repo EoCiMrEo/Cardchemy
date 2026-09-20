@@ -7,9 +7,10 @@ its API, worker, and database boundaries.
 
 ## Purpose and ownership
 
-The browser supports instructor subject management, PDF generation, card
-review/publication, invitations, and student study. FastAPI owns authorization,
-durable generation, answer correctness, and persistent progress. Browser guards
+The browser supports instructor subject/Knowledge management, PDF generation,
+card/Knowledge publication, private Subject Ask AI, invitations, and student
+study. FastAPI owns authorization, durable generation/index/answer execution,
+evidence validity, answer correctness, and persistent progress. Browser guards
 and form checks improve interaction but do not replace server enforcement.
 
 The built Nginx edge emits only numeric status/duration access events and
@@ -36,6 +37,8 @@ are in [package.json](package.json) and [package-lock.json](package-lock.json).
 | Shared interactions | [src/components/](src/components/) | Generation telemetry, subject/invitation/set/preview dialogs, UI primitives, and failure views. |
 | Brand | [BrandWordmark.tsx](src/components/BrandWordmark.tsx), [public/brand/](public/brand/), [index.html](index.html) | Shared accessible wordmark and supplied ICO; originals preserved under [separate terms](../BRANDING.md). |
 | Job polling | [src/hooks/useGenerationJobs.ts](src/hooks/useGenerationJobs.ts) | Owner-scoped jobs/limits, active-job polling, cancellation/retry, and completion refresh. |
+| Subject Knowledge | [KnowledgeArea.tsx](src/components/knowledge/KnowledgeArea.tsx), [knowledge.ts](src/services/knowledge.ts) | Instructor-only Knowledge upload/revision, capture/index/review/publication state, persisted-page retry, unpublish and removal. |
+| Subject Ask AI | [AskAiPanel.tsx](src/components/rag/AskAiPanel.tsx), [rag.ts](src/services/rag.ts) | Principal-private threads/history, durable job recovery, stable logical retry identity, safe answer text and authorized evidence dialogs. |
 | Study session state | [src/store/](src/store/), [studySlice.ts](src/store/slices/studySlice.ts) | Current cards/index, server-confirmed answer results, and session completion; no durable browser outbox. |
 | Copy/style | [src/i18n/en.ts](src/i18n/en.ts), [src/index.css](src/index.css), [src/components/ui/](src/components/ui/) | English v1 catalog, Tailwind theme, focus/reduced-motion rules, and shared accessible controls. |
 
@@ -93,6 +96,15 @@ use the shared abortable join request for `POST /subjects/invitations/accept`.
 The backend owns idempotent enrollment. See [Auth flow](../docs/architecture/AUTH-FLOW.md)
 and [email delivery](../docs/EMAIL_DELIVERY.md).
 
+**Subject Knowledge and Ask AI:** Instructor SubjectDetails keeps normal
+flashcard generation separate from Knowledge upload/revision and explicit
+review/publication. Both instructor and student Subject pages lazy-load one
+private Ask AI panel. It reloads server-owned threads/history/jobs, polls one
+active job at a time with abort cleanup, reuses the same idempotency key only
+for one logical failed submission, renders model output as text, and opens
+current server-derived page/section evidence in an accessible dialog. Read the
+[Knowledge flow](../docs/architecture/SUBJECT-KNOWLEDGE-FLOW.md).
+
 **Study/progress:** StudentSubjectDetails loads visible sets and server progress.
 StudyMode gets answer-free cards from `GET /study/sets/{set_id}/session`.
 StudyCardView creates one key/payload per logical answer and sends
@@ -111,6 +123,7 @@ server's separate completion/mastery percentages. Review Again requests
 | --- | --- |
 | API/session contract | `src/services/api.ts`, `auth.ts`, `types.ts`, `src/context/AuthContext.tsx`, route guards, backend auth schemas/router/service; `tests/components/auth.test.tsx` and auth browser specs. |
 | Upload/job state or telemetry | Instructor SubjectDetails, `src/hooks/useGenerationJobs.ts`, GenerationJobCard, `src/services/flashcards.ts`/`types.ts`, generation router/schemas/service/worker; `e2e/generation-telemetry.spec.ts`. |
+| Knowledge/Ask AI state | SubjectDetails/StudentSubjectDetails, `src/components/knowledge/`, `src/components/rag/`, `src/services/knowledge.ts`/`rag.ts`/`types.ts`, backend Knowledge/RAG routers and workers; `e2e/rag-knowledge.spec.ts` and the deterministic real journey. |
 | Card review/publication | Instructor SetView, EditSetDialog/PreviewDialog, subject/flashcard services and types, backend card/set contracts; editing component and browser specs. |
 | Study correctness/retry/progress | StudyMode, StudentSubjectDetails, studySlice, `src/services/study.ts`/`types.ts`, backend study router/schemas and progress persistence; study component, reliability/recovery/progress browser specs. |
 | Invitations | JoinCourse, StudentDashboard, InviteStudentDialog, `src/services/subjects.ts`, auth/subject types and backend invitation/email contracts; join/auth-recovery/invitation browser specs. |

@@ -19,17 +19,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.models.generation import (
     GenerationJob,
+    GenerationJobKind,
     GenerationJobSource,
     GenerationJobStatus,
     GenerationQuotaEvent,
+    KnowledgeUploadQuotaEvent,
 )
+from app.models.knowledge import SubjectDocument
 from app.models.subject import FlashcardSet
 from app.schemas.generation import (
     GenerationLimitReason,
     GenerationJobCreate,
     GenerationJobResponse,
     GenerationLimitsResponse,
+    KnowledgeJobCreate,
 )
+from app.services.knowledge_capture import remove_captured_knowledge
+from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.services.pdf_processor import PDFProcessingError, PDFProcessor
 from app.services.source_storage import SourceStorage
 from app.time_utils import as_utc, utcnow
@@ -94,6 +100,21 @@ def metadata_fingerprint(data: GenerationJobCreate, sanitized_filename: str) -> 
             "set_description": (data.set_description or "").strip() or None,
             "source_pdf_name": sanitized_filename,
             "card_count": data.card_count,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def knowledge_metadata_fingerprint(data: KnowledgeJobCreate, sanitized_filename: str) -> str:
+    canonical = json.dumps(
+        {
+            "subject_id": str(data.subject_id),
+            "document_id": str(data.document_id) if data.document_id else None,
+            "title": data.title.strip(),
+            "source_pdf_name": sanitized_filename,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -189,6 +210,7 @@ class GenerationJobService:
             await db.scalar(
                 select(func.count(GenerationJob.id)).where(
                     GenerationJob.user_id == user_id,
+                    GenerationJob.job_kind == GenerationJobKind.FLASHCARDS.value,
                     GenerationJob.status.in_(ACTIVE_STATUSES),
                 )
             )
@@ -204,6 +226,7 @@ class GenerationJobService:
         pending = int(
             await db.scalar(
                 select(func.count(GenerationJob.id)).where(
+                    GenerationJob.job_kind == GenerationJobKind.FLASHCARDS.value,
                     GenerationJob.status.in_(PENDING_STATUSES)
                 )
             )
@@ -216,6 +239,96 @@ class GenerationJobService:
                 "The generation queue is full. Try again later.",
                 **{"Retry-After": "30"},
             )
+
+    async def _knowledge_quota_totals(
+        self, db: AsyncSession, *, user_id: UUID | None = None
+    ) -> tuple[int, int]:
+        start, end = self._day_bounds()
+        query = select(
+            func.coalesce(func.sum(KnowledgeUploadQuotaEvent.job_units), 0),
+            func.coalesce(func.sum(KnowledgeUploadQuotaEvent.upload_bytes), 0),
+        ).where(
+            KnowledgeUploadQuotaEvent.created_at >= start,
+            KnowledgeUploadQuotaEvent.created_at < end,
+        )
+        if user_id is not None:
+            query = query.where(KnowledgeUploadQuotaEvent.user_id == user_id)
+        row = (await db.execute(query)).one()
+        return int(row[0]), int(row[1])
+
+    async def _check_knowledge_capacity(self, db: AsyncSession, user_id: UUID) -> None:
+        await self._lock_admission(db)
+        if not self.settings.rag_enabled:
+            raise generation_http_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "knowledge_capture_disabled",
+                "Knowledge capture is not enabled.",
+            )
+        user_active = int(await db.scalar(select(func.count(GenerationJob.id)).where(
+            GenerationJob.user_id == user_id,
+            GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+            GenerationJob.status.in_(ACTIVE_STATUSES),
+        )) or 0)
+        deployment_active = int(await db.scalar(select(func.count(GenerationJob.id)).where(
+            GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+            GenerationJob.status.in_(ACTIVE_STATUSES),
+        )) or 0)
+        queued = int(await db.scalar(select(func.count(GenerationJob.id)).where(
+            GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+            GenerationJob.status.in_(PENDING_STATUSES),
+        )) or 0)
+        checks = (
+            (user_active, self.settings.knowledge_max_active_jobs_per_user, "knowledge_user_active_limit"),
+            (deployment_active, self.settings.knowledge_max_active_jobs_deployment, "knowledge_deployment_active_limit"),
+            (queued, self.settings.knowledge_max_queued_jobs_deployment, "knowledge_queue_full"),
+        )
+        for value, limit, code in checks:
+            if value >= limit:
+                raise generation_http_error(
+                    status.HTTP_429_TOO_MANY_REQUESTS if "user" in code else status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code,
+                    "Knowledge upload capacity is currently full.",
+                    **{"Retry-After": "30"},
+                )
+
+    async def _check_knowledge_quota_charge(
+        self, db: AsyncSession, *, user_id: UUID, upload_bytes: int
+    ) -> None:
+        await self._lock_admission(db)
+        user_jobs, user_bytes = await self._knowledge_quota_totals(db, user_id=user_id)
+        all_jobs, all_bytes = await self._knowledge_quota_totals(db)
+        checks = (
+            (user_jobs + 1, self.settings.knowledge_daily_jobs_per_user, "knowledge_user_daily_job_limit"),
+            (user_bytes + upload_bytes, self.settings.knowledge_daily_upload_bytes_per_user, "knowledge_user_daily_upload_limit"),
+            (all_jobs + 1, self.settings.knowledge_daily_jobs_deployment, "knowledge_deployment_daily_job_limit"),
+            (all_bytes + upload_bytes, self.settings.knowledge_daily_upload_bytes_deployment, "knowledge_deployment_daily_upload_limit"),
+        )
+        for value, limit, code in checks:
+            if value > limit:
+                _, reset_at = self._day_bounds()
+                raise generation_http_error(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    code,
+                    "The Knowledge upload quota has been reached.",
+                    **{"Retry-After": str(max(1, int((reset_at - utcnow()).total_seconds())))},
+                )
+        retained_user = int(await db.scalar(
+            select(func.coalesce(func.sum(GenerationJob.source_size_bytes), 0)).where(
+                GenerationJob.user_id == user_id,
+                GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+                GenerationJob.status.in_(("queued", "running", "failed")),
+            )
+        ) or 0)
+        retained_all = int(await db.scalar(
+            select(func.coalesce(func.sum(GenerationJob.source_size_bytes), 0)).where(
+                GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+                GenerationJob.status.in_(("queued", "running", "failed")),
+            )
+        ) or 0)
+        if retained_user + upload_bytes > self.settings.knowledge_max_retained_source_bytes_per_user:
+            raise generation_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_user_source_storage_limit", "Knowledge upload storage is at capacity.", **{"Retry-After": "60"})
+        if retained_all + upload_bytes > self.settings.knowledge_max_retained_source_bytes_deployment:
+            raise generation_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_deployment_source_storage_limit", "Knowledge upload storage is at capacity.", **{"Retry-After": "60"})
 
     async def _check_quota_charge(
         self,
@@ -307,6 +420,7 @@ class GenerationJobService:
             request_id=current_request_id(),
             user_id=user_id,
             subject_id=data.subject_id,
+            job_kind=GenerationJobKind.FLASHCARDS.value,
             idempotency_key_hash=key_hash,
             request_fingerprint=fingerprint,
             status=GenerationJobStatus.AWAITING_UPLOAD.value,
@@ -315,6 +429,7 @@ class GenerationJobService:
             set_title=data.set_title.strip(),
             set_description=(data.set_description or "").strip() or None,
             requested_card_count=data.card_count,
+            knowledge_capture_status="pending" if self.settings.rag_enabled else "not_requested",
             source_pdf_name=filename,
             ai_provider=self.settings.flashcard_ai_provider,
             ai_model=self.settings.flashcard_ai_model,
@@ -322,6 +437,64 @@ class GenerationJobService:
             available_at=now,
             upload_expires_at=now
             + timedelta(minutes=self.settings.generation_upload_reservation_minutes),
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(job)
+        await db.flush()
+        return job
+
+    async def create_knowledge_reservation(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        data: KnowledgeJobCreate,
+        idempotency_key: str,
+    ) -> GenerationJob:
+        key_hash = hash_operation_key(idempotency_key)
+        filename = sanitize_filename(data.source_pdf_name)
+        fingerprint = knowledge_metadata_fingerprint(data, filename)
+        await self._lock_admission(db)
+        existing = await db.scalar(select(GenerationJob).where(
+            GenerationJob.user_id == user_id,
+            GenerationJob.idempotency_key_hash == key_hash,
+        ))
+        if existing:
+            if existing.request_fingerprint != fingerprint:
+                raise generation_http_error(status.HTTP_409_CONFLICT, "idempotency_key_reused", "This Idempotency-Key was already used for different job metadata.")
+            return existing
+        if data.document_id is not None:
+            target = await db.scalar(select(SubjectDocument.id).where(
+                SubjectDocument.id == data.document_id,
+                SubjectDocument.subject_id == data.subject_id,
+                SubjectDocument.uploader_id == user_id,
+            ))
+            if target is None:
+                raise generation_http_error(status.HTTP_404_NOT_FOUND, "knowledge_document_not_found", "Knowledge document not found.")
+        await self._check_knowledge_capacity(db, user_id)
+        now = utcnow()
+        job = GenerationJob(
+            request_id=current_request_id(),
+            user_id=user_id,
+            subject_id=data.subject_id,
+            document_id=data.document_id,
+            job_kind=GenerationJobKind.KNOWLEDGE_ONLY.value,
+            knowledge_capture_status="pending",
+            idempotency_key_hash=key_hash,
+            request_fingerprint=fingerprint,
+            status=GenerationJobStatus.AWAITING_UPLOAD.value,
+            stage="awaiting_upload",
+            progress=0,
+            set_title=data.title.strip(),
+            set_description=None,
+            requested_card_count=0,
+            source_pdf_name=filename,
+            ai_provider="unconfigured",
+            ai_model="unconfigured",
+            max_attempts=self.settings.generation_max_attempts,
+            available_at=now,
+            upload_expires_at=now + timedelta(minutes=self.settings.generation_upload_reservation_minutes),
             created_at=now,
             updated_at=now,
         )
@@ -372,12 +545,15 @@ class GenerationJobService:
                 "The upload reservation expired. Start a new generation job.",
             )
 
-        await self._check_quota_charge(
-            db,
-            user_id=user_id,
-            card_units=job.requested_card_count,
-            upload_bytes=len(content),
-        )
+        if job.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+            await self._check_knowledge_quota_charge(db, user_id=user_id, upload_bytes=len(content))
+        else:
+            await self._check_quota_charge(
+                db,
+                user_id=user_id,
+                card_units=job.requested_card_count,
+                upload_bytes=len(content),
+            )
         nonce, payload = SourceStorage.encrypt(content, job.request_fingerprint)
         now = utcnow()
         db.add(
@@ -390,16 +566,23 @@ class GenerationJobService:
                 created_at=now,
             )
         )
-        db.add(
-            GenerationQuotaEvent(
-                user_id=user_id,
-                job_id=job.id,
+        if job.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+            db.add(KnowledgeUploadQuotaEvent(
+                user_id=user_id, job_id=job.id,
                 operation_key_hash=job.idempotency_key_hash,
-                card_units=job.requested_card_count,
-                upload_bytes=len(content),
-                created_at=now,
+                upload_bytes=len(content), created_at=now,
+            ))
+        else:
+            db.add(
+                GenerationQuotaEvent(
+                    user_id=user_id,
+                    job_id=job.id,
+                    operation_key_hash=job.idempotency_key_hash,
+                    card_units=job.requested_card_count,
+                    upload_bytes=len(content),
+                    created_at=now,
+                )
             )
-        )
         job.source_media_type = normalized_media_type
         job.source_size_bytes = len(content)
         job.source_sha256 = source_hash
@@ -456,6 +639,7 @@ class GenerationJobService:
     async def cancel(
         self, db: AsyncSession, *, job_id: UUID, user_id: UUID
     ) -> GenerationJob:
+        await acquire_knowledge_write_lock(db)
         job = await self.get_owner_job(db, job_id, user_id, for_update=True)
         now = utcnow()
         if job.status in (
@@ -463,6 +647,8 @@ class GenerationJobService:
             GenerationJobStatus.QUEUED.value,
         ):
             await db.execute(delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id))
+            if job.knowledge_capture_status in {"pending", "captured"}:
+                await remove_captured_knowledge(db, job)
             job.status = GenerationJobStatus.CANCELLED.value
             job.stage = "cancelled"
             job.progress = 100
@@ -586,6 +772,12 @@ class GenerationJobService:
         return GenerationJobResponse(
             id=job.id,
             subject_id=job.subject_id,
+            job_kind=job.job_kind,
+            document_id=job.document_id,
+            knowledge_content_revision_id=job.knowledge_content_revision_id,
+            knowledge_capture_status=job.knowledge_capture_status,
+            knowledge_capture_error_code=job.knowledge_capture_error_code,
+            knowledge_capture_error_message=job.knowledge_capture_error_message,
             flashcard_set_id=result_set_id,
             status=job.status,
             progress=job.progress,
@@ -632,6 +824,7 @@ class GenerationJobService:
             await db.scalar(
                 select(func.count(GenerationJob.id)).where(
                     GenerationJob.user_id == user_id,
+                    GenerationJob.job_kind == GenerationJobKind.FLASHCARDS.value,
                     GenerationJob.status.in_(ACTIVE_STATUSES),
                 )
             )
@@ -640,6 +833,7 @@ class GenerationJobService:
         pending = int(
             await db.scalar(
                 select(func.count(GenerationJob.id)).where(
+                    GenerationJob.job_kind == GenerationJobKind.FLASHCARDS.value,
                     GenerationJob.status.in_(PENDING_STATUSES)
                 )
             )

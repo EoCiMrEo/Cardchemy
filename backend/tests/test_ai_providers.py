@@ -39,12 +39,19 @@ def settings(**overrides) -> Settings:
 
 
 class GeminiModels:
-    def __init__(self, text='{"value":"ok"}', errors=None, cached_input_tokens=0):
+    def __init__(
+        self,
+        text='{"value":"ok"}',
+        errors=None,
+        cached_input_tokens=0,
+        thought_tokens=0,
+    ):
         self.text = text
         self.request = None
         self.requests = []
         self.errors = list(errors or [])
         self.cached_input_tokens = cached_input_tokens
+        self.thought_tokens = thought_tokens
 
     async def generate_content(self, **kwargs):
         self.request = kwargs
@@ -57,6 +64,7 @@ class GeminiModels:
                 prompt_token_count=11,
                 candidates_token_count=7,
                 cached_content_token_count=self.cached_input_tokens,
+                thoughts_token_count=self.thought_tokens,
             ),
         )
 
@@ -137,11 +145,31 @@ async def test_gemini_adapter_uses_schema_system_boundary_and_usage():
     assert response.usage.output_tokens == 7
     assert response.usage.cached_input_tokens == 4
     assert models.request["config"]["system_instruction"] == "system"
+    assert models.request["config"]["thinking_config"] == {"thinking_level": "low"}
+    assert "temperature" not in models.request["config"]
     assert models.request["config"]["response_json_schema"] == {
         "type": "object",
         "properties": {"value": {"type": "string"}},
         "required": ["value"],
     }
+
+
+@pytest.mark.asyncio
+async def test_gemini_adapter_counts_billable_thinking_as_output_usage():
+    models = GeminiModels(thought_tokens=13)
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+
+    response = await GeminiProvider(settings(), client=client).generate_structured(
+        response_model=Output,
+        system_prompt="system",
+        user_prompt="untrusted document",
+        max_output_tokens=100,
+        operation="thinking_usage",
+    )
+
+    assert response.usage.input_tokens == 11
+    assert response.usage.output_tokens == 20
+    assert response.usage.estimated is False
 
 
 @pytest.mark.asyncio
@@ -384,7 +412,7 @@ async def test_answer_profile_is_independent_of_flashcard_model_key_and_card_con
     configured = settings(
         flashcard_ai_provider="gemini", flashcard_ai_model="flashcard-model",
         flashcard_ai_api_key="flashcard-secret", flashcard_ai_cards_per_request=17,
-        rag_enabled=True, rag_ai_provider_enabled=True,
+        rag_enabled=True, rag_ai_provider_enabled=True, rag_ai_provider="openai_compatible",
         rag_ai_model="answer-model", rag_ai_api_key="answer-secret",
         rag_ai_base_url="https://answer.example.test/v1", rag_ai_max_output_tokens=128,
         rag_ai_requests_per_minute=2, rag_ai_input_tokens_per_minute=100_000,
@@ -411,6 +439,53 @@ async def test_answer_profile_is_independent_of_flashcard_model_key_and_card_con
     assert captured["payload"]["model"] == "answer-model"
     assert captured["payload"]["max_tokens"] == 128
     assert adapter.rate_governor.requests_per_window == 1  # 2 RPM * 80% safety
+
+
+@pytest.mark.asyncio
+async def test_native_gemini_answer_profile_uses_rag_role_model_key_and_limits():
+    models = GeminiModels('{"value":"grounded"}')
+    configured = settings(
+        flashcard_ai_provider="gemini",
+        flashcard_ai_model="flashcard-model",
+        flashcard_ai_api_key="flashcard-secret",
+        rag_enabled=True,
+        rag_ai_provider_enabled=True,
+        rag_ai_provider="gemini",
+        rag_ai_model="gemini-3.5-flash",
+        rag_ai_api_key="answer-secret",
+        rag_ai_base_url=None,
+        rag_ai_max_output_tokens=128,
+        rag_ai_requests_per_minute=2,
+        rag_ai_input_tokens_per_minute=100_000,
+        rag_ai_quota_bucket="test-answer-account",
+    )
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    adapter = GeminiProvider(configured, client=client, role="rag_answer")
+    response = await adapter.generate_structured(
+        response_model=Output,
+        system_prompt="trusted answer policy",
+        user_prompt="untrusted evidence",
+        max_output_tokens=512,
+        operation="answer_test",
+    )
+
+    assert response.data.value == "grounded"
+    assert adapter.profile.api_key_value == "answer-secret"
+    assert adapter.profile.model == "gemini-3.5-flash"
+    assert models.request["model"] == "gemini-3.5-flash"
+    assert models.request["config"]["system_instruction"] == "trusted answer policy"
+    assert models.request["config"]["max_output_tokens"] == 128
+    assert models.request["config"]["thinking_config"] == {"thinking_level": "minimal"}
+    assert "temperature" not in models.request["config"]
+    assert adapter.rate_governor.requests_per_window == 1
+
+    created = get_ai_provider(configured, role="rag_answer")
+    try:
+        assert isinstance(created, GeminiProvider)
+        assert created._client._api_client._http_options.retry_options.attempts == 1
+    finally:
+        await created._client.aio.aclose()
+        created._client.close()
 
 
 @pytest.mark.asyncio

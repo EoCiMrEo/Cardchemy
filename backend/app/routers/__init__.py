@@ -4,6 +4,8 @@ from app.routers.subjects import router as subjects_router
 from app.routers.flashcards import router as flashcards_router
 from app.routers.study import router as study_router
 from app.routers.generation import router as generation_router
+from app.routers.rag import router as rag_router
+from app.routers.knowledge import router as knowledge_router
 
 __all__ = [
     "auth_router",
@@ -11,4 +13,6 @@ __all__ = [
     "flashcards_router",
     "study_router",
     "generation_router",
+    "rag_router",
+    "knowledge_router",
 ]

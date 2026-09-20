@@ -19,7 +19,10 @@ function deferred<T>() {
 const subject: Subject = { id: 'subject-1', name: 'Old subject', description: null, instructor_id: 'instructor', created_at: '2026-01-01', flashcard_set_count: 1, student_count: 1 }
 const set: FlashcardSet = { id: 'set-1', subject_id: subject.id, title: 'Old set', description: null, source_pdf_name: null, generation_job_id: null, is_published: false, time_limit: null, created_at: '2026-01-01', flashcard_count: 1, approved_count: 1 }
 const job: GenerationJob = {
-  id: 'job-1', subject_id: subject.id, flashcard_set_id: set.id, status: 'completed', progress: 100, stage: 'completed',
+  id: 'job-1', subject_id: subject.id, job_kind: 'flashcards', document_id: null,
+  knowledge_content_revision_id: null, knowledge_capture_status: 'not_requested',
+  knowledge_capture_error_code: null, knowledge_capture_error_message: null,
+  flashcard_set_id: set.id, status: 'completed', progress: 100, stage: 'completed',
   requested_card_count: 2, generated_card_count: 2, ai_provider: 'test', ai_model: 'test',
   estimated_input_tokens: 0, estimated_output_tokens: 0, estimated_request_count: 0,
   provider_request_count: 0, provider_retry_count: 0, provider_rate_limit_wait_milliseconds: 0,

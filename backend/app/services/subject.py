@@ -14,8 +14,24 @@ from fastapi import HTTPException, status
 
 from app.models.subject import Subject, FlashcardSet
 from app.models.flashcard import Enrollment, Flashcard
+from app.models.generation import GenerationJob
+from app.models.knowledge import SubjectDocumentIndexJob
+from app.models.rag import RagAnswerJob
 from app.models.user import User, UserRole
 from app.schemas.subject import SubjectCreate, SubjectUpdate, FlashcardSetCreate, FlashcardSetUpdate
+from app.services.knowledge_lock import acquire_knowledge_write_lock
+
+
+def subject_work_active_error() -> HTTPException:
+    error = HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "subject_work_active",
+            "message": "Stop or cancel active Subject work before deletion.",
+        },
+    )
+    error.safe_detail = error.detail
+    return error
 
 
 class SubjectService:
@@ -109,8 +125,49 @@ class SubjectService:
     
     @staticmethod
     async def delete_subject(db: AsyncSession, subject: Subject) -> None:
-        """Delete a subject and all its contents."""
-        await db.delete(subject)
+        """Delete a Subject after fencing active capture/index/answer claims."""
+        await acquire_knowledge_write_lock(db)
+        locked_subject = await db.scalar(
+            select(Subject).where(Subject.id == subject.id).with_for_update()
+        )
+        if locked_subject is None:
+            return
+        generation_jobs = list(
+            (
+                await db.scalars(
+                    select(GenerationJob)
+                    .where(GenerationJob.subject_id == locked_subject.id)
+                    .order_by(GenerationJob.id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        index_jobs = list(
+            (
+                await db.scalars(
+                    select(SubjectDocumentIndexJob)
+                    .where(SubjectDocumentIndexJob.subject_id == locked_subject.id)
+                    .order_by(SubjectDocumentIndexJob.id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        answer_jobs = list(
+            (
+                await db.scalars(
+                    select(RagAnswerJob)
+                    .where(RagAnswerJob.subject_id == locked_subject.id)
+                    .order_by(RagAnswerJob.id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        if any(
+            job.status == "running"
+            for job in (*generation_jobs, *index_jobs, *answer_jobs)
+        ):
+            raise subject_work_active_error()
+        await db.delete(locked_subject)
         await db.flush()
     
     # ============================================
@@ -123,6 +180,7 @@ class SubjectService:
         data: FlashcardSetCreate,
         source_pdf_name: Optional[str] = None,
         generation_job_id: UUID | None = None,
+        document_id: UUID | None = None,
     ) -> FlashcardSet:
         """Create a new flashcard set."""
         flashcard_set = FlashcardSet(
@@ -131,6 +189,7 @@ class SubjectService:
             description=data.description,
             source_pdf_name=source_pdf_name,
             generation_job_id=generation_job_id,
+            document_id=document_id,
             is_published=False,  # Always start unpublished
         )
         

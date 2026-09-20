@@ -24,8 +24,43 @@ and the Keep a Changelog structure.
   [database operations](docs/DATABASE_OPERATIONS.md) before migration.
 - Added private Subject Knowledge document/content/index revisions, bounded
   page/chunk/vector storage, aggregate reservations, publication eligibility,
-  durable index-job target and optional generation/set links. Capture,
-  indexing execution, retrieval, chat and Ask AI remain later phases.
+  durable index jobs and optional generation/set links.
+- Added one-pass Knowledge capture to normal generation, a separately admitted
+  Knowledge-only upload contract, explicit local-to-persistent chunk identity,
+  safe independent capture outcomes and cancellation/source cleanup semantics.
+- Added isolated embedding/index and answer workers with native Gemini
+  `embedContent`/structured-answer support, role-specific task modes, strict vector
+  validation, bounded retry/rate/token/cost ownership, fenced batch persistence,
+  dead-lease recovery, rebuildable staged indexes and all-or-nothing embedding-
+  space cutover.
+- Added reusable worker-only Subject-authorized hybrid retrieval using exact
+  cosine search plus PostgreSQL `simple` FTS, deterministic reciprocal-rank
+  fusion, overlap/context bounds and separately reauthorized source reads.
+- Added private per-user Subject Ask AI threads and durable answer jobs with
+  separate race-safe quotas, hashed idempotency, bounded retry/cancel/lease
+  lifecycle, query embedding in an isolated answer worker, course-only
+  retrieval, strict claim/quote citations, a separate semantic support pass,
+  server-derived source metadata and fixed abstention. Current access,
+  publication, corpus and session state are rechecked before provider stages and
+  atomic completion; 90-day retention and G2 reads hide answers whose evidence
+  is no longer current.
+- Added typed instructor Subject Knowledge management and private Subject Ask AI
+  interfaces with explicit capture/index/review/publication states, persisted-
+  page index retry versus PDF reupload guidance, accessible evidence dialogs,
+  reload-safe job recovery, stable question retry identity, safe text rendering
+  and responsive keyboard/mobile contracts.
+- Added the authored RAG evaluation v2 corpus and reviewed recall/ranking,
+  support/abstention/citation, exposure, overlap, exact-query latency, indexing
+  throughput, history and provider-stage gates. Exact pgvector plus PostgreSQL
+  FTS met the criteria, so top-5/RRF/shared chunking remain and no ANN index or
+  reranker was added. A three-call, USD 0.04 live RAG harness is separately
+  authorization-gated and was not run.
+- Completed Phase 20/21 offline integration and operational controls: native
+  Gemini profile disclosure, request/job correlation, Knowledge lifecycle audits,
+  own-only export and guarded deletion, 90-day conversation cleanup, expanded
+  content-free RAG metrics/health, and populated pgvector/conversation/citation
+  recovery. Paid live AI, production enablement and release-specific spoken
+  assistive-technology validation remain separately gated and are not claimed.
 - Refined versioned flashcard and summary prompts with bounded untrusted
   refill exclusions, fixed content-free quality diagnostics and concurrent
   request-budget reservations. Strict grounding, duplicate rules, output caps

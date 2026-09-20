@@ -140,7 +140,12 @@ def test_container_diagnostic_rejects_unowned_or_untrusted_fields(mutation):
 def test_tls_edge_retains_a_real_loopback_image_probe(tmp_path):
     stack = rehearsal.Stack(Path("."), tmp_path, PROJECT, 62119, "fixture-backend:tested", "fixture-frontend:tested", {})
     import json
-    edge = json.loads(stack.config.read_text())["services"]["tls-edge"]
+    services = json.loads(stack.config.read_text())["services"]
+    assert "index-worker" in rehearsal.SERVICES
+    assert "answer-worker" in rehearsal.SERVICES
+    assert services["index-worker"]["image"] == "fixture-backend:tested"
+    assert services["answer-worker"]["image"] == "fixture-backend:tested"
+    edge = services["tls-edge"]
     assert "healthcheck" not in edge
     assert edge["ports"] == ["127.0.0.1:62119:8443"]
     configuration = rehearsal.tls_nginx_configuration()
@@ -148,3 +153,161 @@ def test_tls_edge_retains_a_real_loopback_image_probe(tmp_path):
     assert "location = /healthz" in configuration
     assert "listen 8443 ssl;" in configuration
     assert "listen 8080;" not in configuration
+
+
+def rag_fixture_ids():
+    return {
+        "subject": "00000000-0000-0000-0000-000000000001",
+        "other_subject": "00000000-0000-0000-0000-000000000002",
+        "student": "00000000-0000-0000-0000-000000000003",
+        "other_student": "00000000-0000-0000-0000-000000000004",
+        "set": "00000000-0000-0000-0000-000000000005",
+        "card": "00000000-0000-0000-0000-000000000006",
+    }
+
+
+def test_provider_free_rag_fixture_uses_real_guarded_transitions():
+    captured = {}
+
+    class StackContract:
+        def compose(self, *args, **kwargs):
+            captured["args"] = args
+            captured["sql"] = kwargs["input_data"].decode()
+            return b""
+
+    fixture = rehearsal.seed_rag_fixture(StackContract(), rag_fixture_ids())
+    sql = captured["sql"]
+    assert captured["args"][-2:] == ("-f", "-")
+    assert sql.index("status='pending_index'") < sql.index("status='ready',is_active=true")
+    assert sql.index("'queued',repeat('b',64)") < sql.index("status='running'")
+    assert sql.index("INSERT INTO rag_message_sources") < sql.index("status='completed'")
+    assert "array_prepend(1::real,array_fill(0::real,ARRAY[1535]))::vector" in sql
+    assert "reviewed_at=now(),published_at=now()" in sql
+    assert "SET CONSTRAINTS ALL IMMEDIATE" in sql
+    assert "https://rehearsal.invalid/v1" in sql
+    assert "provider_request_count" not in sql  # guarded default remains zero
+    assert "API_KEY" not in sql and "password" not in sql.lower()
+    for key in ("document", "content_revision", "index_revision", "chunk", "thread",
+                "question", "rag_answer", "citation", "answer_job", "answer_quota"):
+        assert fixture[key]
+
+
+def test_rag_database_readback_requires_extension_indexes_and_authorized_retrieval():
+    fixture = rag_fixture_ids() | {
+        key: f"00000000-0000-0000-0000-{value:012d}"
+        for value, key in enumerate((
+            "document", "content_revision", "index_revision", "chunk", "thread",
+            "question", "rag_answer", "citation", "answer_job", "answer_quota",
+        ), start=10)
+    }
+    required = {
+        "vector_extension", "embedding_schema", "embedding_indexes",
+        "published_active_revision", "page_chunk_vector", "authorized_exact_retrieval",
+        "other_student_isolated", "private_conversation", "completed_answer_job",
+        "grounded_citation",
+    }
+    captured = {}
+    stack = object.__new__(rehearsal.Stack)
+
+    def compose(*_args, **_kwargs):
+        captured["sql"] = _args[-1]
+        return __import__("json").dumps(dict.fromkeys(required, True)).encode()
+
+    stack.compose = compose
+    assert stack.verify_rag_database(fixture) == dict.fromkeys(required, True)
+    sql = captured["sql"]
+    assert "eligible_subject_knowledge_chunks" in sql
+    assert "JOIN enrollments access" in sql
+    assert "extversion = '0.8.6'" in sql
+    assert "vector(1536)" in sql
+    assert "provider_request_count=0" in sql
+    assert fixture["student"] in sql and fixture["other_student"] in sql
+
+    stack.compose = lambda *_args, **_kwargs: __import__("json").dumps(
+        dict.fromkeys(required, True) | {"other_student_isolated": False}
+    ).encode()
+    with pytest.raises(rehearsal.RehearsalError, match="rag_recovery_contract"):
+        stack.verify_rag_database(fixture)
+
+
+def test_rag_api_readback_checks_private_owner_and_subject_boundaries():
+    fixture = rag_fixture_ids() | {
+        "document": "00000000-0000-0000-0000-000000000010",
+        "content_revision": "00000000-0000-0000-0000-000000000011",
+        "index_revision": "00000000-0000-0000-0000-000000000012",
+        "chunk": "00000000-0000-0000-0000-000000000013",
+        "thread": "00000000-0000-0000-0000-000000000014",
+        "question": "00000000-0000-0000-0000-000000000015",
+        "rag_answer": "00000000-0000-0000-0000-000000000016",
+        "answer_job": "00000000-0000-0000-0000-000000000017",
+    }
+    accounts = {
+        "instructor_email": "instructor@example.test", "instructor_password": "fixture",
+        "student_email": "student@example.test", "student_password": "fixture",
+        "other_student_email": "other@example.test", "other_student_password": "fixture",
+    }
+
+    class ApplicationContract:
+        def __init__(self):
+            self.calls = []
+
+        def login(self, email, _password):
+            return {accounts["instructor_email"]: "instructor",
+                    accounts["student_email"]: "student"}.get(email, "other")
+
+        def request(self, method, path, *, token=None, expected=200, **_kwargs):
+            self.calls.append((method, path, token, expected))
+            if token == "instructor" and path.endswith("/knowledge/documents"):
+                return {"documents": [{
+                    "id": fixture["document"],
+                    "content_revision": {"id": fixture["content_revision"], "status": "ready",
+                                         "is_active": True, "reviewed_at": "now", "published_at": "now"},
+                    "index_revision": {"id": fixture["index_revision"], "status": "ready",
+                                       "is_active": True, "chunk_count": 1, "embedded_count": 1},
+                }]}, {}
+            if path.endswith("/rag/threads"):
+                if token == "student" and method == "GET":
+                    return {"threads": [{"id": fixture["thread"]}]}, {}
+                return {"threads": []}, {}
+            if path.endswith(f"/rag/threads/{fixture['thread']}") and token == "student":
+                return {"messages": [
+                    {"id": fixture["question"], "role": "user"},
+                    {"id": fixture["rag_answer"], "role": "assistant", "hidden": False,
+                     "content": rehearsal.RAG_ANSWER,
+                     "sources": [{"chunk_id": fixture["chunk"], "source_quote": rehearsal.RAG_QUOTE}]},
+                ]}, {}
+            if path.endswith(f"/messages/{fixture['rag_answer']}/sources") and token == "student":
+                return [{"document_id": fixture["document"],
+                         "content_revision_id": fixture["content_revision"],
+                         "index_revision_id": fixture["index_revision"]}], {}
+            if path.endswith("/answer-jobs") and token == "student":
+                return {"jobs": [{"id": fixture["answer_job"], "status": "completed",
+                                  "answer_message_id": fixture["rag_answer"],
+                                  "provider_request_count": 0}]}, {}
+            return {}, {}
+
+    app = ApplicationContract()
+    rehearsal.verify_rag_application(app, accounts, fixture)
+    assert ("GET", f"/api/subjects/{fixture['subject']}/rag/threads/{fixture['thread']}",
+            "instructor", 404) in app.calls
+    assert ("GET", f"/api/subjects/{fixture['subject']}/rag/threads", "other", 403) in app.calls
+    assert ("POST", f"/api/subjects/{fixture['subject']}/rag/threads", "student", 503) in app.calls
+    assert ("GET", f"/api/subjects/{fixture['subject']}/knowledge/documents", "student", 403) in app.calls
+
+
+def test_pgvector_restore_probe_requires_an_empty_target_and_access_scoped_queries(
+    monkeypatch,
+):
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    probe_spec = importlib.util.spec_from_file_location(
+        "test_pgvector_restore_contract", scripts / "test_pgvector_restore.py"
+    )
+    probe = importlib.util.module_from_spec(probe_spec)
+    probe_spec.loader.exec_module(probe)
+    assert "table_schema='public'" in probe.EMPTY_SQL
+    assert "NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')" in probe.EMPTY_SQL
+    assert "USING hnsw" in probe.SCHEMA_SQL and "USING gin" in probe.SCHEMA_SQL
+    assert "JOIN rag_restore_access" in probe.CHECK_SQL
+    assert "p.published AND p.active" in probe.CHECK_SQL
+    assert probe.STUDENT in probe.CHECK_SQL and probe.OTHER_STUDENT in probe.CHECK_SQL

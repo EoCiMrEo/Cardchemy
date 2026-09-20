@@ -2,8 +2,9 @@
 
 PDF generation is a PostgreSQL-backed job workflow. The API reserves a job,
 accepts a bounded raw PDF body, and returns `202 Accepted`; a separate worker
-extracts text, calls the model, and atomically creates the set and cards. Leaving
-the page or restarting the API does not discard queued work.
+extracts text, optionally captures private Subject Knowledge, calls the model,
+and atomically creates the set and cards. Leaving the page or restarting the API
+does not discard queued work.
 
 ## Request flow
 
@@ -17,6 +18,20 @@ the page or restarting the API does not discard queued work.
 4. `POST .../{job_id}/cancel` requests cancellation. `POST .../{job_id}/retry`
    uses a new required `Idempotency-Key` and is available only while an encrypted
    failed source is retained.
+
+When `RAG_ENABLED=true`, normal generation uses the same extraction and one
+shared page-aware preparation to capture private Knowledge and enqueue indexing
+before card generation. It does not wait for embeddings. Supported Knowledge
+capture failure is reported independently and does not discard a successful
+flashcard result. A cancelled combined job removes the capture created by that
+job; a non-cancelled flashcard failure may retain a valid private capture.
+
+`POST /flashcards/knowledge-jobs` plus the same raw source-upload route creates
+an explicit `knowledge_only` job. It uses separate queue/daily/source quotas.
+Omitting `document_id` creates a new document; supplying an owned same-Subject
+ID creates a new private revision. Replaying one idempotent operation returns
+the same job, while changed metadata or bytes conflict. Source PDFs remain
+transient in every mode.
 
 Job states are `awaiting_upload`, `queued`, `running`, `completed`, `failed`, and
 `cancelled`. The UI polls without overlapping requests, recovers jobs after a
@@ -74,6 +89,8 @@ with a random nonce and request-bound authenticated data. The required
 - An abandoned upload reservation expires after 15 minutes.
 - Subject deletion cascades active jobs and their source. Job metadata contains
   no PDF payload; completed set deletion does not recreate or retain a source.
+- Knowledge capture persists only extracted pages/chunks and later vectors, not
+  the raw PDF. Reindexing rebuilds chunks from canonical stored pages.
 - Database dumps and WAL archives can contain ciphertext and must remain
   encrypted and access-controlled. Keep the source encryption key in a secret
   manager and include it in protected disaster-recovery material.

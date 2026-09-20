@@ -66,7 +66,7 @@ page/section provenance, and near duplicates before persistence.
 
 ## Bounds and pricing
 
-Temperature, context and output tokens, provider timeout/retries, retry delay,
+Temperature, Gemini thinking level, context and output tokens, provider timeout/retries, retry delay,
 parallelism, RPM/TPM limits, safety margin, logical chunk size, request-packing
 target, cards per request, summary budgets, per-job input/output ceilings,
 refill rounds, duplicate threshold, and cost ceiling are validated settings
@@ -139,8 +139,30 @@ The [subject-scoped RAG plan](<../Cardchemy-Subject-Scoped RAG Implementation Pl
 adds independent `RAG_AI_*` and `RAG_EMBEDDING_*` profiles and a mandatory
 PostgreSQL 16 + pgvector foundation. See
 [ADR-012](decisions/ADR-012-subject-knowledge-and-rag-boundaries.md) for the
-accepted boundary. A configured profile does not itself implement Knowledge
-indexing or Ask AI execution; their later phases own those workers and gates.
+accepted boundary. The isolated index worker now implements strict bounded
+document embeddings; the answer worker owns query embeddings, grounded answer
+generation and semantic support evaluation. API/frontend/email processes receive
+no provider key. Configured credentials or enablement do not authorize live
+evaluation spending.
+
+The selected RAG profiles are native Gemini: `gemini-3.5-flash` for grounded
+answer/support JSON and `gemini-embedding-001` for embeddings. The embedding
+adapter requests 1,536 dimensions, uses `RETRIEVAL_DOCUMENT` for stored chunks
+and `QUESTION_ANSWERING` for questions, and L2-normalizes reduced vectors before
+cosine storage/search. The native endpoint identity is
+`https://generativelanguage.googleapis.com`; both `RAG_*_BASE_URL` values stay
+empty. Gemini SDK retries are fixed at one physical attempt so the application
+remains the sole retry owner. Gemini thinking tokens are added to reported
+output usage and cost; embedding usage remains an explicitly estimated local
+count when the provider supplies no token receipt. See
+[ADR-014](decisions/ADR-014-native-gemini-rag-profiles.md).
+
+Gemini 3 text requests omit `temperature`, as recommended by the provider, and
+send the validated role-specific `*_THINKING_LEVEL`. The initial grounded-answer
+profile pins `minimal` for a bounded factual task; the root template's Gemini
+3.8 flashcard profile uses `low`, since 3.8 does not accept `minimal`. Older
+Gemini models retain the configured temperature and do not receive a Gemini 3
+thinking-level field.
 
 Before enabling a provider, review [the transfer disclosure and operator
 responsibilities](PRIVACY.md). Source encryption in Cardchemy does not prevent

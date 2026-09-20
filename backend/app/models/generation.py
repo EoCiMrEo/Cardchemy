@@ -39,6 +39,11 @@ class GenerationJobStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class GenerationJobKind(str, enum.Enum):
+    FLASHCARDS = "flashcards"
+    KNOWLEDGE_ONLY = "knowledge_only"
+
+
 class GenerationJob(Base):
     """Small durable queue row; ciphertext lives in a separate table."""
 
@@ -56,6 +61,31 @@ class GenerationJob(Base):
     document_id = Column(
         UUID(as_uuid=True), ForeignKey("subject_documents.id", ondelete="SET NULL"), nullable=True,
     )
+    knowledge_content_revision_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "subject_document_content_revisions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_generation_jobs_knowledge_content_revision",
+        ),
+        nullable=True,
+    )
+    knowledge_created_document = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    job_kind = Column(
+        String(24), nullable=False, default=GenerationJobKind.FLASHCARDS.value,
+        server_default=text("'flashcards'"),
+    )
+    knowledge_capture_status = Column(
+        String(24), nullable=False, default="not_requested",
+        server_default=text("'not_requested'"),
+    )
+    knowledge_capture_error_code = Column(String(64), nullable=True)
+    knowledge_capture_error_message = Column(String(500), nullable=True)
+    knowledge_capture_started_at = Column(DateTime(timezone=True), nullable=True)
+    knowledge_capture_completed_at = Column(DateTime(timezone=True), nullable=True)
     knowledge_capture_removed = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     idempotency_key_hash = Column(String(64), nullable=False)
@@ -160,6 +190,25 @@ class GenerationJob(Base):
             name="fk_generation_jobs_document_scope", deferrable=True, initially="DEFERRED",
         ),
         CheckConstraint("NOT knowledge_capture_removed OR document_id IS NULL", name="ck_generation_jobs_removed_capture"),
+        CheckConstraint(
+            "job_kind IN ('flashcards', 'knowledge_only')",
+            name="ck_generation_jobs_kind",
+        ),
+        CheckConstraint(
+            "knowledge_capture_status IN ('not_requested', 'pending', 'captured', 'failed', 'removed')",
+            name="ck_generation_jobs_capture_status",
+        ),
+        CheckConstraint(
+            "(knowledge_capture_error_code IS NULL AND knowledge_capture_error_message IS NULL) OR "
+            "(knowledge_capture_status = 'failed' AND knowledge_capture_error_code IS NOT NULL "
+            "AND knowledge_capture_error_message IS NOT NULL)",
+            name="ck_generation_jobs_capture_error_pair",
+        ),
+        CheckConstraint(
+            "knowledge_capture_status <> 'captured' OR "
+            "(document_id IS NOT NULL AND knowledge_content_revision_id IS NOT NULL)",
+            name="ck_generation_jobs_captured_revision",
+        ),
         Index("ix_generation_jobs_document", "document_id", "subject_id", "user_id"),
         UniqueConstraint(
             "user_id", "idempotency_key_hash", name="uq_generation_jobs_user_idempotency"
@@ -170,7 +219,9 @@ class GenerationJob(Base):
         ),
         CheckConstraint("progress BETWEEN 0 AND 100", name="ck_generation_jobs_progress"),
         CheckConstraint(
-            "requested_card_count BETWEEN 1 AND 500", name="ck_generation_jobs_card_count"
+            "(job_kind = 'flashcards' AND requested_card_count BETWEEN 1 AND 500) OR "
+            "(job_kind = 'knowledge_only' AND requested_card_count = 0)",
+            name="ck_generation_jobs_card_count",
         ),
         CheckConstraint(
             "(source_size_bytes IS NULL AND source_sha256 IS NULL AND source_media_type IS NULL) "
@@ -322,4 +373,36 @@ class GenerationQuotaEvent(Base):
         Index("ix_generation_quota_events_user_created", "user_id", "created_at"),
         Index("ix_generation_quota_events_created", "created_at"),
         Index("ix_generation_quota_events_job_id", "job_id"),
+    )
+
+
+class KnowledgeUploadQuotaEvent(Base):
+    """Independent Knowledge-upload charge; retries do not consume card quota."""
+
+    __tablename__ = "knowledge_upload_quota_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    job_id = Column(
+        UUID(as_uuid=True), ForeignKey("generation_jobs.id", ondelete="SET NULL"), nullable=True
+    )
+    operation_key_hash = Column(String(64), nullable=False)
+    job_units = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    upload_bytes = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "operation_key_hash", name="uq_knowledge_upload_quota_operation"
+        ),
+        CheckConstraint(
+            "length(operation_key_hash) = 64", name="ck_knowledge_upload_quota_key_hash"
+        ),
+        CheckConstraint("job_units = 1", name="ck_knowledge_upload_quota_job_units"),
+        CheckConstraint("upload_bytes >= 0", name="ck_knowledge_upload_quota_bytes"),
+        Index("ix_knowledge_upload_quota_user_created", "user_id", "created_at"),
+        Index("ix_knowledge_upload_quota_created", "created_at"),
+        Index("ix_knowledge_upload_quota_job_id", "job_id"),
     )

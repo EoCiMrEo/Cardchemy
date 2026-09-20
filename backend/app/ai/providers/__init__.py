@@ -416,8 +416,13 @@ class GeminiProvider(_RetryingProvider):
         *,
         client: Any | None = None,
         rate_governor: ProviderRateGovernor | None = None,
+        role: Literal["flashcard", "rag_answer"] = "flashcard",
     ) -> None:
-        super().__init__(settings, rate_governor=rate_governor)
+        super().__init__(settings, rate_governor=rate_governor, role=role)
+        if self.profile.provider != "gemini":
+            raise AIProviderConfigurationError(
+                "The selected profile is not configured for the Gemini provider."
+            )
         api_key = self.profile.api_key_value
         if client is None:
             if not api_key:
@@ -451,25 +456,49 @@ class GeminiProvider(_RetryingProvider):
             raise AIProviderConfigurationError("The AI output-token limit must be positive.")
 
         async def call() -> ProviderResponse[T]:
+            config: dict[str, Any] = {
+                "system_instruction": system_prompt,
+                "max_output_tokens": output_limit,
+                "response_mime_type": "application/json",
+                "response_json_schema": _gemini_schema(response_model),
+            }
+            if self.profile.model.casefold().split("/")[-1].startswith("gemini-3"):
+                # Gemini 3 is tuned for provider-default sampling. Pin an
+                # explicit effort level so latency, output usage, and cost do
+                # not silently drift with provider defaults.
+                config["thinking_config"] = {
+                    "thinking_level": self.profile.thinking_level,
+                }
+            else:
+                config["temperature"] = self.profile.temperature
             response = await self._client.aio.models.generate_content(
                 model=self.profile.model,
                 contents=user_prompt,
-                config={
-                    "system_instruction": system_prompt,
-                    "temperature": self.profile.temperature,
-                    "max_output_tokens": output_limit,
-                    "response_mime_type": "application/json",
-                    "response_json_schema": _gemini_schema(response_model),
-                },
+                config=config,
             )
             output_text = getattr(response, "text", None)
             if not isinstance(output_text, str) or not output_text.strip():
                 raise AIProviderInvalidOutputError()
             parsed = _strict_validate(response_model, output_text)
             usage_metadata = getattr(response, "usage_metadata", None)
+            candidate_tokens = getattr(
+                usage_metadata, "candidates_token_count", None
+            )
+            thought_tokens = getattr(usage_metadata, "thoughts_token_count", None)
+            if isinstance(candidate_tokens, int) and candidate_tokens >= 0:
+                # Gemini bills thinking tokens as output. Keep the durable output
+                # and cost envelope complete even though they are not visible in
+                # the structured response body.
+                output_tokens = candidate_tokens + (
+                    thought_tokens
+                    if isinstance(thought_tokens, int) and thought_tokens >= 0
+                    else 0
+                )
+            else:
+                output_tokens = None
             usage = _read_usage(
                 input_tokens=getattr(usage_metadata, "prompt_token_count", None),
-                output_tokens=getattr(usage_metadata, "candidates_token_count", None),
+                output_tokens=output_tokens,
                 cached_input_tokens=getattr(
                     usage_metadata, "cached_content_token_count", None
                 ),
@@ -589,8 +618,8 @@ def get_ai_provider(
     role: Literal["flashcard", "rag_answer"] = "flashcard",
 ) -> AIProvider:
     profile = settings.text_provider_profile(role)
-    if profile.provider == "gemini" and role == "flashcard":
-        return GeminiProvider(settings, rate_governor=rate_governor)
+    if profile.provider == "gemini":
+        return GeminiProvider(settings, rate_governor=rate_governor, role=role)
     if profile.provider == "openai_compatible":
         return OpenAICompatibleProvider(settings, rate_governor=rate_governor, role=role)
     raise AIProviderConfigurationError("The configured AI provider is not supported.")

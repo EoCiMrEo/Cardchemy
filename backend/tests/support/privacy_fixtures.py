@@ -7,8 +7,9 @@ from uuid import uuid4
 from app.models.email import EmailOutboxMessage
 from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
 from app.models.generation import GenerationJob
+from app.models.rag import RagAnswerJob, RagMessage, RagThread
 from app.models.subject import FlashcardSet, Subject
-from app.models.user import InviteLink, User, UserRole
+from app.models.user import AuthSession, InviteLink, User, UserRole
 from app.time_utils import utcnow
 
 
@@ -53,6 +54,109 @@ async def seed_private_course(db):
     await db.flush()
     return SimpleNamespace(owner=owner, student=student, other=other, subject=subject,
                            card_set=card_set, card=card)
+
+
+async def seed_rag_job(db, course, *, user=None, status="queued", expired=False):
+    """Create a content-bounded private conversation and optional active job."""
+    principal = user or course.student
+    now = utcnow()
+    created_at = now - timedelta(days=100) if expired else now
+    expires_at = now - timedelta(days=10) if expired else now + timedelta(days=90)
+    auth = AuthSession(
+        user_id=principal.id,
+        refresh_jti_hash=uuid4().hex * 2,
+        created_at=created_at,
+        last_used_at=created_at,
+        expires_at=now + timedelta(days=1),
+    )
+    thread = RagThread(
+        user_id=principal.id,
+        subject_id=course.subject.id,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    db.add_all([auth, thread])
+    await db.flush()
+    question = RagMessage(
+        thread_id=thread.id,
+        user_id=principal.id,
+        subject_id=course.subject.id,
+        role="user",
+        content=f"private-question-{uuid4().hex}",
+        created_at=created_at,
+        expires_at=expires_at,
+    )
+    db.add(question)
+    await db.flush()
+    answer = None
+    if status == "completed":
+        answer = RagMessage(
+            thread_id=thread.id,
+            user_id=principal.id,
+            subject_id=course.subject.id,
+            role="assistant",
+            outcome="abstained",
+            content="The available course materials do not support an answer.",
+            source_count=0,
+            corpus_revision=course.subject.corpus_revision,
+            embedding_space_hash="e" * 64,
+            created_at=created_at + timedelta(seconds=1),
+            expires_at=expires_at,
+        )
+        db.add(answer)
+        await db.flush()
+    values = dict(
+        thread_id=thread.id,
+        question_message_id=question.id,
+        auth_session_id=auth.id,
+        user_id=principal.id,
+        subject_id=course.subject.id,
+        status="queued",
+        operation_key_hash=uuid4().hex * 2,
+        request_fingerprint=uuid4().hex * 2,
+        document_ids=[],
+        corpus_revision=course.subject.corpus_revision,
+        retrieval_policy="hybrid_exact_v1",
+        embedding_space_hash="e" * 64,
+        ai_provider="test",
+        ai_base_url="https://provider.invalid/v1",
+        ai_model="test-model",
+        available_at=created_at,
+        deadline_at=created_at + timedelta(minutes=10),
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    job = RagAnswerJob(**values)
+    db.add(job)
+    await db.flush()
+    if status in {"running", "completed"}:
+        # PostgreSQL intentionally permits only queued inserts. Reproduce the
+        # real durable state machine so this shared fixture exercises its guard
+        # instead of bypassing it on SQLite.
+        job.status = "running"
+        job.attempt_count = 1
+        job.worker_id = "answer-test-worker"
+        job.claim_token = "f" * 64
+        job.heartbeat_at = created_at
+        job.lease_expires_at = created_at + timedelta(minutes=1)
+        await db.flush()
+    if status == "completed":
+        job.status = "completed"
+        job.answer_message_id = answer.id
+        job.completed_at = created_at + timedelta(minutes=1)
+        job.worker_id = None
+        job.claim_token = None
+        job.heartbeat_at = None
+        job.lease_expires_at = None
+        await db.flush()
+    return SimpleNamespace(
+        auth=auth,
+        thread=thread,
+        question=question,
+        answer=answer,
+        job=job,
+        principal=principal,
+    )
 
 
 def job_for(course, *, status="failed", age_days=40):

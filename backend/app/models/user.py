@@ -211,6 +211,7 @@ class AuthSession(Base):
     user = relationship("User", back_populates="auth_sessions")
 
     __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_auth_sessions_user_scope"),
         UniqueConstraint("refresh_jti_hash", name="uq_auth_sessions_refresh_jti_hash"),
         CheckConstraint("length(refresh_jti_hash) = 64", name="ck_auth_sessions_jti_hash_length"),
     )

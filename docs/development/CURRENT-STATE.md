@@ -1,6 +1,7 @@
 # Current Development State
 
-Snapshot: 2026-09-18. Phases 0–11 are complete. The public v0.1.0 release
+Snapshot: 2026-09-20. Phases 0–11, Subject Knowledge RAG Phases 12–19 and the
+Phase 20/21 implementation, offline integration and bounded live-AI scope are complete. The public v0.1.0 release
 contains independently verified keyless-signed image digests, checksums,
 source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
 passed, including an actual clean-machine production-profile recovery rehearsal.
@@ -33,6 +34,21 @@ separate documentation scope.
 - Subsequent context work: canonical orientation, navigation/module maps, five
   architecture flows, accepted ADRs, local setup, historical separation and
   automatic context-file/link validation.
+- Subject Knowledge Phases 12–19: pinned PostgreSQL 16/pgvector foundation,
+  private revisioned storage, one-pass capture and Knowledge-only admission,
+  durable isolated embedding/index execution, explicit reindex/cutover, and
+  worker-only authorized exact cosine plus PostgreSQL FTS retrieval; private
+  Subject Ask AI threads, durable answer jobs, grounded citations, semantic
+  support validation, bounded quotas and G2 history invalidation; instructor
+  Knowledge and private Subject Ask AI browser workflows; and a reviewed v2
+  retrieval/support/security corpus with measured exact-search gates.
+- Phase 20/21 technical closure: native Gemini RAG answer/embedding profiles,
+  full deterministic RAG-off/RAG-on integration, request/job diagnostics,
+  Knowledge lifecycle audits, private export/deletion/retention controls and
+  populated page/vector/conversation/citation recovery, and explicitly
+  authorized bounded live Gemini flashcard/RAG evaluations. Production
+  enablement and release-specific human assistive-technology evidence remain
+  separate rollout gates rather than being inferred from test success.
 
 The [Phase 9 closure log](../../.agent/logs/2026-09-16/2026-09-16-phase-9-merge-closure.md)
 supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
@@ -40,31 +56,51 @@ belong to the roadmap; implementation/check details belong to the
 [dated log index](../../.agent/logs/README.md).
 The [Phase 10 closure log](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md)
 records its verification and limits at Alembic `20260917_0008`. The current
-working branch adds the mandatory pgvector foundation `20260918_0009` and
-private Subject Knowledge schema `20260918_0010`; operators must apply the
-documented configuration and database upgrade before starting this code.
+working branch advances the mandatory pgvector and private Subject Knowledge
+chain through `20260920_0013`; operators must apply the documented
+configuration and database upgrade before starting this code.
 
 ## Current focus and known risks
 
 The separate [Subject-scoped RAG implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-is authorized through Preparation A/B and Phases 12-13. Preparation A prompt,
+is implemented through Preparation A/B and Phases 12–21 technical closure. Preparation A prompt,
 diagnostic and offline-comparison implementation passed its offline and
 deterministic journey checks; on 2026-09-18 the operator accepted the authored
 card sample as "very good". Preparation B's definitive AI profile migration
 passed full offline backend/frontend, Compose, configuration and deterministic
-cross-stack checks. Phase 12 PostgreSQL/pgvector foundation and Phase 13
-private Subject Knowledge schema are implemented and passed their disposable
-database, recovery and RAG-off journey checks; installation, privacy,
-upload/versioning, initial models and separate-worker quota decisions are accepted
-in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md);
-these design decisions do not establish shipped Knowledge upload, indexing
-execution, retrieval, chat or Ask AI features. Those follow in Phases 14–21.
+cross-stack checks. Phases 12–13 established the PostgreSQL/pgvector foundation
+and private Subject Knowledge schema. Phases 14–16 implement one-pass private
+capture and separately admitted Knowledge-only uploads, durable isolated
+embedding/index execution, explicit reindex/cutover, and reusable worker-only
+authorized hybrid retrieval. Phase 17 adds owner-private per-user conversations,
+API enqueue/poll/history/retry/cancel/delete/source contracts, a separate
+answer/query-embedding worker, strict claim/quote/source validation and immediate
+redaction when current access or evidence eligibility is lost. Phase 18 adds
+typed instructor Knowledge management and private Ask AI interfaces with safe
+state recovery, evidence dialogs, reload/retry polling, accessibility and mobile
+contracts. Phase 19 adds the deterministic v2 corpus and actual PostgreSQL
+exact-vector/FTS recall, ranking, exposure, overlap, latency and indexing-
+throughput gates. Exact search remains the baseline; ANN and reranking remain
+absent because the measured corpus did not justify them. Installation, privacy,
+upload/versioning, initial
+models and separate-worker quota decisions are accepted
+in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
+The integrated offline/service/frontend/journey/recovery gates and Phase 21
+privacy/observability controls are implemented. Bounded live Gemini flashcard
+and Subject RAG evaluations passed after explicit operator authorization. The
+remaining rollout items require external evidence: post-merge hosted/fresh-clone
+closure, production enablement and release-specific spoken assistive-technology
+validation.
 The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
 and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
 logical restore into a separate fresh target; the existing volume path alone
-is not compatibility evidence. No paid provider calls were made.
-Actual checks and pending acceptance belong to the
-[implementation record](../../.agent/logs/2026-09-17/2026-09-17-rag-through-phase-13-implementation.md).
+is not compatibility evidence. Live calls were bounded by explicit model,
+request, token, time and cost guards and made no automatic retries.
+Actual checks and limits belong to the
+[Phase 14–16 implementation record](../../.agent/logs/2026-09-19/2026-09-19-rag-capture-index-retrieval.md)
+and [Phase 17 record](../../.agent/logs/2026-09-19/2026-09-19-rag-subject-ask-ai.md).
+Phase 18–19 implementation and exact verification are recorded in the
+[frontend/evaluation record](../../.agent/logs/2026-09-19/2026-09-19-rag-frontend-and-evaluation.md).
 
 Phase 10 diagnostics are content-free, bounded and best effort. Metrics are
 not a complete provider billing ledger and audits are not tamper-proof. Account

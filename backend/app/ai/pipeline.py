@@ -9,6 +9,7 @@ import math
 from typing import Any
 
 from app.ai.chunking import (
+    PreparedDocument,
     allocate_card_targets,
     chunk_document,
     estimate_tokens,
@@ -637,18 +638,30 @@ class FlashcardGenerationPipeline:
         )
         return result.cards
 
-    async def run(self, document: ExtractedDocument, target_count: int) -> dict[str, Any]:
+    async def run(
+        self,
+        document: ExtractedDocument,
+        target_count: int,
+        *,
+        prepared: PreparedDocument | None = None,
+    ) -> dict[str, Any]:
         # A reused facade must not reset accounting while its previous requests
         # are still active. Fail-fast/cancellation drains every spawned sibling.
         if self._running:
             raise RuntimeError("The pipeline already has an active run")
         self._running = True
         try:
-            return await self._run(document, target_count)
+            return await self._run(document, target_count, prepared=prepared)
         finally:
             self._running = False
 
-    async def _run(self, document: ExtractedDocument, target_count: int) -> dict[str, Any]:
+    async def _run(
+        self,
+        document: ExtractedDocument,
+        target_count: int,
+        *,
+        prepared: PreparedDocument | None = None,
+    ) -> dict[str, Any]:
         # A graph facade can be invoked more than once in tests or integrations;
         # telemetry is per run and must never leak across invocations.
         self.usage = UsageTotals()
@@ -671,11 +684,16 @@ class FlashcardGenerationPipeline:
         self._uncertain_input_tokens = 0
         self._uncertain_output_tokens = 0
         self._uncertain_request_count = 0
-        chunks = chunk_document(
-            document,
-            max_tokens=self.settings.flashcard_ai_chunk_input_tokens,
-            overlap_tokens=self.settings.flashcard_ai_chunk_overlap_tokens,
-        )
+        if prepared is not None:
+            if prepared.document != document:
+                raise ValueError("Prepared document does not match pipeline input")
+            chunks = list(prepared.chunks)
+        else:
+            chunks = chunk_document(
+                document,
+                max_tokens=self.settings.flashcard_ai_chunk_input_tokens,
+                overlap_tokens=self.settings.flashcard_ai_chunk_overlap_tokens,
+            )
         if not chunks:
             raise self._error(
                 "document_has_no_text", "The document contains no usable text.", retryable=False

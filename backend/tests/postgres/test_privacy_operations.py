@@ -4,6 +4,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select, text
 
 from app.config import Settings
@@ -11,13 +12,16 @@ from app.models.audit import AuditEvent
 from app.models.email import EmailOutboxMessage
 from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
 from app.models.generation import GenerationJob, GenerationJobSource, GenerationQuotaEvent
+from app.models.rag import RagAnswerJob, RagAnswerQuotaEvent, RagMessage, RagThread
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, User
 from app.services.privacy import PrivacyOperationError, cleanup_retention, delete_account, export_account
 from app.services.generation import GenerationJobService, hash_operation_key
+from app.services.subject import SubjectService
 from app.time_utils import utcnow
 from tests.support.privacy_fixtures import (
     addressed_invite, invitation_email, job_for, retention_settings, seed_private_course,
+    seed_rag_job,
 )
 
 
@@ -39,6 +43,23 @@ async def test_account_export_uses_readonly_repeatable_snapshot(postgres_session
                 subject = await writer.get(Subject, subject_id)
                 subject.name = "Concurrent updated course"
         assert await snapshot.scalar(select(Subject.name).where(Subject.id == subject_id)) == "Authored course"
+
+
+async def test_account_export_never_includes_another_students_rag_chat(postgres_session_factory):
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            course = await seed_private_course(db)
+            own = await seed_rag_job(db, course, user=course.student)
+            other = await seed_rag_job(db, course, user=course.other)
+            student_id = course.student.id
+            own_thread_id = own.thread.id
+            own_question = own.question.content
+            other_question = other.question.content
+    async with postgres_session_factory() as db:
+        exported = await export_account(db, student_id)
+        assert [row["id"] for row in exported["rag_threads"]] == [str(own_thread_id)]
+        assert [row["content"] for row in exported["rag_messages"]] == [own_question]
+        assert other_question not in str(exported)
 
 
 async def test_student_deletion_removes_all_address_copies_without_resurrecting_invite(postgres_session_factory):
@@ -146,6 +167,94 @@ async def test_deletion_refuses_a_claim_that_has_started(postgres_session_factor
                 await delete_account(db, owner_id)
         assert error.value.code == "account_work_active"
         assert await db.get(User, owner_id) is not None
+
+
+async def test_account_and_subject_deletion_refuse_running_answer_claim(postgres_session_factory):
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            course = await seed_private_course(db)
+            rag = await seed_rag_job(db, course, status="running")
+            student_id = course.student.id
+            subject_id = course.subject.id
+            job_id = rag.job.id
+
+    async with postgres_session_factory() as db:
+        with pytest.raises(PrivacyOperationError) as account_error:
+            async with db.begin():
+                await delete_account(db, student_id)
+        assert account_error.value.code == "account_work_active"
+
+    async with postgres_session_factory() as db:
+        with pytest.raises(HTTPException) as subject_error:
+            async with db.begin():
+                subject = await db.get(Subject, subject_id)
+                await SubjectService.delete_subject(db, subject)
+        assert subject_error.value.detail["code"] == "subject_work_active"
+
+    async with postgres_session_factory() as db:
+        assert await db.get(User, student_id) is not None
+        assert await db.get(Subject, subject_id) is not None
+        assert await db.get(RagAnswerJob, job_id) is not None
+
+
+async def test_subject_deletion_cascades_queued_answer_without_resurrection_on_postgres(
+    postgres_session_factory,
+):
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            course = await seed_private_course(db)
+            rag = await seed_rag_job(db, course, status="queued")
+            subject_id = course.subject.id
+            owner_id = course.owner.id
+            student_id = course.student.id
+            thread_id = rag.thread.id
+            job_id = rag.job.id
+
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            subject = await db.get(Subject, subject_id)
+            await SubjectService.delete_subject(db, subject)
+
+    async with postgres_session_factory() as db:
+        assert await db.get(Subject, subject_id) is None
+        assert await db.get(RagThread, thread_id) is None
+        assert await db.get(RagAnswerJob, job_id) is None
+        assert await db.get(User, owner_id) is not None
+        assert await db.get(User, student_id) is not None
+
+
+async def test_rag_retention_cascades_in_safe_order_on_postgres(postgres_session_factory):
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            course = await seed_private_course(db)
+            rag = await seed_rag_job(db, course, status="completed", expired=True)
+            quota = RagAnswerQuotaEvent(
+                user_id=course.student.id,
+                job_id=rag.job.id,
+                operation_key_hash=uuid4().hex * 2,
+                created_at=utcnow() - timedelta(days=120),
+            )
+            db.add(quota)
+            await db.flush()
+            ids = (rag.thread.id, rag.question.id, rag.answer.id, rag.job.id, quota.id)
+
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            applied = await cleanup_retention(db, retention_settings(), dry_run=False)
+        assert applied["rag_question_messages"] == 1
+        assert applied["rag_assistant_messages"] == 1
+        assert applied["rag_threads"] == 1
+        assert applied["rag_answer_quota_events"] == 1
+
+    async with postgres_session_factory() as db:
+        for model, identity in (
+            (RagThread, ids[0]),
+            (RagMessage, ids[1]),
+            (RagMessage, ids[2]),
+            (RagAnswerJob, ids[3]),
+            (RagAnswerQuotaEvent, ids[4]),
+        ):
+            assert await db.get(model, identity) is None
 
 
 async def test_manual_retry_receipt_survives_shorter_metadata_than_source_retention(postgres_session_factory):

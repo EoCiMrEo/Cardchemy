@@ -55,12 +55,15 @@ message and performs SMTP outside the request transaction. A post-send crash
 can be ambiguous, so automatic delivery cannot promise exactly once. Read
 [auth](AUTH-FLOW.md) and [email delivery](../EMAIL_DELIVERY.md).
 
-**Subject Knowledge foundation:** PostgreSQL stores private documents,
-content/pages, index revisions/chunks/vectors, capacity counters and an index-job
-target. This schema does not add capture, indexing execution, retrieval, chat or
-Ask AI routes. Publication and ready/active revision predicates are enforced
-for the eligible-chunk view; future retrieval also requires principal access
-inside its Subject-scoped SQL. Read the [Knowledge flow](SUBJECT-KNOWLEDGE-FLOW.md).
+**Subject Knowledge and Ask AI:** PostgreSQL stores private documents,
+content/pages, index revisions/chunks/vectors, capacity counters and durable
+index/answer jobs. Separate workers embed Knowledge and answer questions.
+Instructor publication is independent from card/set publication. Retrieval
+requires current principal access plus published ready/active corpus and
+embedding-space predicates inside Subject-scoped SQL; citations are reauthorized
+on read. Typed instructor/student browser surfaces manage Knowledge and private
+conversations without receiving provider credentials. Read the
+[Knowledge flow](SUBJECT-KNOWLEDGE-FLOW.md).
 
 ## Important invariants
 

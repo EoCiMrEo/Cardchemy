@@ -193,6 +193,37 @@ async def retain_metadata(*, apply: bool) -> None:
     write_result({"event": "retention_completed", "applied": apply, "counts": counts})
 
 
+async def stage_rag_reindex(subject_id: UUID, owner_id: UUID, *, apply: bool) -> None:
+    if not apply:
+        raise SystemExit("RAG reindex staging requires --apply")
+    from app.services.knowledge_indexing import enqueue_subject_reindex
+    async with async_session_maker() as db:
+        async with db.begin():
+            created = await enqueue_subject_reindex(
+                db, subject_id=subject_id, owner_id=owner_id, settings=get_settings()
+            )
+    write_result({"event": "rag_reindex_staged", "subject_id": str(subject_id), "jobs_created": created})
+
+
+async def cutover_rag_space(
+    subject_id: UUID, owner_id: UUID, space_hash: str, *, apply: bool
+) -> None:
+    if not apply:
+        raise SystemExit("RAG embedding-space cutover requires --apply")
+    if len(space_hash) != 64 or any(character not in "0123456789abcdef" for character in space_hash):
+        raise SystemExit("Embedding-space hash must be 64 lowercase hexadecimal characters")
+    from app.services.knowledge_indexing import cutover_subject_embedding_space
+    async with async_session_maker() as db:
+        async with db.begin():
+            revision_count = await cutover_subject_embedding_space(
+                db,
+                subject_id=subject_id,
+                owner_id=owner_id,
+                target_space_hash=space_hash,
+            )
+    write_result({"event": "rag_space_cutover", "subject_id": str(subject_id), "revision_count": revision_count})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Cardchemy operator commands")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -227,6 +258,15 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--target-id", type=UUID)
     audit.add_argument("--limit", type=int, choices=range(1, 101), default=20)
     subparsers.add_parser("report-telemetry", help="Explicitly send numeric aggregates to the enabled HTTPS collector")
+    reindex = subparsers.add_parser("rag-stage-reindex", help="Stage compatible indexes without changing the active corpus")
+    reindex.add_argument("--subject-id", required=True, type=UUID)
+    reindex.add_argument("--owner-id", required=True, type=UUID)
+    reindex.add_argument("--apply", action="store_true")
+    cutover = subparsers.add_parser("rag-cutover", help="Atomically switch a fully indexed Subject embedding space")
+    cutover.add_argument("--subject-id", required=True, type=UUID)
+    cutover.add_argument("--owner-id", required=True, type=UUID)
+    cutover.add_argument("--space-hash", required=True)
+    cutover.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -249,6 +289,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 await remove_account(args.id, apply=args.apply, writers_stopped=args.writers_stopped)
             elif args.command == "cleanup-retention":
                 await retain_metadata(apply=args.apply)
+            elif args.command == "rag-stage-reindex":
+                await stage_rag_reindex(args.subject_id, args.owner_id, apply=args.apply)
+            elif args.command == "rag-cutover":
+                await cutover_rag_space(
+                    args.subject_id, args.owner_id, args.space_hash, apply=args.apply
+                )
             elif args.command == "audit-status":
                 from app.models.audit import AuditEvent
                 async with async_session_maker() as db:

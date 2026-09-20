@@ -139,6 +139,43 @@ def test_root_example_covers_application_and_compose_settings():
     assert "VITE_API_URL=/api" in example
 
 
+def test_compose_ai_profile_defaults_match_the_root_template():
+    """Keep fresh-clone Compose interpolation aligned with validated profiles."""
+
+    example = dict(
+        line.split("=", 1)
+        for line in (ROOT_DIR / ".env.example").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+    compose = (ROOT_DIR / "docker-compose.yml").read_text(encoding="utf-8")
+    critical_names = (
+        "FLASHCARD_AI_PROVIDER",
+        "FLASHCARD_AI_MODEL",
+        "FLASHCARD_AI_BASE_URL",
+        "FLASHCARD_AI_THINKING_LEVEL",
+        "RAG_AI_PROVIDER",
+        "RAG_AI_MODEL",
+        "RAG_AI_BASE_URL",
+        "RAG_AI_THINKING_LEVEL",
+        "RAG_AI_CONTEXT_WINDOW_TOKENS",
+        "RAG_AI_INPUT_COST_PER_MILLION_USD",
+        "RAG_AI_OUTPUT_COST_PER_MILLION_USD",
+        "RAG_EMBEDDING_PROVIDER",
+        "RAG_EMBEDDING_MODEL",
+        "RAG_EMBEDDING_BASE_URL",
+        "RAG_EMBEDDING_SPACE_REVISION",
+        "RAG_EMBEDDING_MAX_INPUT_TOKENS",
+        "RAG_EMBEDDING_INPUT_COST_PER_MILLION_USD",
+    )
+    for name in critical_names:
+        match = re.search(
+            rf"(?m)^\s+{name}: \$\{{{name}:-([^}}]*)\}}$",
+            compose,
+        )
+        assert match is not None, f"Compose does not interpolate {name}"
+        assert match.group(1) == example[name], f"Compose default drifted for {name}"
+
+
 def test_bootstrap_template_validates_without_operator_environment_and_never_overwrites(tmp_path, monkeypatch):
     import importlib.util
     spec = importlib.util.spec_from_file_location("bootstrap_env", ROOT_DIR / "scripts/bootstrap_env.py")
@@ -201,4 +238,58 @@ def test_ai_request_pack_must_fit_context_and_safety_adjusted_tpm():
             flashcard_ai_request_input_target_tokens=10_000,
             flashcard_ai_input_tokens_per_minute=10_000,
             flashcard_ai_rate_limit_safety_percent=80,
+        )
+
+
+def test_gemini_and_openai_rag_profiles_have_distinct_task_aware_spaces():
+    base = {
+        "_env_file": None,
+        "database_url": "postgresql+asyncpg://user:password@database/app",
+        "secret_key": "a-test-secret-with-real-entropy-1234567890",
+        "generation_source_encryption_key": (
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ),
+    }
+    gemini = Settings(**base)
+    assert gemini.rag_ai_provider == "gemini"
+    assert gemini.rag_ai_base_url is None
+    assert gemini.rag_embedding_provider == "gemini"
+    assert gemini.rag_embedding_model == "gemini-embedding-001"
+    assert gemini.rag_embedding_provider_task_modes == (
+        "RETRIEVAL_DOCUMENT",
+        "QUESTION_ANSWERING",
+    )
+    assert gemini.rag_embedding_space_identity[-2:] == (
+        "RETRIEVAL_DOCUMENT",
+        "QUESTION_ANSWERING",
+    )
+    assert gemini.rag_embedding_space_identity[1] == (
+        "https://generativelanguage.googleapis.com"
+    )
+
+    compatible = Settings(
+        **base,
+        rag_ai_provider="openai_compatible",
+        rag_ai_model="answer-model",
+        rag_ai_base_url="https://answer.example.test/v1",
+        rag_embedding_provider="openai_compatible",
+        rag_embedding_model="embedding-model",
+        rag_embedding_base_url="https://embedding.example.test/v1",
+    )
+    assert compatible.rag_embedding_provider_task_modes == (
+        "shared_input",
+        "shared_input",
+    )
+    assert compatible.rag_embedding_space_identity[-2:] == (
+        "shared_input",
+        "shared_input",
+    )
+
+    with pytest.raises(ValidationError, match="RAG_AI_BASE_URL"):
+        Settings(**base, rag_ai_provider="openai_compatible", rag_ai_base_url=None)
+    with pytest.raises(ValidationError, match="RAG_EMBEDDING_BASE_URL"):
+        Settings(
+            **base,
+            rag_embedding_provider="openai_compatible",
+            rag_embedding_base_url=None,
         )

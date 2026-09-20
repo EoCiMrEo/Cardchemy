@@ -23,22 +23,41 @@ verification support. That CA is trusted only by the harness. It does not change
 host DNS, certificate trust, firewall, public hosting or a real installation.
 
 Using the maintained operator CLI and real HTTPS APIs, it creates a disposable
-instructor, subject, approved manual card, publication, invitation-backed
-student and server-graded study answer. It verifies TLS certificate validation,
-same-origin proxying, refresh/logout, secure cookie attributes, SPA deep links,
-security headers and closed production API docs. It then drains/stops writers,
-creates a PostgreSQL custom archive, and matches its SHA-256 on the host and
-inside both database containers. The archive is restored into a second
-uniquely named project with a verified empty database and separate volume.
-`upgrade head`, `current --check-heads` and `alembic check` must pass there.
-Representative instructor/student reads, progress and the original answer
-receipt must survive; retrying that answer must leave the counts unchanged.
+instructor, two subjects, an approved manual card and publication, plus two
+invitation-backed students. One student completes a server-graded study answer;
+the other is enrolled only in the isolation-control subject. It verifies TLS
+certificate validation, same-origin proxying, refresh/logout, secure cookie
+attributes, SPA deep links, security headers and closed production API docs.
 
-All API interactions use fixtures; no direct database mutation seeds records.
-Read-only aggregate SQL checks compare schema revision and representative row
-counts. Cleanup validates exact volume names, Compose ownership labels and
-image ownership before removing only generated resources. The real root
-`.env`, databases and Docker volumes remain outside the rehearsal.
+There is intentionally no provider-free public API that can manufacture a
+completed embedding or model answer. With every AI enablement and provider
+switch forced off, the harness therefore adds one fixed synthetic Knowledge/RAG
+fixture directly through PostgreSQL. The fixture follows the database's guarded
+processing transitions: captured page, pending then ready active index, 1536
+dimension vector, owner review/publication, queued then claimed/completed answer
+job, private messages and one exact grounded citation. It uses a reserved
+`.invalid` endpoint only as immutable metadata and records zero provider
+requests. This fixture contains no user document, model output, credential or
+network call. The application APIs then verify the published Knowledge state,
+enrolled student's private history/job/citation, instructor thread isolation,
+other-student Subject isolation, and that new Ask AI work remains disabled.
+
+The harness drains/stops all writers, creates a PostgreSQL custom archive, and
+matches its SHA-256 on the host and inside both database containers. The archive
+is restored into a second uniquely named project with a verified empty database
+and separate volume. Before and after application startup it checks pgvector
+0.8.6, the `vector(1536)` column, valid Knowledge indexes, the active published
+revision, exact nearest-vector retrieval constrained by enrollment and Subject,
+the negative other-student retrieval case, private RAG rows and the exact
+citation provenance. `upgrade head`, `current --check-heads` and `alembic check`
+must pass there. Representative instructor/student reads, progress, the original
+answer receipt and all populated RAG state must survive; retrying the study
+answer must leave the tracked counts unchanged.
+
+Aggregate SQL checks compare schema revision and representative row counts.
+Cleanup validates exact volume names, Compose ownership labels and image
+ownership before removing only generated resources. The real root `.env`,
+databases and Docker volumes remain outside the rehearsal.
 
 The workflow retains one content-free JSON summary for 90 days, containing
 the source SHA, Compose version, schema head, archive checksum, aggregate counts, completed
@@ -58,9 +77,13 @@ regression harness additionally tests the complete historical migration
 chain and reversal; see [Testing](TESTING.md).
 
 This check proves strict production settings, local TLS and database recovery.
-AI is disabled, encrypted SMTP is configured with a reserved offline `.test`
-host, and the outbox must stay empty. It does not claim paid-provider success,
-external SMTP delivery, public DNS/ACME, a real deployment or an operator's
-RPO/RTO. Those site-specific responsibilities remain in
+AI is disabled, no generation/index/answer provider call is made, encrypted
+SMTP is configured with a reserved offline `.test` host, and the outbox must
+stay empty. The smaller [pgvector restore probe](../scripts/test_pgvector_restore.py)
+separately restores into an empty ephemeral database and verifies the extension,
+HNSW/GIN indexes, active/published filtering and enrolled/other-student query
+isolation with three-dimensional synthetic vectors. Neither check claims paid-
+provider success, external SMTP delivery, public DNS/ACME, a real deployment or
+an operator's RPO/RTO. Those site-specific responsibilities remain in
 [Deployment](DEPLOYMENT.md), [Database operations](DATABASE_OPERATIONS.md)
 and [Email delivery](EMAIL_DELIVERY.md).

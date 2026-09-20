@@ -4,8 +4,8 @@ Run explicitly with:
     RUN_LIVE_AI_TESTS=1 pytest -m ai_live tests/integration/test_live_ai_pipeline.py
 
 Requires explicit nonzero input/output token prices. No key material is printed.
-Only the official OpenAI endpoint and the pinned non-reasoning GPT-4o Mini
-snapshot are admitted; reasoning/provider variants need their own billing bound.
+Only native Gemini through Google's official endpoint and the pinned stable
+Gemini 3.5 Flash-Lite model are admitted; other variants need their own bound.
 """
 
 from decimal import Decimal
@@ -16,8 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 
-LIVE_MODEL = "gpt-4o-mini-2024-07-18"
-LIVE_BASE_URL = "https://api.openai.com/v1"
+LIVE_MODEL = "gemini-3.5-flash-lite"
 
 
 def require_supported_live_configuration(settings):
@@ -25,17 +24,18 @@ def require_supported_live_configuration(settings):
     if not settings.flashcard_ai_quota_bucket:
         raise RuntimeError("Live evaluation requires an explicit FLASHCARD_AI_QUOTA_BUCKET")
     if (
-        settings.flashcard_ai_provider != "openai_compatible"
-        or str(settings.flashcard_ai_base_url).rstrip("/") != LIVE_BASE_URL
+        settings.flashcard_ai_provider != "gemini"
+        or settings.flashcard_ai_base_url is not None
         or settings.flashcard_ai_model != LIVE_MODEL
+        or settings.flashcard_ai_thinking_level != "minimal"
     ):
-        raise RuntimeError("Live evaluation hard budget requires the supported non-reasoning model and official endpoint")
-    # Published text prices reviewed 2026-09-16. Explicitly supplied prices must
+        raise RuntimeError("Live evaluation hard budget requires the supported native Gemini model and official endpoint")
+    # Published text prices reviewed 2026-09-20. Explicitly supplied prices must
     # be at least these floors, and operators must refresh them before a run:
-    # https://developers.openai.com/api/docs/models/gpt-4o-mini
+    # https://ai.google.dev/gemini-api/docs/pricing
     if (
-        settings.flashcard_ai_input_cost_per_million_usd < Decimal("0.15")
-        or settings.flashcard_ai_output_cost_per_million_usd < Decimal("0.60")
+        settings.flashcard_ai_input_cost_per_million_usd < Decimal("0.30")
+        or settings.flashcard_ai_output_cost_per_million_usd < Decimal("2.50")
     ):
         raise RuntimeError("Live evaluation hard budget requires reviewed prices at or above the supported model price floors")
 
@@ -168,25 +168,27 @@ def budget_settings(**overrides):
     values = {"environment": "test", "database_url": "sqlite+aiosqlite:///:memory:",
               "secret_key": "test-only-secret-key-with-adequate-entropy-1234567890",
               "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-              "flashcard_ai_input_cost_per_million_usd": "0.15", "flashcard_ai_output_cost_per_million_usd": "0.60",
+              "flashcard_ai_provider": "gemini", "flashcard_ai_model": LIVE_MODEL,
+              "flashcard_ai_thinking_level": "minimal",
+              "flashcard_ai_input_cost_per_million_usd": "0.30", "flashcard_ai_output_cost_per_million_usd": "2.50",
               "flashcard_ai_quota_bucket": "test-live-flashcards"}
     return Settings(_env_file=None, **(values | overrides))
 
 
 @pytest.mark.parametrize("configuration", [
     {"flashcard_ai_quota_bucket": ""},
+    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": "https://api.openai.com/v1",
+     "flashcard_ai_model": LIVE_MODEL},
     {"flashcard_ai_provider": "gemini", "flashcard_ai_model": "gemini-3.8-flash"},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": "o4-mini"},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": "https://model.example.com/v1", "flashcard_ai_model": LIVE_MODEL},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": "https://api.openai.com/v1/other", "flashcard_ai_model": LIVE_MODEL},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": "gpt-4o-mini"},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
-     "flashcard_ai_input_cost_per_million_usd": "0.14"},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
-     "flashcard_ai_output_cost_per_million_usd": "0.59"},
-    {"flashcard_ai_provider": "openai_compatible", "flashcard_ai_base_url": LIVE_BASE_URL, "flashcard_ai_model": LIVE_MODEL,
+    {"flashcard_ai_provider": "gemini", "flashcard_ai_model": "gemini-3.5-flash-lite-preview"},
+    {"flashcard_ai_thinking_level": "high"},
+    {"flashcard_ai_provider": "gemini", "flashcard_ai_model": LIVE_MODEL,
+     "flashcard_ai_input_cost_per_million_usd": "0.29"},
+    {"flashcard_ai_provider": "gemini", "flashcard_ai_model": LIVE_MODEL,
+     "flashcard_ai_output_cost_per_million_usd": "2.49"},
+    {"flashcard_ai_provider": "gemini", "flashcard_ai_model": LIVE_MODEL,
      "flashcard_ai_input_cost_per_million_usd": "3"},
-], ids=["missing-quota-bucket", "thinking-gemini", "reasoning-model", "custom-provider", "changed-endpoint", "moving-alias",
+], ids=["missing-quota-bucket", "unsupported-provider", "other-model", "moving-alias", "thinking-level",
         "underpriced-input", "underpriced-output", "reserved-cost-overrun"])
 def test_live_evaluation_refuses_unsupported_billing_before_provider_construction(monkeypatch, configuration):
     def forbidden_factory(_):
@@ -206,7 +208,6 @@ def test_live_evaluation_clamps_sdk_and_pipeline_limits_before_provider_construc
 
     monkeypatch.setattr("app.ai.providers.get_ai_provider", offline_factory)
     provider = build_budgeted_live_provider(budget_settings(
-        flashcard_ai_provider="openai_compatible", flashcard_ai_base_url=LIVE_BASE_URL, flashcard_ai_model=LIVE_MODEL,
         flashcard_ai_provider_max_retries=3, flashcard_ai_refill_rounds=2,
     ))
     assert constructed_settings == [provider.settings]

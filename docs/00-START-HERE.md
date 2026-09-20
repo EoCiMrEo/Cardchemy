@@ -1,6 +1,6 @@
 # Cardchemy: Start Here
 
-Current truth, checked against this checkout on 2026-09-17. This is the
+Current truth, checked against this checkout on 2026-09-20. This is the
 canonical orientation; [source navigation](../PROJECT-MAP.md) leads to the
 implementation, which remains the final authority.
 
@@ -30,6 +30,9 @@ application with an online-first study flow.
    server-derived result and durable receipt → refreshed progress.
 4. Forgot password → transactional email outbox → SMTP worker → single-use
    reset → session revocation and password-change notification.
+5. Instructor PDF → private extracted Knowledge → isolated embedding/index
+   worker → explicit Knowledge review/publication → an enrolled user's private
+   Subject Ask AI thread → isolated answer worker → supported answer/citations.
 
 ## Current development state
 
@@ -50,8 +53,8 @@ FastAPI/Pydantic, SQLAlchemy async/asyncpg, PostgreSQL 16 and Alembic; typed
 application AI orchestration with direct Gemini SDK or OpenAI-compatible HTTP.
 PDF extraction uses pypdf, with optional Poppler/Tesseract OCR. React 19,
 TypeScript, Vite, React Router, Axios, Redux Toolkit, Tailwind, Radix and Framer
-Motion make up the client. Docker Compose runs separate generation/email
-workers and a built Nginx frontend; local SMTP is Mailpit. See
+Motion make up the client. Docker Compose runs separate generation, index,
+answer and email workers plus a built Nginx frontend; local SMTP is Mailpit. See
 [runtime support](RUNTIMES.md) and [dependency policy](DEPENDENCIES.md).
 
 ## Important product / technical invariants
@@ -67,7 +70,7 @@ workers and a built Nginx frontend; local SMTP is Mailpit. See
 - Alembic alone evolves the schema; processes verify every head before work.
 - AI content passes structural, grounding and duplicate checks before atomic
   persistence. Generated cards still require instructor approval.
-- Jobs and email are durable PostgreSQL workflows with leases/fencing; no
+- Generation, Knowledge indexing, Subject Ask AI and email are durable PostgreSQL workflows with leases/fencing; no
   Redis/broker is required. Provider retries are bounded under one owner.
 - Root `.env` is the only user-managed file configuration. Secrets remain
   outside the browser and repository; Compose limits provider/SMTP credentials

@@ -11,9 +11,11 @@ from app.models.flashcard import (
 )
 from app.models.generation import (
     GenerationJob,
+    GenerationJobKind,
     GenerationJobSource,
     GenerationJobStatus,
     GenerationQuotaEvent,
+    KnowledgeUploadQuotaEvent,
 )
 from app.models.email import EmailMessageType, EmailOutboxMessage, EmailOutboxStatus
 from app.models.audit import AuditAction, AuditEvent
@@ -27,6 +29,13 @@ from app.models.knowledge import (
     SubjectDocumentIndexRevision,
     SubjectDocumentChunk,
     SubjectDocumentIndexJob,
+)
+from app.models.rag import (
+    RagAnswerJob,
+    RagAnswerQuotaEvent,
+    RagMessage,
+    RagMessageSource,
+    RagThread,
 )
 
 __all__ = [
@@ -44,9 +53,11 @@ __all__ = [
     "CardStatus",
     "CardType",
     "GenerationJob",
+    "GenerationJobKind",
     "GenerationJobSource",
     "GenerationJobStatus",
     "GenerationQuotaEvent",
+    "KnowledgeUploadQuotaEvent",
     "EmailMessageType",
     "EmailOutboxMessage",
     "EmailOutboxStatus",
@@ -62,4 +73,9 @@ __all__ = [
     "SubjectDocumentIndexRevision",
     "SubjectDocumentChunk",
     "SubjectDocumentIndexJob",
+    "RagThread",
+    "RagMessage",
+    "RagMessageSource",
+    "RagAnswerJob",
+    "RagAnswerQuotaEvent",
 ]

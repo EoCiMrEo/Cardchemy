@@ -1,6 +1,7 @@
 """Actual PostgreSQL integrity, eligibility and guarded storage proofs."""
 
 import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -9,11 +10,15 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.models.knowledge import embedding_space_hash
+from app.models.audit import AuditAction, AuditEvent
+from app.models.user import User
+from app.services.knowledge_management import KnowledgeManagementService
 
 
 pytestmark = pytest.mark.postgres
 IDENTITY = ('openai_compatible', 'https://api.openai.com/v1', 'text-embedding-3-small',
-            'v1', 'raw_text_v1', 1536, 'float32', 'cosine')
+            'v1', 'raw_text_v1', 1536, 'float32', 'cosine',
+            'shared_input', 'shared_input')
 CONTENT = 'Synthetic teaching evidence.'
 
 
@@ -26,12 +31,15 @@ async def make_owner(connection):
 
 async def make_space(connection, identity=IDENTITY):
     space_hash = embedding_space_hash(identity)
-    values = dict(zip(('provider','base_url','model','space_revision','format_version','dimensions','representation','metric'),identity))
+    values = dict(zip((
+        'provider','base_url','model','space_revision','format_version','dimensions',
+        'representation','metric','document_task_mode','query_task_mode'
+    ), identity))
     values['space_hash'] = space_hash
     exists = await connection.scalar(text('SELECT 1 FROM rag_embedding_spaces WHERE identity_hash=:space_hash'),values)
     if not exists:
-        await connection.execute(text('''INSERT INTO rag_embedding_spaces(identity_hash,provider,base_url,model,space_revision,format_version,dimensions,representation,metric)
-            VALUES(:space_hash,:provider,:base_url,:model,:space_revision,:format_version,:dimensions,:representation,:metric)'''),values)
+        await connection.execute(text('''INSERT INTO rag_embedding_spaces(identity_hash,provider,base_url,model,space_revision,format_version,dimensions,representation,metric,document_task_mode,query_task_mode)
+            VALUES(:space_hash,:provider,:base_url,:model,:space_revision,:format_version,:dimensions,:representation,:metric,:document_task_mode,:query_task_mode)'''),values)
     return values
 
 
@@ -59,8 +67,8 @@ async def make_ready(connection, owner_values):
         VALUES(:index_revision,:content_revision,:document,:subject,:owner,1,'bounded_v1',:provider,:base_url,:model,:space_revision,
         :format_version,:dimensions,:representation,:metric,:space_hash,1,:charged)'''),values)
     await connection.execute(text('''INSERT INTO subject_document_chunks(id,index_revision_id,content_revision_id,document_id,subject_id,uploader_id,
-        chunk_index,page_number,content,token_count,embedding_space_hash,embedding)
-        VALUES(:chunk,:index_revision,:content_revision,:document,:subject,:owner,0,1,:content,8,:space_hash,
+        chunk_index,local_chunk_id,page_number,content,token_count,embedding_space_hash,embedding)
+        VALUES(:chunk,:index_revision,:content_revision,:document,:subject,:owner,0,'chunk-0001-p1',1,:content,8,:space_hash,
         array_prepend(1::real,array_fill(0::real,ARRAY[1535]))::vector)'''),values)
     await connection.execute(text("UPDATE subject_document_index_revisions SET status='ready',is_active=true WHERE id=:index_revision"),values)
     await connection.execute(text("UPDATE subject_document_content_revisions SET status='ready',is_active=true WHERE id=:content_revision"),values)
@@ -105,6 +113,73 @@ async def test_ready_private_review_publication_active_revision_and_space_filter
     assert await connection.scalar(eligible,values)==0
     await connection.execute(text('UPDATE subject_document_content_revisions SET published_at=now(),is_active=false WHERE id=:content_revision'),values)
     assert await connection.scalar(eligible,values)==0
+
+
+async def test_knowledge_lifecycle_audits_share_the_postgres_transaction(
+    postgres_session_factory,
+):
+    async with postgres_session_factory() as schema:
+        definition = await schema.scalar(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'ck_audit_events_action' "
+                "AND conrelid = 'audit_events'::regclass"
+            )
+        )
+        if not definition or "knowledge.published" not in definition:
+            pytest.skip("combined Phase 21 audit constraint migration is not applied")
+
+    async with postgres_session_factory() as db:
+        await db.begin()
+        connection = await db.connection()
+        values = await make_ready(connection, await make_owner(connection))
+        owner = await db.get(User, values["owner"])
+        service = KnowledgeManagementService(SimpleNamespace())
+        await service.review_and_publish(
+            db,
+            subject_id=values["subject"],
+            document_id=values["document"],
+            user=owner,
+        )
+        await service.unpublish(
+            db,
+            subject_id=values["subject"],
+            document_id=values["document"],
+            user=owner,
+        )
+        await service.remove(
+            db,
+            subject_id=values["subject"],
+            document_id=values["document"],
+            user=owner,
+        )
+        records = list(
+            (
+                await db.scalars(
+                    select(AuditEvent)
+                    .where(AuditEvent.target_id == values["document"])
+                    .order_by(AuditEvent.created_at, AuditEvent.id)
+                )
+            ).all()
+        )
+        assert [event.action for event in records] == [
+            AuditAction.KNOWLEDGE_PUBLISHED.value,
+            AuditAction.KNOWLEDGE_UNPUBLISHED.value,
+            AuditAction.KNOWLEDGE_REMOVED.value,
+        ]
+        assert all(
+            event.actor_id == values["owner"]
+            and event.subject_id == values["subject"]
+            and event.target_type == "knowledge"
+            and event.affected_count == 1
+            for event in records
+        )
+        await db.rollback()
+
+    async with postgres_session_factory() as db:
+        assert await db.scalar(
+            select(AuditEvent.id).where(AuditEvent.target_id == values["document"])
+        ) is None
 
 
 async def test_measurements_vectors_provenance_and_immutable_identity(knowledge_connection):
@@ -178,11 +253,11 @@ async def test_actual_rows_cannot_exceed_text_chunk_reservations_or_skip_origina
         VALUES(:index_revision,:content_revision,:document,:subject,:owner,1,'v1',:provider,:base_url,:model,:space_revision,:format_version,
         :dimensions,:representation,:metric,:space_hash,1,6410)'''),values)
     insert='''INSERT INTO subject_document_chunks(index_revision_id,content_revision_id,document_id,subject_id,uploader_id,chunk_index,
-        page_number,content,token_count,embedding_space_hash,embedding)
-        VALUES(:index_revision,:content_revision,:document,:subject,:owner,0,:page,'ab',1,:space_hash,{vector})'''
+        local_chunk_id,page_number,content,token_count,embedding_space_hash,embedding)
+        VALUES(:index_revision,:content_revision,:document,:subject,:owner,0,'chunk-0001-p1',:page,'ab',1,:space_hash,{vector})'''
     vector='array_prepend(1::real,array_fill(0::real,ARRAY[1535]))::vector'
     await reject(connection,insert.format(vector=vector),{**values,'page':2})
-    await reject(connection,insert.format(vector=vector).replace(',0,:page',',511,:page'),{**values,'page':1})
+    await reject(connection,insert.format(vector=vector).replace(",0,'chunk",",511,'chunk"),{**values,'page':1})
     await reject(connection,insert.format(vector="array_fill(0::real,ARRAY[1536])::vector"),{**values,'page':1})
     await reject(connection,insert.format(vector="'[1,0]'::vector"),{**values,'page':1})
     await reject(connection,insert.format(vector="array_prepend('NaN'::real,array_fill(0::real,ARRAY[1535]))::vector"),{**values,'page':1})
@@ -193,9 +268,9 @@ async def test_actual_rows_cannot_exceed_text_chunk_reservations_or_skip_origina
     await connection.execute(SubjectDocumentChunk.__table__.insert().values(
         index_revision_id=values['index_revision'],content_revision_id=values['content_revision'],
         document_id=values['document'],subject_id=values['subject'],uploader_id=values['owner'],
-        chunk_index=0,page_number=1,content='ab',token_count=1,embedding_space_hash=values['space_hash'],
+        chunk_index=0,local_chunk_id='chunk-0001-p1',page_number=1,content='ab',token_count=1,embedding_space_hash=values['space_hash'],
         embedding=[1.0]+[0.0]*1535))
-    await reject(connection,insert.format(vector=vector).replace(',0,:page',',1,:page'),{**values,'page':1})
+    await reject(connection,insert.format(vector=vector).replace(",0,'chunk",",1,'chunk"),{**values,'page':1})
 
 
 async def test_index_jobs_complete_claim_and_immutable_snapshots(knowledge_connection):

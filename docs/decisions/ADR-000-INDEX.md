@@ -21,6 +21,7 @@ changing a decision. Code remains the implementation authority.
 | [011: Operational privacy controls](ADR-011-operational-privacy-controls.md) | Accepted | Content-free diagnostics/audits and operator-mediated lifecycle controls |
 | [012: Subject Knowledge and RAG boundaries](ADR-012-subject-knowledge-and-rag-boundaries.md) | Accepted design; implementation follows the RAG plan | Installation/privacy/versioning/model/worker contracts for Subject Knowledge |
 | [013: Password hash compatibility](ADR-013-password-hash-compatibility.md) | Accepted | Direct bcrypt with unchanged v2 records and historic password verification |
+| [014: Native Gemini RAG profiles](ADR-014-native-gemini-rag-profiles.md) | Accepted; supersedes ADR-012 G5 provider selection | Native answer/embedding contracts and task-aware space migration |
 
 ## Maintenance
 

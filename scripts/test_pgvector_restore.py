@@ -16,6 +16,71 @@ from runtime_database import ensure_database_image
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SUBJECT = "00000000-0000-0000-0000-000000000101"
+OTHER_SUBJECT = "00000000-0000-0000-0000-000000000102"
+STUDENT = "00000000-0000-0000-0000-000000000201"
+OTHER_STUDENT = "00000000-0000-0000-0000-000000000202"
+SCHEMA_SQL = f"""
+    CREATE EXTENSION vector;
+    CREATE TABLE rag_restore_access (
+      user_id uuid NOT NULL,
+      subject_id uuid NOT NULL,
+      PRIMARY KEY (user_id, subject_id)
+    );
+    CREATE TABLE rag_restore_probe (
+      id integer PRIMARY KEY,
+      subject_id uuid NOT NULL,
+      document_id uuid NOT NULL,
+      content_revision integer NOT NULL,
+      published boolean NOT NULL,
+      active boolean NOT NULL,
+      embedding_space_hash char(64) NOT NULL,
+      body text NOT NULL,
+      embedding vector(3) NOT NULL
+    );
+    INSERT INTO rag_restore_access VALUES ('{STUDENT}'::uuid,'{SUBJECT}'::uuid);
+    INSERT INTO rag_restore_probe VALUES
+      (1,'{SUBJECT}'::uuid,'00000000-0000-0000-0000-000000000301'::uuid,1,true,true,
+       repeat('a',64),'alpha published evidence','[0.99,0.01,0]'),
+      (2,'{SUBJECT}'::uuid,'00000000-0000-0000-0000-000000000302'::uuid,2,false,true,
+       repeat('a',64),'alpha unpublished evidence','[1,0,0]'),
+      (3,'{OTHER_SUBJECT}'::uuid,'00000000-0000-0000-0000-000000000303'::uuid,1,true,true,
+       repeat('a',64),'alpha other subject evidence','[1,0,0]');
+    CREATE INDEX rag_restore_probe_embedding_hnsw
+      ON rag_restore_probe USING hnsw (embedding vector_cosine_ops);
+    CREATE INDEX rag_restore_probe_body_gin
+      ON rag_restore_probe USING gin (to_tsvector('simple', body));
+"""
+EMPTY_SQL = """
+    SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public')=0
+       AND NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector');
+"""
+CHECK_SQL = f"""
+    SELECT
+      (SELECT extversion FROM pg_extension WHERE extname = 'vector') = '0.8.6'
+      AND (SELECT count(*) FROM rag_restore_probe) = 3
+      AND (SELECT count(*) FROM rag_restore_access) = 1
+      AND (SELECT count(*) FROM pg_index i
+           JOIN pg_class c ON c.oid = i.indexrelid
+           WHERE c.relname IN ('rag_restore_probe_embedding_hnsw',
+                               'rag_restore_probe_body_gin') AND i.indisvalid) = 2
+      AND (SELECT p.id FROM rag_restore_probe p
+           JOIN rag_restore_access a ON a.subject_id=p.subject_id
+           WHERE a.user_id='{STUDENT}'::uuid AND p.subject_id='{SUBJECT}'::uuid
+             AND p.published AND p.active AND p.embedding_space_hash=repeat('a',64)
+           ORDER BY p.embedding <=> '[1,0,0]'::vector,p.id LIMIT 1) = 1
+      AND NOT EXISTS (
+           SELECT 1 FROM rag_restore_probe p JOIN rag_restore_access a ON a.subject_id=p.subject_id
+           WHERE a.user_id='{OTHER_STUDENT}'::uuid AND p.published AND p.active)
+      AND (SELECT count(*) FROM rag_restore_probe p
+           JOIN rag_restore_access a ON a.subject_id=p.subject_id
+           WHERE a.user_id='{STUDENT}'::uuid AND p.subject_id='{SUBJECT}'::uuid
+             AND p.published AND p.active AND p.embedding_space_hash=repeat('a',64)) = 1
+      AND (SELECT count(*) FROM rag_restore_probe p
+           JOIN rag_restore_access a ON a.subject_id=p.subject_id
+           WHERE a.user_id='{STUDENT}'::uuid AND p.published AND p.active
+             AND to_tsvector('simple',p.body) @@ plainto_tsquery('simple','alpha')) = 1;
+"""
 
 
 def docker(*arguments: str, input_bytes: bytes | None = None, label: str) -> bytes:
@@ -56,52 +121,29 @@ def main() -> None:
                    label="Start isolated PostgreSQL")
             ready(name)
 
-        schema = """
-            CREATE EXTENSION vector;
-            CREATE TABLE rag_restore_probe (
-              id integer PRIMARY KEY,
-              body text NOT NULL,
-              embedding vector(3) NOT NULL
-            );
-            INSERT INTO rag_restore_probe VALUES
-              (1, 'alpha evidence', '[1,0,0]'),
-              (2, 'beta evidence', '[0,1,0]');
-            CREATE INDEX rag_restore_probe_embedding_hnsw
-              ON rag_restore_probe USING hnsw (embedding vector_cosine_ops);
-            CREATE INDEX rag_restore_probe_body_gin
-              ON rag_restore_probe USING gin (to_tsvector('simple', body));
-        """
         docker("exec", source, "psql", "-U", "postgres", "-d", "postgres",
-               "-v", "ON_ERROR_STOP=1", "-c", schema, label="Populate source vectors and indexes")
+               "-v", "ON_ERROR_STOP=1", "-c", SCHEMA_SQL,
+               label="Populate source vectors and indexes")
         archive = docker("exec", source, "pg_dump", "-U", "postgres", "-d", "postgres",
                          "-Fc", "--no-owner", "--no-acl", label="Dump populated vector database")
         if not archive:
             raise RuntimeError("Disposable vector backup is empty")
+        empty = docker("exec", target, "psql", "-U", "postgres", "-d", "postgres",
+                       "-v", "ON_ERROR_STOP=1", "-tAX", "-c", EMPTY_SQL,
+                       label="Verify empty restore target")
+        if empty.strip() != b"t":
+            raise RuntimeError("Disposable restore target was not empty")
         docker("exec", "-i", target, "pg_restore", "-U", "postgres", "-d", "postgres",
                "--exit-on-error", "--no-owner", "--no-acl", input_bytes=archive,
                label="Restore populated vector database")
-
-        check = """
-            SELECT
-              (SELECT extversion FROM pg_extension WHERE extname = 'vector') = '0.8.6'
-              AND (SELECT count(*) FROM rag_restore_probe) = 2
-              AND (SELECT count(*) FROM pg_index i
-                   JOIN pg_class c ON c.oid = i.indexrelid
-                   WHERE c.relname IN ('rag_restore_probe_embedding_hnsw',
-                                       'rag_restore_probe_body_gin') AND i.indisvalid) = 2
-              AND (SELECT id FROM rag_restore_probe
-                   ORDER BY embedding <=> '[1,0,0]'::vector LIMIT 1) = 1
-              AND (SELECT count(*) FROM rag_restore_probe
-                   WHERE to_tsvector('simple', body) @@ plainto_tsquery('simple', 'alpha')) = 1;
-        """
         result = docker("exec", target, "psql", "-U", "postgres", "-d", "postgres",
-                        "-v", "ON_ERROR_STOP=1", "-tAX", "-c", check,
+                        "-v", "ON_ERROR_STOP=1", "-tAX", "-c", CHECK_SQL,
                         label="Verify restored extension, data, indexes and queries")
         if result.strip() != b"t":
             raise RuntimeError("Restored pgvector extension, indexes or data failed verification")
     finally:
         cleanup_containers(owned)
-    print("Disposable populated pgvector dump/restore and vector/lexical checks passed; owned containers removed.")
+    print("Disposable populated pgvector dump/restore, active-publication and authorized vector/lexical checks passed; owned containers removed.")
 
 
 if __name__ == "__main__":

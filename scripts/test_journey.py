@@ -75,11 +75,18 @@ def parse_arguments() -> argparse.Namespace:
                         help="Stop the interactive demo after 1-60 minutes (default: 15)")
     parser.add_argument("--demo-frontend-image", type=local_image_reference,
                         help="Serve an already-built local Nginx frontend image for packaged-candidate checks")
+    parser.add_argument(
+        "--scenario",
+        choices=("rag-off", "rag-on"),
+        help=argparse.SUPPRESS,
+    )
     arguments = parser.parse_args()
     if arguments.demo_minutes is not None and not arguments.demo:
         parser.error("--demo-minutes requires --demo")
     if arguments.demo_frontend_image is not None and not arguments.demo:
         parser.error("--demo-frontend-image requires --demo")
+    if arguments.scenario == "rag-off" and arguments.demo:
+        parser.error("The interactive demo requires the RAG-enabled scenario")
     return arguments
 
 
@@ -167,7 +174,7 @@ def failure_summary(workspace: Path, processes: list[subprocess.Popen]) -> None:
     from app.observability import ENUM_FIELDS, EVENTS, SAFE_ERROR_CODES
 
     events = []
-    for name in ("api", "generation", "email", "frontend"):
+    for name in ("api", "generation", "index", "answer", "email", "frontend"):
         log_file = workspace / f"{name}.log"
         if not log_file.exists():
             continue
@@ -235,8 +242,59 @@ def write_pdf(target: Path) -> None:
     target.write_bytes(output.getvalue())
 
 
+def rag_environment(enabled: bool) -> dict[str, str]:
+    """Return only deterministic RAG settings for the selected journey."""
+
+    if not enabled:
+        return {
+            "RAG_ENABLED": "false",
+            "RAG_AI_PROVIDER_ENABLED": "false",
+            "RAG_EMBEDDING_PROVIDER_ENABLED": "false",
+        }
+    return {
+        "RAG_ENABLED": "true",
+        "RAG_AI_PROVIDER_ENABLED": "true",
+        "RAG_AI_API_KEY": "journey-deterministic-no-network",
+        "RAG_AI_QUOTA_BUCKET": "journey-rag-answer",
+        "RAG_AI_MODEL": "journey-deterministic",
+        "RAG_AI_PROVIDER_MAX_RETRIES": "0",
+        "RAG_AI_CONCURRENCY": "1",
+        "RAG_AI_INPUT_COST_PER_MILLION_USD": "0.1",
+        "RAG_AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
+        "RAG_EMBEDDING_PROVIDER_ENABLED": "true",
+        "RAG_EMBEDDING_API_KEY": "journey-deterministic-no-network",
+        "RAG_EMBEDDING_QUOTA_BUCKET": "journey-rag-embedding",
+        "RAG_EMBEDDING_MODEL": "gemini-embedding-001",
+        "RAG_EMBEDDING_PROVIDER_MAX_RETRIES": "0",
+        "RAG_EMBEDDING_CONCURRENCY": "1",
+        "RAG_EMBEDDING_INPUT_COST_PER_MILLION_USD": "0.01",
+    }
+
+
+def journey_worker_actions(rag_enabled: bool) -> tuple[str, ...]:
+    if rag_enabled:
+        return ("worker", "index-worker", "answer-worker", "email-worker")
+    return ("worker", "email-worker")
+
+
+def run_child_scenario(scenario: str) -> None:
+    subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--scenario", scenario],
+        cwd=ROOT,
+        env=system_environment(),
+        check=True,
+    )
+
+
 def main() -> int:
     arguments = parse_arguments()
+    if arguments.scenario is None:
+        run_child_scenario("rag-off")
+        if not arguments.demo:
+            run_child_scenario("rag-on")
+            return 0
+        arguments.scenario = "rag-on"
+    rag_enabled = arguments.scenario == "rag-on"
     # Inspect before creating services; pin the existing local image and never pull.
     frontend_image = (require_local_frontend_image(arguments.demo_frontend_image)
                       if arguments.demo_frontend_image else None)
@@ -311,12 +369,14 @@ def main() -> int:
                 "FLASHCARD_AI_PROVIDER_MAX_RETRIES": "0", "FLASHCARD_AI_CONCURRENCY": "1",
                 "FLASHCARD_AI_INPUT_COST_PER_MILLION_USD": "0.1", "FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
                 "GENERATION_WORKER_POLL_SECONDS": "0.1", "EMAIL_WORKER_POLL_SECONDS": "0.1",
+                "RAG_INDEX_WORKER_POLL_SECONDS": "0.1", "RAG_ANSWER_WORKER_POLL_SECONDS": "0.1",
                 "SMTP_HOST": "127.0.0.1", "SMTP_PORT": str(port(mailpit, 1025)),
                 "SMTP_FROM_EMAIL": "no-reply@example.com", "SMTP_STARTTLS": "false",
                 "SMTP_IMPLICIT_TLS": "false", "REFRESH_COOKIE_SECURE": "false",
                 "JOURNEY_INSTRUCTOR_EMAIL": instructor_email,
                 "JOURNEY_INSTRUCTOR_PASSWORD": instructor_password,
-            }
+                "JOURNEY_RAG_MODE": arguments.scenario,
+            } | rag_environment(rag_enabled)
             runtime = ROOT / "backend/tests/support/journey_runtime.py"
             subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"],
                            cwd=ROOT / "backend", env=backend_environment, check=True)
@@ -335,8 +395,20 @@ def main() -> int:
             api = start("api", [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
                                 "--port", str(api_port), "--no-access-log"], backend_environment, ROOT / "backend")
             wait_http(f"http://127.0.0.1:{api_port}/health/ready", api)
-            start("generation", [sys.executable, str(runtime), "worker"], backend_environment, ROOT / "backend")
-            start("email", [sys.executable, "-m", "app.email_worker"], backend_environment, ROOT / "backend")
+            worker_commands = {
+                "worker": ("generation", [sys.executable, str(runtime), "worker"]),
+                "index-worker": ("index", [sys.executable, str(runtime), "index-worker"]),
+                "answer-worker": ("answer", [sys.executable, str(runtime), "answer-worker"]),
+                "email-worker": ("email", [sys.executable, "-m", "app.email_worker"]),
+            }
+            for worker_action in journey_worker_actions(rag_enabled):
+                worker_name, worker_command = worker_commands[worker_action]
+                start(
+                    worker_name,
+                    worker_command,
+                    backend_environment,
+                    ROOT / "backend",
+                )
             public_environment = system_environment() | {
                 "JOURNEY_API_ORIGIN": f"http://127.0.0.1:{api_port}",
                 "JOURNEY_CACHE_DIR": str(workspace / "vite-cache"),
@@ -376,6 +448,7 @@ def main() -> int:
                 "JOURNEY_INSTRUCTOR_PASSWORD": instructor_password,
                 "JOURNEY_STUDENT_EMAIL": student_email,
                 "JOURNEY_STUDENT_PASSWORD": student_password,
+                "JOURNEY_RAG_MODE": arguments.scenario,
             }
             result = subprocess.run([node, "node_modules/@playwright/test/cli.js", "test",
                                      "--config", "playwright.journey.config.ts"],
@@ -383,9 +456,18 @@ def main() -> int:
                                     capture_output=True, text=True)
             if result.returncode:
                 print("Browser journey contract failed; private browser diagnostics omitted.")
+                failure_lines = sorted(set(re.findall(
+                    r"instructor-student\.spec\.ts:(\d+):\d+", result.stdout + result.stderr
+                )))
+                if failure_lines:
+                    print(json.dumps({"browser_failure_source_lines": failure_lines}))
+                subprocess.run(
+                    [sys.executable, str(runtime), "diagnose"],
+                    cwd=ROOT / "backend", env=backend_environment, check=False,
+                )
                 failure_summary(workspace, processes)
                 return result.returncode
-            print("Browser journey contract passed.")
+            print(f"Browser journey contract passed ({arguments.scenario}).")
             if any(process.poll() is not None for process in processes):
                 raise RuntimeError("A required application process exited during the journey")
             if frontend_container is not None and not containers_running(names):

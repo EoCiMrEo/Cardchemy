@@ -55,18 +55,23 @@ flowchart LR
    a spawned child process, called through a worker thread. Ordered pages retain
    their original numbering. OCR is disabled by default and runs only when
    native extraction produces no usable document text.
-5. The pipeline assigns trusted page/section chunk IDs, estimates the token,
+5. One shared page-aware preparation assigns trusted page/section/local chunk
+   IDs. With RAG enabled, a short fenced transaction persists private pages and
+   chunks, maps each local ID to a persistent UUID, and enqueues independent
+   indexing before card generation. It never waits for embeddings; a supported
+   capture failure is recorded independently.
+6. The pipeline consumes those prepared chunks, estimates the token,
    cost, and logical-request plan, then greedily packs evidence using rendered
    prompt estimates. A one-pack document skips summaries; every direct batch
    receives the complete pack, including chunks allocated zero cards.
    Multi-pack documents summarize packs and reduce summaries in bounded levels;
    the server tracks source coverage. Largest-remainder allocation and batched
    generation preserve each logical chunk's card quota.
-6. Summary and generation stages begin with a single compatibility request
+7. Summary and generation stages begin with a single compatibility request
    before fan-out; a failure cancels outstanding siblings. Every physical
    provider attempt passes through the worker-wide rolling RPM/input-TPM
    governor. A worker-wide semaphore bounds calls across concurrent jobs.
-7. Provider output is parsed by strict Pydantic contracts, then checked against
+8. Provider output is parsed by strict Pydantic contracts, then checked against
    the trusted chunk and normalized quote. The answer must occur in the
    verified quote. Page/section come from the server, never from model output.
    A deterministic pass rejects unclear/ungrounded cards and near duplicates;
@@ -76,7 +81,7 @@ flowchart LR
    bounded accepted question/answer exclusions as untrusted context; summaries
    remain navigation aids. Full accepted cards retain deterministic duplicate
    enforcement. See [evaluation](../AI_EVALUATION.md) for bounds and evidence.
-8. Success requires exactly the requested number of cards. A final transaction
+9. Success requires exactly the requested number of cards. A final transaction
    revalidates the lease, creates the unpublished set and unapproved cards,
    records telemetry, deletes the source, and completes the job. A rollback
    leaves no partial result. Instructor approval and publication are separate

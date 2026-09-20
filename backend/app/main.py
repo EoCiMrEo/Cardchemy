@@ -24,6 +24,8 @@ try:
         auth_router,
         flashcards_router,
         generation_router,
+        knowledge_router,
+        rag_router,
         study_router,
         subjects_router,
     )
@@ -104,6 +106,8 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     # Static generation routes must precede ``/flashcards/{flashcard_id}`` or
     # FastAPI will try to parse static route names as UUIDs.
     application.include_router(generation_router)
+    application.include_router(knowledge_router)
+    application.include_router(rag_router)
     application.include_router(flashcards_router)
     application.include_router(study_router)
 

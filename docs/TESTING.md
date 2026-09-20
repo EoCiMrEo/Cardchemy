@@ -14,9 +14,10 @@ repository root unless a working directory is specified.
 | Local encrypted SMTP/recovery | `python scripts/test_smtp_tls.py` | Backend development Python and Docker. Actual authenticated STARTTLS/implicit-TLS delivery, certificate/hostname rejection, durable retry and guarded operator recovery on disposable local capture. See [SMTP verification](SMTP-VERIFICATION.md). Required email CI. |
 | Clean production installation/restore | `python scripts/test_production_rehearsal.py --evidence /private/path/result.json` | Clean committed checkout on Linux/amd64 with Docker Compose/OpenSSL. Fresh clone, generated settings, production profile, trusted loopback HTTPS, current-head backup and restore into a separate empty volume, upgrade and recovered application checks. Also manually dispatch [production rehearsal](PRODUCTION_REHEARSAL.md) on protected main. |
 | Frontend offline browser/components and build | `npm run check` from `frontend` | Typecheck, test typecheck, lint, unit/component tests, production build and maintained browser regressions. The separately configured password-reset live case remains gated. |
-| Full real application browser journey | `python scripts/test_journey.py` | Docker and installed Playwright Chromium. Starts a fresh migrated database, real API/generation/email workers and browser frontend; uses a private deterministic AI provider with no provider SDK/network request. |
+| Full real application browser journey | `python scripts/test_journey.py` | Docker and installed Playwright Chromium. Starts a fresh migrated database, real API plus generation/index/answer/email workers and browser frontend; uses private deterministic generation/embedding/answer providers with no provider SDK/network request. Proves independent Knowledge review/publication before Ask AI. |
 | Release metadata/workflow contracts | `python scripts/check_release.py --version 0.1.0` and `python scripts/check_ci.py` | Maintained source/templates only. Remote preflight, signatures and publication require the separate [release procedure](RELEASING.md). |
-| Explicit live AI evaluation | `RUN_LIVE_AI_TESTS=1 python -m pytest -q -m ai_live tests/integration/test_live_ai_pipeline.py` from `backend` | Explicitly inject enabled provider/model/key and reviewed prices as described below. One request, two cards, no retries/refills, 8,192 input/2,048 output tokens, USD 0.02 maximum estimated cost. Never runs in normal CI. |
+| Explicit live AI evaluation | `RUN_LIVE_AI_TESTS=1 python -m pytest -q -m ai_live tests/integration/test_live_ai_pipeline.py` from `backend` | Explicitly inject enabled provider/model/key and reviewed prices as described below. One native Gemini request, two cards, no retries/refills, 8,192 input/2,048 output tokens, USD 0.02 maximum estimated cost. Never runs in normal CI. |
+| Explicit live RAG evaluation | `RUN_LIVE_RAG_TESTS=1 RAG_LIVE_EVAL_AUTHORIZED=I_ACCEPT_PROVIDER_CHARGES python -m pytest -q -m ai_live tests/integration/test_live_rag_evaluation.py` from `backend` | Requires native Gemini, the official endpoint identity, pinned `gemini-3.5-flash`/`gemini-embedding-001` snapshots, role-specific keys/quota buckets and refreshed price floors. At most one query embedding, one answer and one support call; zero retries, one-call concurrency, 12,000 total input/2,048 answer-output tokens, 60 seconds and USD 0.04. Never runs in normal CI. |
 
 Install the browser once from `frontend` using
 `npx playwright install chromium` (Linux CI: `npx playwright install --with-deps chromium`).
@@ -41,18 +42,36 @@ identity and the dynamically resolved Alembic head before any write/cleanup.
 The PostgreSQL suite additionally restores a populated synthetic 1,536-vector
 Subject Knowledge document into a separate guarded child database, then checks
 publication eligibility, page numbering, indexes, capacity counters, linked
-cards and deletion effects. This is local recovery proof, not an operator
-database restore or live embedding-quality evaluation.
+cards and deletion effects. It also runs the capture/index/cutover/exact-hybrid
+pipeline with deterministic local vectors, including authorization, corpus/
+space fences, partial batches and dead leases. Phase 17 cases also exercise
+owner-private API/service access, concurrent idempotency/quota admission, query
+embedding, strict grounded answers, semantic support, atomic exact citations,
+G2 unpublish redaction, access revocation, dead leases and stale claim fencing.
+Phase 19 adds the v2 authored corpus, actual exact pgvector plus `simple` FTS
+recall/ranking/latency/throughput gates, empty retrieval, overlap diversity,
+forbidden-source exposure, unsupported/irrelevant citation rejection and an
+explicit assertion that no ANN index ships.
+This is local recovery proof,
+not an operator database restore or live embedding-quality evaluation.
 
-The full journey exercises operator instructor creation, browser subject
-creation, real PDF upload/extraction, durable generation/grounding, instructor
-review/approval/publication, emailed invitation capture, student registration
-and sign-in, answers and displayed progress. A final PostgreSQL query proves
-two users, one enrollment/set/job, two approved grounded cards, two correct
-progress rows and durable answer receipts, one delivered invitation, and no
-retained PDF source. Its provider exists only in `backend/tests/support/` and
-is injected by the guarded test entry point. Screenshot/video/trace capture is
-disabled for this generated-credential journey.
+The full journey runs two isolated disposable application scenarios. With RAG
+disabled, an ordinary real-PDF flashcard generation/review/publication proves
+normal source cleanup while Knowledge, embedding, thread and answer records and
+their provider workers remain absent. The RAG-enabled scenario exercises
+operator instructor creation, browser subject creation, real PDF upload/
+extraction, durable flashcard generation/grounding and card/set publication,
+including the negative proof that flashcard publication alone leaves Ask AI
+unavailable. The same instructor reviews and publishes Knowledge independently,
+after which an invited student enrolled in two real Subjects receives one
+deterministic grounded answer with a current page citation, completes study and
+gets a 404 when attempting to read that thread through the other Subject. Final
+PostgreSQL queries prove the scenario-specific users/enrollments/sets/cards,
+Knowledge content/index publication, private conversation/job/message/source,
+answer receipts/progress, delivered invitation and no retained PDF source. The
+providers exist only in `backend/tests/support/` and are injected by the guarded
+test entry point. Screenshot/video/trace capture is disabled for this generated-
+credential journey.
 
 `PASSWORD_RESET_LIVE_*` values are only for the dedicated password-reset
 browser case. Its seed helper refuses any database except
@@ -60,22 +79,22 @@ browser case. Its seed helper refuses any database except
 `password-reset-browser-*@example.com` accounts. The complete journey command
 uses its own automatically generated accounts and needs no manual credentials.
 
-The live smoke evaluation admits only `FLASHCARD_AI_PROVIDER=openai_compatible`,
-`FLASHCARD_AI_BASE_URL=https://api.openai.com/v1`, and
-`FLASHCARD_AI_MODEL=gpt-4o-mini-2024-07-18`. Supply `FLASHCARD_AI_PROVIDER_ENABLED=true`, `FLASHCARD_AI_API_KEY`,
+The live smoke evaluation admits only `FLASHCARD_AI_PROVIDER=gemini`, an empty
+`FLASHCARD_AI_BASE_URL` (the native adapter uses Google's official endpoint), and
+`FLASHCARD_AI_MODEL=gemini-3.5-flash-lite` with
+`FLASHCARD_AI_THINKING_LEVEL=minimal`. Supply `FLASHCARD_AI_PROVIDER_ENABLED=true`, `FLASHCARD_AI_API_KEY`,
 an explicit `FLASHCARD_AI_QUOTA_BUCKET` with a separately divided worker/replica quota,
 and reviewed `FLASHCARD_AI_INPUT_COST_PER_MILLION_USD` / `FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD`
 through the process environment, using shell-specific assignment syntax.
-Prices must be at least USD 0.15 / 0.60 per million tokens, respectively,
-reviewed against the [official model pricing](https://developers.openai.com/api/docs/models/gpt-4o-mini)
+Prices must be at least USD 0.30 / 2.50 per million tokens, respectively,
+reviewed against the [official Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
 before each run. Admission reserves the entire input/output token envelope,
 counts UTF-8 prompt and actual closed-schema bytes plus framing headroom, and
-rejects unknown endpoints, moving aliases, reasoning models, underpriced
+rejects custom endpoints, moving aliases, other models/providers, underpriced
 estimates, or a second call. Provider-reported usage is mandatory afterward;
 missing usage or a reported overrun fails evaluation without admitting a
-retry. The server output cap and completion usage cover this non-reasoning
-model's output. Other models require
-a separately reviewed bound that accounts for billable thought tokens. The
+retry. The provider-reported output usage includes billable generated tokens;
+other models require a separately reviewed bound for their token semantics. The
 USD 0.02 limit is a token-price estimate; taxes and future provider pricing are
 outside that estimate, so also apply provider account spending controls.
 
@@ -84,9 +103,26 @@ deterministic journey. Consult [AI evaluation](AI_EVALUATION.md) for the authore
 corpus and release thresholds; no offline pass proves a current remote model's
 behavior.
 
+The live RAG harness is a separate authorization. In addition to both opt-in
+flags in the table, inject `RAG_ENABLED=true`,
+`RAG_AI_PROVIDER_ENABLED=true`, `RAG_EMBEDDING_PROVIDER_ENABLED=true`, native
+`gemini` providers, role-specific API keys and explicit answer/embedding quota
+buckets. Both base URLs remain empty; the adapters use the canonical Google
+endpoint identity. The guard accepts only `gemini-3.5-flash` and
+`gemini-embedding-001` at 1,536 dimensions with the fixed retrieval task modes.
+The answer profile must pin `RAG_AI_THINKING_LEVEL=minimal`.
+Before every authorized run, refresh the configured USD 1.50 input / USD 9.00
+output / USD 0.15 embedding per-million-token price floors against official
+pricing and retain provider-account spending controls. Reported Gemini thinking
+tokens count as output; embedding tokens are a conservative local estimate.
+The harness forces provider retries to zero and concurrency to one. Neither
+setting both provider switches nor passing the offline v2 corpus authorizes
+this paid test.
+
 ## Operational and privacy contracts
 
-The offline suite includes structured-log/exception redaction, concurrent
+The offline suite includes strict Ask AI output/quote/support/prompt-injection
+contracts and every private thread/job/source HTTP endpoint, plus structured-log/exception redaction, concurrent
 correlation isolation, safe job metrics, fresh/stale/draining worker probes,
 disabled/explicit numeric telemetry, private exclusive export permissions,
 operator deletion flags and sanitized startup failures. PostgreSQL cases verify

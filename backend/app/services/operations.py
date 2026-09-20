@@ -18,6 +18,8 @@ from sqlalchemy import func, select
 from app.models.email import EmailOutboxMessage
 from app.models.generation import GenerationJob
 from app.models.operations import RequestEvent, WorkerHeartbeat
+from app.models.knowledge import SubjectDocumentIndexJob, SubjectDocumentIndexRevision
+from app.models.rag import RagAnswerJob, RagMessage
 from app.time_utils import as_utc, utcnow
 
 
@@ -32,7 +34,7 @@ async def record_request(factory, identifier: UUID, route: str, method: str, sta
 
 
 def worker_health_path(kind: str) -> Path:
-    if kind not in {"generation", "email"}:
+    if kind not in {"generation", "email", "index", "answer"}:
         raise ValueError("Unknown worker kind")
     return Path(tempfile.gettempdir()) / f"cardchemy-{kind}-health.json"
 
@@ -114,6 +116,12 @@ async def _collect_metrics(db, settings) -> dict:
     request_groups = (await db.execute(select(RequestEvent.route, RequestEvent.method, RequestEvent.status_code, func.count(RequestEvent.id)).where(RequestEvent.created_at >= window).group_by(RequestEvent.route, RequestEvent.method, RequestEvent.status_code).order_by(RequestEvent.route, RequestEvent.method, RequestEvent.status_code).limit(1000))).all()
     job_groups = (await db.execute(select(GenerationJob.status, func.count(GenerationJob.id)).group_by(GenerationJob.status))).all()
     email_groups = (await db.execute(select(EmailOutboxMessage.status, func.count(EmailOutboxMessage.id)).group_by(EmailOutboxMessage.status))).all()
+    index_groups = (await db.execute(select(SubjectDocumentIndexJob.status, func.count(SubjectDocumentIndexJob.id)).group_by(SubjectDocumentIndexJob.status))).all()
+    answer_groups = (await db.execute(select(RagAnswerJob.status, func.count(RagAnswerJob.id)).group_by(RagAnswerJob.status))).all()
+    capture_groups = (await db.execute(select(
+        GenerationJob.knowledge_capture_status,
+        func.count(GenerationJob.id),
+    ).group_by(GenerationJob.knowledge_capture_status))).all()
     usage_rows = (await db.execute(select(
         GenerationJob.ai_provider, GenerationJob.ai_model, func.count(GenerationJob.id),
         func.coalesce(func.sum(GenerationJob.generated_card_count), 0),
@@ -128,15 +136,100 @@ async def _collect_metrics(db, settings) -> dict:
     ).group_by(GenerationJob.ai_provider, GenerationJob.ai_model).order_by(GenerationJob.ai_provider, GenerationJob.ai_model).limit(100))).all()
     recent_jobs = (await db.execute(select(GenerationJob.started_at, GenerationJob.completed_at).order_by(GenerationJob.created_at.desc(), GenerationJob.id).limit(1000))).all()
     durations = [max(0, int((as_utc(completed_at) - as_utc(started_at)).total_seconds() * 1000)) for started_at, completed_at in recent_jobs if completed_at is not None and started_at is not None]
+    capture_rows = (await db.execute(select(
+        GenerationJob.knowledge_capture_started_at,
+        GenerationJob.knowledge_capture_completed_at,
+    ).where(
+        GenerationJob.knowledge_capture_status != "not_requested"
+    ).order_by(GenerationJob.created_at.desc(), GenerationJob.id).limit(1000))).all()
+    capture_durations = [
+        max(0, int((as_utc(completed) - as_utc(started)).total_seconds() * 1000))
+        for started, completed in capture_rows
+        if started is not None and completed is not None
+    ]
+    index_rows = (await db.execute(select(
+        SubjectDocumentIndexJob.created_at,
+        SubjectDocumentIndexJob.completed_at,
+    ).order_by(
+        SubjectDocumentIndexJob.created_at.desc(), SubjectDocumentIndexJob.id
+    ).limit(1000))).all()
+    index_durations = [
+        max(0, int((as_utc(completed) - as_utc(created)).total_seconds() * 1000))
+        for created, completed in index_rows
+        if completed is not None
+    ]
+    index_usage_rows = (await db.execute(select(
+        SubjectDocumentIndexRevision.embedding_provider,
+        SubjectDocumentIndexRevision.embedding_model,
+        func.count(SubjectDocumentIndexJob.id),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.estimated_input_tokens), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.actual_input_tokens), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.estimated_cost_microusd), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.actual_cost_microusd), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.provider_request_count), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.provider_retry_count), 0),
+        func.coalesce(func.sum(SubjectDocumentIndexJob.provider_rate_limit_wait_milliseconds), 0),
+    ).join(
+        SubjectDocumentIndexRevision,
+        SubjectDocumentIndexRevision.id == SubjectDocumentIndexJob.index_revision_id,
+    ).group_by(
+        SubjectDocumentIndexRevision.embedding_provider,
+        SubjectDocumentIndexRevision.embedding_model,
+    ).order_by(
+        SubjectDocumentIndexRevision.embedding_provider,
+        SubjectDocumentIndexRevision.embedding_model,
+    ).limit(100))).all()
+    answer_rows = (await db.execute(select(
+        RagAnswerJob.created_at,
+        RagAnswerJob.provider_call_started_at,
+        RagAnswerJob.retrieval_completed_at,
+        RagAnswerJob.completed_at,
+    ).order_by(RagAnswerJob.created_at.desc(), RagAnswerJob.id).limit(1000))).all()
+    answer_durations = [
+        max(0, int((as_utc(completed) - as_utc(created)).total_seconds() * 1000))
+        for created, _provider_started, _retrieval_completed, completed in answer_rows
+        if completed is not None
+    ]
+    retrieval_durations = [
+        max(0, int((as_utc(retrieval_completed) - as_utc(provider_started)).total_seconds() * 1000))
+        for _created, provider_started, retrieval_completed, _completed in answer_rows
+        if provider_started is not None and retrieval_completed is not None
+    ]
+    answer_usage_rows = (await db.execute(select(
+        RagAnswerJob.ai_provider,
+        RagAnswerJob.ai_model,
+        func.count(RagAnswerJob.id),
+        func.coalesce(func.sum(RagAnswerJob.estimated_input_tokens), 0),
+        func.coalesce(func.sum(RagAnswerJob.estimated_output_tokens), 0),
+        func.coalesce(func.sum(RagAnswerJob.actual_input_tokens), 0),
+        func.coalesce(func.sum(RagAnswerJob.actual_output_tokens), 0),
+        func.coalesce(func.sum(RagAnswerJob.estimated_cost_microusd), 0),
+        func.coalesce(func.sum(RagAnswerJob.actual_cost_microusd), 0),
+        func.coalesce(func.sum(RagAnswerJob.provider_request_count), 0),
+        func.coalesce(func.sum(RagAnswerJob.provider_retry_count), 0),
+        func.coalesce(func.sum(RagAnswerJob.provider_rate_limit_wait_milliseconds), 0),
+        func.coalesce(func.sum(RagAnswerJob.support_rejection_count), 0),
+    ).group_by(
+        RagAnswerJob.ai_provider, RagAnswerJob.ai_model,
+    ).order_by(RagAnswerJob.ai_provider, RagAnswerJob.ai_model).limit(100))).all()
+    answer_outcomes = (await db.execute(select(
+        RagMessage.outcome, func.count(RagMessage.id)
+    ).where(
+        RagMessage.role == "assistant",
+        RagMessage.created_at >= window,
+    ).group_by(RagMessage.outcome))).all()
     now = utcnow()
     # Heartbeat history is bounded; stale instances remain visible until cleanup.
     workers = (await db.scalars(select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen_at.desc(), WorkerHeartbeat.worker_id).limit(100))).all()
     worker_rows = [{"worker_id": item.worker_id, "kind": item.kind, "status": item.status, "healthy": item.status in {"running", "disabled"} and (now - as_utc(item.last_seen_at)).total_seconds() < settings.worker_health_stale_seconds, "last_seen_at": as_utc(item.last_seen_at).isoformat()} for item in workers]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "requests": {"retention_days": settings.request_retention_days, "count": int(request_count), "server_error_count": int(error_count), "server_error_rate": error_count / request_count if request_count else 0.0, "latency_milliseconds_sum": int(latency_sum), "latency_milliseconds_average": latency_sum / request_count if request_count else 0.0, "recent_sample_count": len(recent_latencies), "recent_p95_milliseconds": recent_latencies[min(len(recent_latencies) - 1, int(len(recent_latencies) * 0.95))] if recent_latencies else 0, "routes": [{"route": route, "method": method, "status_code": status_code, "count": count} for route, method, status_code, count in request_groups]},
         "generation": {"status_counts": dict(job_groups), "queue_depth": dict(job_groups).get("queued", 0), "duration_sample_count": len(durations), "duration_milliseconds_sum": sum(durations), "duration_milliseconds_average": sum(durations) / len(durations) if durations else 0.0, "models": [dict(zip(("provider", "model", "job_count", "generated_card_count", "estimated_input_tokens", "estimated_output_tokens", "estimated_cost_microusd", "actual_input_tokens", "actual_output_tokens", "actual_cost_microusd", "provider_request_count", "provider_retry_count"), row)) for row in usage_rows]},
         "email": {"status_counts": dict(email_groups), "queue_depth": dict(email_groups).get("pending", 0)},
+        "knowledge_capture": {"status_counts": dict(capture_groups), "failure_count": dict(capture_groups).get("failed", 0), "throughput_count": dict(capture_groups).get("captured", 0), "duration_sample_count": len(capture_durations), "duration_milliseconds_sum": sum(capture_durations), "duration_milliseconds_average": sum(capture_durations) / len(capture_durations) if capture_durations else 0.0},
+        "knowledge_index": {"status_counts": dict(index_groups), "queue_depth": dict(index_groups).get("queued", 0), "failure_count": dict(index_groups).get("failed", 0), "throughput_count": dict(index_groups).get("completed", 0), "duration_sample_count": len(index_durations), "duration_milliseconds_sum": sum(index_durations), "duration_milliseconds_average": sum(index_durations) / len(index_durations) if index_durations else 0.0, "models": [dict(zip(("provider", "model", "job_count", "estimated_input_tokens", "actual_input_tokens", "estimated_cost_microusd", "actual_cost_microusd", "provider_request_count", "provider_retry_count", "provider_rate_limit_wait_milliseconds"), row)) for row in index_usage_rows]},
+        "rag_answer": {"status_counts": dict(answer_groups), "queue_depth": dict(answer_groups).get("queued", 0), "failure_count": dict(answer_groups).get("failed", 0), "throughput_count": dict(answer_groups).get("completed", 0), "duration_sample_count": len(answer_durations), "duration_milliseconds_sum": sum(answer_durations), "duration_milliseconds_average": sum(answer_durations) / len(answer_durations) if answer_durations else 0.0, "retrieval_duration_sample_count": len(retrieval_durations), "retrieval_duration_milliseconds_sum": sum(retrieval_durations), "retrieval_duration_milliseconds_average": sum(retrieval_durations) / len(retrieval_durations) if retrieval_durations else 0.0, "outcome_counts": {str(outcome): count for outcome, count in answer_outcomes if outcome is not None}, "models": [dict(zip(("provider", "model", "job_count", "estimated_input_tokens", "estimated_output_tokens", "actual_input_tokens", "actual_output_tokens", "estimated_cost_microusd", "actual_cost_microusd", "provider_request_count", "provider_retry_count", "provider_rate_limit_wait_milliseconds", "support_rejection_count"), row)) for row in answer_usage_rows]},
         "workers": worker_rows,
     }
 
@@ -165,8 +258,17 @@ def telemetry_snapshot(metrics: dict) -> dict:
 
     models = metrics["generation"]["models"]
     keys = ("job_count", "generated_card_count", "estimated_input_tokens", "estimated_output_tokens", "estimated_cost_microusd", "actual_input_tokens", "actual_output_tokens", "actual_cost_microusd", "provider_request_count", "provider_retry_count")
-    payload = {"schema_version": 1, "request_count": metrics["requests"]["count"], "request_server_error_count": metrics["requests"]["server_error_count"], "request_latency_milliseconds_sum": metrics["requests"]["latency_milliseconds_sum"], "generation_queue_depth": metrics["generation"]["queue_depth"], "email_queue_depth": metrics["email"]["queue_depth"], "generation_duration_milliseconds_sum": metrics["generation"]["duration_milliseconds_sum"], "generation_duration_sample_count": metrics["generation"]["duration_sample_count"], "worker_healthy_count": sum(item["healthy"] for item in metrics["workers"])}
+    payload = {"schema_version": 2, "request_count": metrics["requests"]["count"], "request_server_error_count": metrics["requests"]["server_error_count"], "request_latency_milliseconds_sum": metrics["requests"]["latency_milliseconds_sum"], "generation_queue_depth": metrics["generation"]["queue_depth"], "email_queue_depth": metrics["email"]["queue_depth"], "knowledge_index_queue_depth": metrics["knowledge_index"]["queue_depth"], "rag_answer_queue_depth": metrics["rag_answer"]["queue_depth"], "generation_duration_milliseconds_sum": metrics["generation"]["duration_milliseconds_sum"], "generation_duration_sample_count": metrics["generation"]["duration_sample_count"], "knowledge_capture_failure_count": metrics["knowledge_capture"]["failure_count"], "knowledge_capture_throughput_count": metrics["knowledge_capture"]["throughput_count"], "knowledge_capture_duration_milliseconds_sum": metrics["knowledge_capture"]["duration_milliseconds_sum"], "knowledge_index_failure_count": metrics["knowledge_index"]["failure_count"], "knowledge_index_throughput_count": metrics["knowledge_index"]["throughput_count"], "knowledge_index_duration_milliseconds_sum": metrics["knowledge_index"]["duration_milliseconds_sum"], "rag_answer_failure_count": metrics["rag_answer"]["failure_count"], "rag_answer_throughput_count": metrics["rag_answer"]["throughput_count"], "rag_answer_duration_milliseconds_sum": metrics["rag_answer"]["duration_milliseconds_sum"], "rag_retrieval_duration_milliseconds_sum": metrics["rag_answer"]["retrieval_duration_milliseconds_sum"], "rag_answer_count": metrics["rag_answer"]["outcome_counts"].get("answer", 0), "rag_abstention_count": metrics["rag_answer"]["outcome_counts"].get("abstained", 0), "worker_healthy_count": sum(item["healthy"] for item in metrics["workers"])}
     payload.update({key: sum(int(model[key]) for model in models) for key in keys})
+    for prefix, collection in (
+        ("knowledge_index", metrics["knowledge_index"]["models"]),
+        ("rag_answer", metrics["rag_answer"]["models"]),
+    ):
+        for key in ("job_count", "estimated_input_tokens", "actual_input_tokens", "estimated_cost_microusd", "actual_cost_microusd", "provider_request_count", "provider_retry_count", "provider_rate_limit_wait_milliseconds"):
+            payload[f"{prefix}_{key}"] = sum(int(model[key]) for model in collection)
+    payload["rag_answer_estimated_output_tokens"] = sum(int(model["estimated_output_tokens"]) for model in metrics["rag_answer"]["models"])
+    payload["rag_answer_actual_output_tokens"] = sum(int(model["actual_output_tokens"]) for model in metrics["rag_answer"]["models"])
+    payload["rag_support_rejection_count"] = sum(int(model["support_rejection_count"]) for model in metrics["rag_answer"]["models"])
     return payload
 
 
