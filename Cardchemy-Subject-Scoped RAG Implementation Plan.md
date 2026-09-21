@@ -960,19 +960,22 @@ Enrolled user's own Subject conversation → durable authorized answer job
   permanent quotas and operator export/delete/retention contracts are implemented.
 - [x] Existing gates, new RAG corpus/security/race tests, deterministic journeys and
   populated recovery pass; live checks require their separate explicit authorization.
-- [ ] All blocking gates are resolved, relevant context/evidence is current and
+- [x] All blocking gates are resolved, relevant context/evidence is current and
   planned/implemented/offline/live/production claims remain distinct.
 - [x] `docker compose up` from a fresh clone starts the full application with no source edits, no insecure default credentials, and a tested upgrade/backup path.
 - [x] All tests pass including live AI tests.
 
-The remaining definition-of-done gate is intentionally not marked complete
-until the merged protected-main source passes hosted Linux CI/rehearsal and its
-own clean-clone Compose start. The two operator-owned rollout items are resolved:
-the product is distributed for self-hosted Docker operation rather than a central
-production deployment, and release-specific Windows/browser/Narrator validation
-passed. The bounded live Gemini evaluations and complete offline/service/frontend/
-journey suites passed, along with populated pgvector and conversation/citation
-restore and deterministic RAG-off/RAG-on journeys.
+All definition-of-done gates are complete. PR #36 passed all 14 hosted checks,
+including `ci-required` and dependency review, and merged as protected-main
+commit `8a5c0aa`. Production recovery rehearsal #7 passed that exact commit, and
+an isolated fresh clone of it completed exact root `docker compose up -d` with
+migration exit zero, all eight long-running services healthy, routed `/healthz`
+HTTP 200 and a clean source tree. The product is distributed for self-hosted
+Docker operation rather than a central production deployment; release-specific
+Windows/browser/Narrator validation passed. The bounded live Gemini evaluations
+and complete offline/service/frontend/journey suites passed, along with populated
+pgvector and conversation/citation restore and deterministic RAG-off/RAG-on
+journeys.
 
 ## Source and command authority
 
