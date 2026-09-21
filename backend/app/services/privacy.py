@@ -17,7 +17,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
-from app.models.generation import GenerationJob, GenerationJobSource, GenerationQuotaEvent
+from app.models.generation import (
+    GenerationJob,
+    GenerationJobSource,
+    GenerationQuotaEvent,
+    KnowledgeUploadQuotaEvent,
+)
+from app.models.knowledge import (
+    SubjectDocument,
+    SubjectDocumentChunk,
+    SubjectDocumentContentRevision,
+    SubjectDocumentIndexJob,
+    SubjectDocumentIndexRevision,
+    SubjectDocumentPage,
+)
+from app.models.rag import (
+    RagAnswerJob,
+    RagAnswerQuotaEvent,
+    RagMessage,
+    RagMessageSource,
+    RagThread,
+)
 from app.models.email import EmailOutboxMessage
 from app.models.subject import FlashcardSet, Subject
 from app.models.user import AuthSession, InviteLink, PasswordResetToken, RateLimitBucket, User
@@ -61,6 +81,11 @@ async def export_account(db: AsyncSession, user_id: UUID) -> dict:
 
     owned_subjects = select(Subject.id).where(Subject.instructor_id == user_id)
     owned_sets = select(FlashcardSet.id).where(FlashcardSet.subject_id.in_(owned_subjects))
+    owned_documents = select(SubjectDocument.id).where(SubjectDocument.uploader_id == user_id)
+    owned_indexes = select(SubjectDocumentIndexRevision.id).where(
+        SubjectDocumentIndexRevision.uploader_id == user_id
+    )
+    owned_rag_messages = select(RagMessage.id).where(RagMessage.user_id == user_id)
 
     async def rows(model, condition, fields: tuple[str, ...]) -> list[dict]:
         records = await db.scalars(select(model).where(condition).order_by(model.id))
@@ -103,11 +128,91 @@ async def export_account(db: AsyncSession, user_id: UUID) -> dict:
                              "card_type", "quality_score", "is_approved", "source_snippet",
                              "source_page", "source_section", "created_at")),
         "jobs": await rows(GenerationJob, GenerationJob.user_id == user_id,
-                           ("id", "subject_id", "status", "stage", "requested_card_count",
+                           ("id", "subject_id", "job_kind", "document_id",
+                            "knowledge_content_revision_id", "knowledge_capture_status",
+                            "knowledge_capture_error_code", "status", "stage", "requested_card_count",
                             "generated_card_count", "ai_provider", "ai_model", "error_code",
                             "provider_request_count", "provider_retry_count", "estimated_input_tokens",
                             "estimated_output_tokens", "actual_input_tokens", "actual_output_tokens",
                             "estimated_cost_microusd", "actual_cost_microusd", "created_at", "completed_at")),
+        "knowledge_documents": await rows(
+            SubjectDocument,
+            SubjectDocument.uploader_id == user_id,
+            ("id", "subject_id", "title", "source_pdf_name", "created_at", "updated_at"),
+        ),
+        "knowledge_content_revisions": await rows(
+            SubjectDocumentContentRevision,
+            SubjectDocumentContentRevision.uploader_id == user_id,
+            ("id", "document_id", "subject_id", "revision_no", "extraction_version",
+             "status", "is_active", "reviewed_at", "published_at",
+             "created_at", "updated_at"),
+        ),
+        "knowledge_pages": await rows(
+            SubjectDocumentPage,
+            SubjectDocumentPage.document_id.in_(owned_documents),
+            ("id", "content_revision_id", "document_id", "subject_id", "page_number", "content"),
+        ),
+        "knowledge_index_revisions": await rows(
+            SubjectDocumentIndexRevision,
+            SubjectDocumentIndexRevision.uploader_id == user_id,
+            ("id", "content_revision_id", "document_id", "subject_id", "revision_no",
+             "chunker_version", "embedding_provider", "embedding_model",
+             "embedding_space_revision", "embedding_format_version", "embedding_dimensions",
+             "embedding_representation", "embedding_metric", "document_task_mode",
+             "query_task_mode", "status",
+             "is_active", "created_at", "updated_at"),
+        ),
+        # Embedding vectors are derived provider output and intentionally omitted;
+        # server-derived source text/provenance remains part of the user's export.
+        "knowledge_chunks": await rows(
+            SubjectDocumentChunk,
+            SubjectDocumentChunk.index_revision_id.in_(owned_indexes),
+            ("id", "index_revision_id", "content_revision_id", "document_id", "subject_id",
+             "chunk_index", "local_chunk_id", "page_number", "section", "content", "token_count",
+            ),
+        ),
+        "knowledge_index_jobs": await rows(
+            SubjectDocumentIndexJob,
+            SubjectDocumentIndexJob.uploader_id == user_id,
+            ("id", "index_revision_id", "content_revision_id", "document_id", "subject_id",
+             "status", "attempt_count", "max_attempts", "error_code", "estimated_input_tokens",
+             "actual_input_tokens", "provider_request_count", "provider_retry_count",
+             "estimated_cost_microusd", "actual_cost_microusd", "created_at", "completed_at"),
+        ),
+        # Conversation export is principal-owned even for instructors: access
+        # to a Subject never grants access to another user's private chat.
+        "rag_threads": await rows(
+            RagThread,
+            RagThread.user_id == user_id,
+            ("id", "subject_id", "created_at", "updated_at"),
+        ),
+        "rag_messages": await rows(
+            RagMessage,
+            RagMessage.user_id == user_id,
+            ("id", "thread_id", "subject_id", "role", "outcome", "content",
+             "source_count", "corpus_revision", "created_at",
+             "expires_at"),
+        ),
+        "rag_message_sources": await rows(
+            RagMessageSource,
+            RagMessageSource.message_id.in_(owned_rag_messages),
+            ("id", "message_id", "thread_id", "subject_id", "chunk_id", "document_id",
+             "content_revision_id", "index_revision_id", "citation_order", "claim_text",
+             "source_quote", "created_at"),
+        ),
+        "rag_answer_jobs": await rows(
+            RagAnswerJob,
+            RagAnswerJob.user_id == user_id,
+            ("id", "thread_id", "question_message_id", "answer_message_id", "subject_id",
+             "status", "document_ids", "corpus_revision", "retrieval_policy",
+             "ai_provider", "ai_model", "attempt_count",
+             "manual_retry_count", "max_attempts", "estimated_input_tokens",
+             "estimated_output_tokens", "actual_input_tokens", "actual_output_tokens",
+             "provider_request_count", "provider_retry_count",
+             "provider_rate_limit_wait_milliseconds", "estimated_cost_microusd",
+             "actual_cost_microusd", "usage_estimated", "support_rejection_count",
+             "error_code", "created_at", "completed_at"),
+        ),
     }
 
 
@@ -130,6 +235,26 @@ async def delete_account(db: AsyncSession, user_id: UUID) -> dict[str, int]:
     )).all())
     if any(job.status == "running" for job in jobs):
         raise PrivacyOperationError("account_work_active", "Stop and drain account generation work before deletion.")
+    index_jobs = list((await db.scalars(
+        select(SubjectDocumentIndexJob).where(or_(
+            SubjectDocumentIndexJob.uploader_id == user_id,
+            SubjectDocumentIndexJob.subject_id.in_(subject_ids),
+        )).order_by(SubjectDocumentIndexJob.id).with_for_update()
+    )).all())
+    if any(job.status == "running" for job in index_jobs):
+        raise PrivacyOperationError(
+            "account_work_active", "Stop and drain account Knowledge indexing before deletion."
+        )
+    answer_jobs = list((await db.scalars(
+        select(RagAnswerJob).where(or_(
+            RagAnswerJob.user_id == user_id,
+            RagAnswerJob.subject_id.in_(subject_ids),
+        )).order_by(RagAnswerJob.id).with_for_update()
+    )).all())
+    if any(job.status == "running" for job in answer_jobs):
+        raise PrivacyOperationError(
+            "account_work_active", "Stop and drain account Ask AI work before deletion."
+        )
 
     email = user.email.strip().lower()
     invite_ids = select(InviteLink.id).where(InviteLink.instructor_id == user_id)
@@ -166,7 +291,8 @@ async def delete_account(db: AsyncSession, user_id: UUID) -> dict[str, int]:
     AuditService.record(db, action=AuditAction.ACCOUNT_DELETED, actor_kind="operator",
                         target_type="account", target_id=user_id, affected_count=1)
     await db.flush()
-    return {"accounts": 1, "generation_jobs": len(jobs), "email_events": len(outbox),
+    return {"accounts": 1, "generation_jobs": len(jobs), "knowledge_index_jobs": len(index_jobs),
+            "rag_answer_jobs": len(answer_jobs), "email_events": len(outbox),
             "recipient_invitations": len(bound_invites)}
 
 
@@ -191,6 +317,11 @@ async def cleanup_retention(db: AsyncSession, settings: Settings, dry_run: bool 
     has_source = exists().where(GenerationJobSource.job_id == GenerationJob.id)
     has_reset_email = exists().where(EmailOutboxMessage.password_reset_token_id == PasswordResetToken.id)
     has_invite_email = exists().where(EmailOutboxMessage.invite_link_id == InviteLink.id)
+    has_answer_job = exists().where(RagAnswerJob.answer_message_id == RagMessage.id)
+    has_rag_message = exists().where(RagMessage.thread_id == RagThread.id)
+    # Some narrow unit-test settings objects predate Ask AI. Runtime Settings
+    # always supplies this field; the fallback preserves the approved G2 value.
+    rag_cutoff = now - timedelta(days=getattr(settings, "rag_chat_retention_days", 90))
     categories = (
         ("request_events", RequestEvent, RequestEvent.created_at < now - timedelta(days=settings.request_retention_days), RequestEvent.id),
         ("audit_events", AuditEvent, AuditEvent.created_at < now - timedelta(days=settings.audit_retention_days), AuditEvent.id),
@@ -203,6 +334,24 @@ async def cleanup_retention(db: AsyncSession, settings: Settings, dry_run: bool 
         ("generation_quota_events", GenerationQuotaEvent,
          (GenerationQuotaEvent.created_at < metadata_cutoff) & GenerationQuotaEvent.job_id.is_(None),
          GenerationQuotaEvent.id),
+        ("knowledge_upload_quota_events", KnowledgeUploadQuotaEvent,
+         (KnowledgeUploadQuotaEvent.created_at < metadata_cutoff) & KnowledgeUploadQuotaEvent.job_id.is_(None),
+         KnowledgeUploadQuotaEvent.id),
+        # Questions are deleted first so their ON DELETE CASCADE removes the
+        # durable job. Assistant rows referenced by a surviving job are held
+        # until that question/job can be safely removed.
+        ("rag_question_messages", RagMessage,
+         (RagMessage.expires_at < now) & (RagMessage.role == "user"), RagMessage.id),
+        ("rag_assistant_messages", RagMessage,
+         (RagMessage.expires_at < now) & (RagMessage.role == "assistant") & ~has_answer_job,
+         RagMessage.id),
+        ("rag_threads", RagThread,
+         (RagThread.updated_at < rag_cutoff) & ~has_rag_message, RagThread.id),
+        # Quota receipts remain idempotency/rate-limit evidence while their job
+        # exists; job deletion detaches the event with SET NULL.
+        ("rag_answer_quota_events", RagAnswerQuotaEvent,
+         (RagAnswerQuotaEvent.created_at < metadata_cutoff) & RagAnswerQuotaEvent.job_id.is_(None),
+         RagAnswerQuotaEvent.id),
         ("auth_sessions", AuthSession, AuthSession.expires_at < metadata_cutoff, AuthSession.id),
         ("password_reset_tokens", PasswordResetToken, (PasswordResetToken.expires_at < metadata_cutoff) & ~has_reset_email, PasswordResetToken.id),
         ("invite_links", InviteLink, (InviteLink.expires_at < metadata_cutoff) & ~has_invite_email, InviteLink.id),
@@ -214,6 +363,11 @@ async def cleanup_retention(db: AsyncSession, settings: Settings, dry_run: bool 
         "generation_jobs": GenerationJob.completed_at,
         "rate_limit_buckets": RateLimitBucket.updated_at,
         "generation_quota_events": GenerationQuotaEvent.created_at,
+        "knowledge_upload_quota_events": KnowledgeUploadQuotaEvent.created_at,
+        "rag_question_messages": RagMessage.expires_at,
+        "rag_assistant_messages": RagMessage.expires_at,
+        "rag_threads": RagThread.updated_at,
+        "rag_answer_quota_events": RagAnswerQuotaEvent.created_at,
         "auth_sessions": AuthSession.expires_at,
         "password_reset_tokens": PasswordResetToken.expires_at,
         "invite_links": InviteLink.expires_at,

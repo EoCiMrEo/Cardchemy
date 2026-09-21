@@ -2,7 +2,7 @@
 
 The base Compose stack is a production-shaped local installation: it builds the
 frontend and backend, migrates PostgreSQL before starting the API, runs separate
-generation and email workers, captures local mail in Mailpit, and exposes only
+generation, Knowledge-index, Subject-answer and email workers, captures local mail in Mailpit, and exposes only
 the frontend and Mailpit UI on IPv4 loopback. It has no source mounts, reload
 mode, debug mode, public API port, or public database port.
 
@@ -27,7 +27,12 @@ their values. The application is at <http://127.0.0.1:8080>; Mailpit is at
 <http://127.0.0.1:8025>. A provider key is optional for startup but required to
 generate cards; set `FLASHCARD_AI_PROVIDER_ENABLED=true` only after configuring that key.
 The API receives this non-secret switch while the credential remains isolated
-to the generation worker. Stop the stack with `docker compose down`; do not add
+to the generation worker. The API never receives the embedding credential;
+`index-worker` receives only `RAG_EMBEDDING_API_KEY`; `answer-worker` receives
+only `RAG_AI_API_KEY` plus `RAG_EMBEDDING_API_KEY`, while the generation worker
+receives the non-secret RAG capture profile. Keep both RAG flags false
+until retention/provider terms and current prices have been reviewed. Stop the
+stack with `docker compose down`; do not add
 `--volumes` unless destroying all local application data is intentional.
 
 ## Compose variants
@@ -105,30 +110,32 @@ paths are `/api/docs`, `/api/redoc`, and `/api/openapi.json`.
 database. Container readiness uses the database-aware probe. The workers also
 check their own scheduling-loop heartbeat and the database, so a stalled loop
 cannot remain healthy merely because PostgreSQL answers. Disabled generation
-workers continue pulsing; draining workers stop reporting readiness. See
+index and answer workers continue pulsing; draining workers stop reporting readiness. See
 [diagnostics and health](OBSERVABILITY.md) and [privacy controls](PRIVACY.md).
 
 SIGTERM stops workers from claiming new work and gives active work 30 seconds
 by default to finish. Compose allows 45 seconds before force-killing them. Tune
 `WORKER_SHUTDOWN_GRACE_SECONDS` together with `stop_grace_period`; the Compose
 grace must remain longer. An interrupted generation claim is recovered after
-its lease expires. An email interrupted after SMTP delivery begins is marked
+its lease expires. An index claim is automatically requeued only if it dies
+before its first provider call; post-provider ambiguity fails terminally and
+needs explicit operator action. An email interrupted after SMTP delivery begins is marked
 ambiguous on recovery and is not automatically duplicated. See
 [Transactional email delivery](EMAIL_DELIVERY.md).
 
 For planned maintenance, stop public admission first, inspect or drain pending
-generation/email work, and then stop workers:
+generation/index/email work, and then stop workers:
 
 ```text
 docker compose exec backend python -m app.cli email-outbox-status
 docker compose stop -t 45 backend
-docker compose stop -t 45 worker email-worker
+docker compose stop -t 45 worker index-worker answer-worker email-worker
 ```
 
 ## Volumes, backup, upgrades, and disaster recovery
 
 `postgres_data` contains all durable application records, outbox state, job
-state, private Subject Knowledge after capture is implemented, and any
+state, private Subject Knowledge pages/chunks/vectors, and any
 short-lived encrypted source PDFs. `mailpit_data` is local/test
 capture only and must not be used or restored in production. The frontend, API,
 and workers are replaceable images and have no durable filesystem state.
@@ -149,7 +156,7 @@ images. The [configuration upgrade note](CONFIGURATION.md#existing-installations
 explains legacy authentication defaults and session continuity.
 
 1. Record the current application version and Alembic revision.
-2. Stop the API and gracefully drain/stop both workers so the dump is consistent.
+2. Stop the API and gracefully drain/stop all four workers so the dump is consistent.
 3. Create, checksum, encrypt, and copy a PostgreSQL custom-format backup off host.
 4. Preserve `.env` or equivalent deployment secrets separately in a secret
    manager. The source encryption key is required to recover retained PDFs.
@@ -161,6 +168,24 @@ explains legacy authentication defaults and session continuity.
 Detailed commands and destructive-operation warnings are in
 [Database operations](DATABASE_OPERATIONS.md). Prefer restoring the pre-upgrade
 archive into a fresh database over downgrading a data-destructive migration.
+
+## Controlled RAG rollout and reversal
+
+Release defaults keep `RAG_ENABLED=false`. First validate configuration and
+backup recovery, drain all four worker lanes, apply every Alembic head and
+restore normal flashcard admission with RAG still off. In a controlled
+environment, enable capture and the two RAG provider profiles only after the
+privacy notice, provider terms, current prices and divided quota buckets are
+approved. Use several authorized Subjects to verify private capture, explicit
+Knowledge publication, enrolled-user retrieval, own-thread access, capacity and
+quota fairness. Paid external evaluation remains a separately authorized gate.
+
+To reverse the feature without deleting durable data, stop new admission, set
+`RAG_ENABLED=false`, gracefully drain or explicitly cancel index/answer work,
+restart API/workers and verify the RAG lanes report disabled while normal
+flashcard generation remains healthy. This preserves pages, chunks, vectors and
+private history for a later reviewed restart. Schema downgrade or data/volume
+deletion is a separate destructive decision requiring a verified recovery path.
 
 Each operator must choose an RPO/RTO appropriate to their users. At minimum,
 schedule encrypted off-host database backups, retain more than one generation,

@@ -2,12 +2,16 @@
 
 ## Status
 
-Accepted design, 2026-09-17. The operator approved G1/G2/G4/G6 and delegated
-G5 selection during implementation of the beginning of the
+Accepted design, 2026-09-17; G3 and execution amendment accepted 2026-09-19.
+The initial G5 provider/model selection is superseded by
+[ADR-014](ADR-014-native-gemini-rag-profiles.md) as of 2026-09-20; every other
+boundary in this record remains accepted.
+The operator approved G1/G2/G4/G6, delegated G5 selection, and approved the G3
+capture/cancellation outcome during implementation of the
 [RAG plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>) through
-Phase 13. This record is a design contract; it does not claim that capture,
-indexing, retrieval, conversations or Ask AI are implemented. Implementation
-and verification follow the plan's preparation/phase order.
+Phase 19. Capture, indexing, internal authorized retrieval, private durable
+conversation/answer APIs, the Knowledge/Ask AI UI and deterministic evaluation
+gates are implemented. Phase 20 and later integration/rollout remain separate.
 
 ## Context
 
@@ -57,6 +61,14 @@ requiring card generation. Identical-upload replay is confined to the same
 Subject and current authorized operation; changed payload reuse conflicts.
 No cross-Subject content-hash lookup or deduplication may reveal existence.
 
+Cancellation after a durable capture deletes the document/revision created by
+that job and cancels its indexing work, for both combined and Knowledge-only
+jobs. A non-cancelled flashcard failure may retain a valid private capture;
+supported capture/capacity failures are recorded independently and need not
+discard successful flashcards. Invalid/unreadable PDFs create no usable
+Knowledge. Every path keeps raw PDFs transient and never publishes capture
+automatically.
+
 Deleting a document removes its Knowledge dependents and detaches optional
 generation-job/set links, preserving surviving flashcards. Deleting generation
 job history preserves Knowledge. Subject/account ownership cascades its
@@ -74,8 +86,8 @@ four content revisions/eight index revisions/64 MiB reserved text/vector bytes;
 Subject 50 documents/256 MiB; uploader 100 documents/512 MiB; deployment 500
 documents/2 GiB. Reservations use measured planned payload, and row writes may
 not exceed them. Database triggers enforce aggregate admission and release on
-deletion under deterministic transaction locking; later capture/index services
-must use this contract rather than bypassing it. Charged bytes bound payload,
+deletion under deterministic transaction locking; capture/index services use
+this contract rather than bypassing it. Charged bytes bound payload,
 not physical PostgreSQL indexes, tuple overhead, WAL or backups; operators need
 additional disk headroom and recovery measurements. Raising these hard schema
 limits requires a new migration and measured rationale.
@@ -85,7 +97,7 @@ before Knowledge or related parent row locks, then global, Subject and uploader
 usage counters. This deliberately serializes Knowledge writes at the initial
 deployment cap; ordinary authentication, study and generation status updates
 do not acquire it. Retention/account deletion acquires the same lock before
-its explicit parent locks. Future capture/index code must follow that order;
+its explicit parent locks. Phase 14–15 capture/index code follows that order;
 changing concurrency needs measured contention evidence and equivalent quota,
 delete and fencing tests.
 
@@ -103,7 +115,7 @@ is unpublished, deleted or replaced, derived stored answers/citations are hidden
 on history/source reads; a citation-row cascade alone is insufficient. Current
 principal access must also pass. Unpublication is not authority to read stale
 snippets; no narrowly authorized historical-source exception is selected.
-Chat storage/cleanup and history enforcement arrive in their later phases.
+Phase 17 implements the chat storage/cleanup and history/source enforcement.
 
 Use separate flashcard, indexing and answer worker processes, with independent
 role enablement, credentials and reserved local capacity. API/email/frontend
@@ -115,7 +127,9 @@ provider-account/project limits across enabled profiles, roles and replicas;
 different keys/prefixes do not establish independent quota. No distributed
 governor is selected.
 
-Initial G5 selections, verified against official documentation:
+Historical initial G5 selections, verified against official documentation.
+These explain the Phase 13-19 stored-space contract but are superseded for new
+spaces and provider execution by ADR-014:
 
 | Capability | Initial profile |
 | --- | --- |
@@ -179,8 +193,8 @@ Fresh backend, disposable PostgreSQL constraints/head/drift/migration/recovery,
 affected runtime/service/image/security and context checks are required for
 each implemented phase. Instructor quality review and paid evaluation are
 reported separately; live calls need explicit endpoint/model/price/call/token/
-time/cost authorization. G3 capture-cancellation outcomes remain a Phase 14
-decision, outside the currently requested endpoint.
+time/cost authorization. The G3 cancellation outcome above is implemented and
+covered by capture/cancellation fencing tests.
 
 ## Related Areas
 

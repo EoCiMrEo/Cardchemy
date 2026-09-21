@@ -128,8 +128,9 @@ pytest -m ai_live tests/integration/test_live_ai_pipeline.py -q
 ```
 
 The live evaluation requires process-injected `FLASHCARD_AI_PROVIDER_ENABLED=true`,
-the official OpenAI endpoint and pinned non-reasoning GPT-4o Mini snapshot,
-provider credentials, an explicit `FLASHCARD_AI_QUOTA_BUCKET` assigned to this
+the native Gemini adapter with its official endpoint and pinned stable
+`gemini-3.5-flash-lite` model and `minimal` thinking, provider credentials, an explicit
+`FLASHCARD_AI_QUOTA_BUCKET` assigned to this
 worker's share of the provider account/project limits, and reviewed nonzero
 `FLASHCARD_AI_INPUT_COST_PER_MILLION_USD` and `FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD` prices.
 Tests never load the operator's root `.env`. It requests two grounded cards,
@@ -137,6 +138,10 @@ permits one physical provider request, disables provider retries and refill
 rounds, and caps input at 8,192 tokens, output at 2,048 tokens, estimated cost
 at USD 0.02, and the request timeout at 30 seconds. An offline budget probe
 proves that extra requests or token/cost overruns are refused before a call.
+On 2026-09-20 the operator explicitly authorized this bounded profile and the
+final current-code run passed once in 3.47 seconds (`1 passed, 19 deselected`).
+That result proves only the guarded sample at that time, not future model
+availability, pricing or provider billing completeness.
 See [maintained test commands](TESTING.md) for the supported model, exact
 configuration, price floors, and full-envelope admission rules. Other providers
 and models need a separate bound for their complete billable token usage.
@@ -145,3 +150,28 @@ Captured or offline results validate application invariants and provider
 contract parity. A release owner should run the live corpus against every model
 selected for a deployment because remote model behavior and pricing can drift
 without application code changes.
+
+## Subject Knowledge and Ask AI evaluation
+
+RAG uses a separate authored corpus, metric policy and live authorization. See
+[Subject Knowledge evaluation](RAG_EVALUATION.md) for the v2 direct,
+paraphrase, technical, overlap, ambiguity, conflict, injection, authorization,
+lifecycle and invalid-support cases. The deterministic evaluator plus actual
+PostgreSQL exact-vector/FTS tests enforce recall/ranking, support, abstention,
+citation, exposure, latency, throughput, context and provider-stage gates.
+Those passes do not establish current remote embedding or answer quality.
+
+The optional live RAG test requires both:
+
+```powershell
+$env:RUN_LIVE_RAG_TESTS='1'
+$env:RAG_LIVE_EVAL_AUTHORIZED='I_ACCEPT_PROVIDER_CHARGES'
+pytest -m ai_live tests/integration/test_live_rag_evaluation.py -q
+```
+
+It additionally requires the pinned official answer/embedding profiles,
+role-specific credentials/quota buckets and reviewed current prices documented
+in [maintained test commands](TESTING.md). It permits at most three physical
+provider calls total, zero retries, 12,000 input tokens, 2,048 answer-output
+tokens, 60 seconds and USD 0.04. It remains excluded from routine test runs and
+requires the explicit charge-acceptance value shown above for each invocation.

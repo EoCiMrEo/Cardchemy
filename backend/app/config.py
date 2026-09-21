@@ -135,6 +135,7 @@ class TextProviderProfile:
     api_key_value: str | None = field(repr=False)
     base_url: AnyHttpUrl | None
     temperature: float
+    thinking_level: Literal["minimal", "low", "medium", "high"]
     max_output_tokens: int
     timeout_seconds: float
     max_retries: int
@@ -250,6 +251,7 @@ class Settings(BaseSettings):
     flashcard_ai_base_url: AnyHttpUrl | None = None
     flashcard_ai_allow_unstable_model: bool = False
     flashcard_ai_temperature: float = Field(default=0.2, ge=0, le=2)
+    flashcard_ai_thinking_level: Literal["minimal", "low", "medium", "high"] = "low"
     flashcard_ai_max_output_tokens: int = Field(default=8_192, ge=64, le=131_072)
     flashcard_ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
     flashcard_ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
@@ -286,14 +288,15 @@ class Settings(BaseSettings):
     # connection material and divided local capacity; no implicit key fallback.
     rag_enabled: bool = False
     rag_ai_provider_enabled: bool = False
-    rag_ai_provider: Literal["openai_compatible"] = "openai_compatible"
-    rag_ai_model: str = Field(default="gpt-4.1-mini-2025-04-14", min_length=1, max_length=128)
+    rag_ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    rag_ai_model: str = Field(default="gemini-3.5-flash", min_length=1, max_length=128)
     rag_ai_api_key: SecretStr | None = None
-    rag_ai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    rag_ai_base_url: AnyHttpUrl | None = None
     rag_ai_allow_unstable_model: bool = False
     rag_ai_temperature: float = Field(default=0.2, ge=0, le=2)
+    rag_ai_thinking_level: Literal["minimal", "low", "medium", "high"] = "minimal"
     rag_ai_max_output_tokens: int = Field(default=2_048, ge=64, le=131_072)
-    rag_ai_context_window_tokens: int = Field(default=128_000, ge=2_048, le=4_194_304)
+    rag_ai_context_window_tokens: int = Field(default=1_048_576, ge=2_048, le=4_194_304)
     rag_ai_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
     rag_ai_provider_max_retries: int = Field(default=3, ge=0, le=3)
     rag_ai_retry_base_seconds: float = Field(default=3, ge=3, le=60)
@@ -304,23 +307,25 @@ class Settings(BaseSettings):
     rag_ai_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
     rag_ai_max_job_input_tokens: int = Field(default=40_000, ge=1_024, le=20_000_000)
     rag_ai_max_job_output_tokens: int = Field(default=4_096, ge=64, le=5_000_000)
-    rag_ai_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.40"), ge=0, le=10_000)
-    rag_ai_output_cost_per_million_usd: Decimal = Field(default=Decimal("1.60"), ge=0, le=10_000)
+    rag_ai_input_cost_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0, le=10_000)
+    rag_ai_output_cost_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0, le=10_000)
     rag_ai_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
     rag_ai_quota_bucket: str = Field(default="", max_length=128)
 
     rag_embedding_provider_enabled: bool = False
-    rag_embedding_provider: Literal["openai_compatible"] = "openai_compatible"
-    rag_embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=128)
+    rag_embedding_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    rag_embedding_model: str = Field(default="gemini-embedding-001", min_length=1, max_length=128)
     rag_embedding_api_key: SecretStr | None = None
-    rag_embedding_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    rag_embedding_base_url: AnyHttpUrl | None = None
     rag_embedding_dimensions: int = Field(default=1_536, ge=1_536, le=1_536)
     rag_embedding_format_version: Literal["raw_text_v1"] = "raw_text_v1"
-    rag_embedding_space_revision: str = Field(default="v1", min_length=1, max_length=64)
+    rag_embedding_space_revision: str = Field(default="gemini-v1", min_length=1, max_length=64)
     rag_embedding_representation: Literal["float32"] = "float32"
     rag_embedding_metric: Literal["cosine"] = "cosine"
+    rag_embedding_document_task_mode: Literal["shared_input"] = "shared_input"
+    rag_embedding_query_task_mode: Literal["shared_input"] = "shared_input"
     rag_embedding_batch_size: int = Field(default=32, ge=1, le=256)
-    rag_embedding_max_input_tokens: int = Field(default=8_192, ge=128, le=1_000_000)
+    rag_embedding_max_input_tokens: int = Field(default=2_048, ge=128, le=1_000_000)
     rag_embedding_provider_timeout_seconds: float = Field(default=90, ge=1, le=600)
     rag_embedding_provider_max_retries: int = Field(default=3, ge=0, le=3)
     rag_embedding_retry_base_seconds: float = Field(default=3, ge=3, le=60)
@@ -329,7 +334,7 @@ class Settings(BaseSettings):
     rag_embedding_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
     rag_embedding_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
     rag_embedding_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
-    rag_embedding_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.02"), ge=0, le=10_000)
+    rag_embedding_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.15"), ge=0, le=10_000)
     rag_embedding_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
     rag_embedding_quota_bucket: str = Field(default="", max_length=128)
 
@@ -382,6 +387,73 @@ class Settings(BaseSettings):
     generation_source_retry_retention_hours: int = Field(default=24, ge=1, le=168)
     generation_upload_reservation_minutes: int = Field(default=15, ge=1, le=120)
     generation_cleanup_interval_seconds: int = Field(default=60, ge=5, le=3_600)
+
+    # Knowledge-only capture has a separate conservative admission lane. It
+    # reuses the encrypted PDF source queue without consuming flashcard units.
+    knowledge_max_active_jobs_per_user: int = Field(default=1, ge=1, le=25)
+    knowledge_max_active_jobs_deployment: int = Field(default=10, ge=1, le=10_000)
+    knowledge_max_queued_jobs_deployment: int = Field(default=50, ge=1, le=100_000)
+    knowledge_daily_jobs_per_user: int = Field(default=10, ge=1, le=10_000)
+    knowledge_daily_upload_bytes_per_user: int = Field(
+        default=50 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024 * 1024
+    )
+    knowledge_daily_jobs_deployment: int = Field(default=500, ge=1, le=1_000_000)
+    knowledge_daily_upload_bytes_deployment: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        ge=1024,
+        le=10 * 1024 * 1024 * 1024 * 1024,
+    )
+    knowledge_max_retained_source_bytes_per_user: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024 * 1024
+    )
+    knowledge_max_retained_source_bytes_deployment: int = Field(
+        default=512 * 1024 * 1024,
+        ge=1024,
+        le=10 * 1024 * 1024 * 1024 * 1024,
+    )
+
+    # Durable index workers are independent from generation workers. A call
+    # that crossed the provider boundary is never replayed automatically after
+    # an uncertain lease/deadline outcome; an operator may explicitly reindex.
+    rag_index_worker_concurrency: int = Field(default=1, ge=1, le=32)
+    rag_index_max_job_input_tokens: int = Field(default=500_000, ge=1_024, le=20_000_000)
+    rag_index_job_timeout_seconds: int = Field(default=600, ge=30, le=7_200)
+    rag_index_lease_seconds: int = Field(default=60, ge=15, le=600)
+    rag_index_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30)
+    rag_index_heartbeat_seconds: float = Field(default=10.0, ge=1, le=120)
+    rag_index_max_attempts: int = Field(default=3, ge=1, le=10)
+    rag_index_retry_base_seconds: float = Field(default=3.0, ge=3, le=300)
+    rag_index_retry_max_seconds: float = Field(default=60.0, ge=3, le=3_600)
+    rag_index_cleanup_interval_seconds: int = Field(default=60, ge=5, le=3_600)
+
+    # Subject Ask AI has its own durable queue, chat capacity and retention.
+    # These bounds are independent from flashcard generation and Knowledge
+    # upload quotas even when the same provider account is deliberately shared.
+    rag_chat_retention_days: int = Field(default=90, ge=1, le=365)
+    rag_answer_max_threads_per_user: int = Field(default=50, ge=1, le=1_000)
+    rag_answer_max_threads_deployment: int = Field(default=10_000, ge=1, le=1_000_000)
+    rag_answer_max_messages_per_thread: int = Field(default=200, ge=2, le=2_000)
+    rag_answer_max_messages_per_user: int = Field(default=5_000, ge=2, le=100_000)
+    rag_answer_max_messages_deployment: int = Field(default=1_000_000, ge=2, le=100_000_000)
+    rag_answer_max_question_chars: int = Field(default=4_000, ge=1, le=4_000)
+    rag_answer_max_answer_chars: int = Field(default=12_000, ge=1, le=12_000)
+    rag_answer_max_history_messages: int = Field(default=12, ge=0, le=100)
+    rag_answer_history_token_limit: int = Field(default=8_192, ge=128, le=64_000)
+    rag_answer_max_active_jobs_per_user: int = Field(default=1, ge=1, le=25)
+    rag_answer_max_active_jobs_deployment: int = Field(default=10, ge=1, le=10_000)
+    rag_answer_max_queued_jobs_deployment: int = Field(default=100, ge=1, le=100_000)
+    rag_answer_daily_jobs_per_user: int = Field(default=100, ge=1, le=100_000)
+    rag_answer_daily_jobs_deployment: int = Field(default=10_000, ge=1, le=1_000_000)
+    rag_answer_worker_concurrency: int = Field(default=1, ge=1, le=32)
+    rag_answer_job_timeout_seconds: int = Field(default=300, ge=30, le=3_600)
+    rag_answer_lease_seconds: int = Field(default=60, ge=15, le=600)
+    rag_answer_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30)
+    rag_answer_heartbeat_seconds: float = Field(default=10.0, ge=1, le=120)
+    rag_answer_max_attempts: int = Field(default=3, ge=1, le=10)
+    rag_answer_max_manual_retries: int = Field(default=2, ge=0, le=10)
+    rag_answer_retry_base_seconds: float = Field(default=3.0, ge=3, le=300)
+    rag_answer_retry_max_seconds: float = Field(default=60.0, ge=3, le=3_600)
+    rag_answer_cleanup_interval_seconds: int = Field(default=60, ge=5, le=3_600)
 
     # OCR is local, opt-in, and used only when normal PDF extraction produces
     # no text. The worker checks for the required executables at runtime.
@@ -485,18 +557,48 @@ class Settings(BaseSettings):
         return self.rag_enabled and self.rag_embedding_provider_enabled
 
     @property
-    def rag_embedding_space_identity(self) -> tuple[str, str, str, str, str, int, str, str]:
+    def rag_ai_endpoint_identity(self) -> str:
+        if self.rag_ai_provider == "gemini":
+            return "https://generativelanguage.googleapis.com"
+        assert self.rag_ai_base_url is not None
+        return str(self.rag_ai_base_url).rstrip("/")
+
+    @property
+    def rag_embedding_endpoint_identity(self) -> str:
+        if self.rag_embedding_provider == "gemini":
+            return "https://generativelanguage.googleapis.com"
+        assert self.rag_embedding_base_url is not None
+        return str(self.rag_embedding_base_url).rstrip("/")
+
+    @property
+    def rag_embedding_provider_task_modes(self) -> tuple[str, str]:
+        """Return the physical provider task modes that define vector compatibility."""
+
+        if self.rag_embedding_provider == "gemini":
+            return ("RETRIEVAL_DOCUMENT", "QUESTION_ANSWERING")
+        return (
+            self.rag_embedding_document_task_mode,
+            self.rag_embedding_query_task_mode,
+        )
+
+    @property
+    def rag_embedding_space_identity(
+        self,
+    ) -> tuple[str, str, str, str, str, int, str, str, str, str]:
         """Nonsecret exact embedding-space identity for future revision fences."""
 
+        document_task_mode, query_task_mode = self.rag_embedding_provider_task_modes
         return (
             self.rag_embedding_provider,
-            str(self.rag_embedding_base_url).rstrip("/"),
+            self.rag_embedding_endpoint_identity,
             self.rag_embedding_model,
             self.rag_embedding_space_revision,
             self.rag_embedding_format_version,
             self.rag_embedding_dimensions,
             self.rag_embedding_representation,
             self.rag_embedding_metric,
+            document_task_mode,
+            query_task_mode,
         )
 
     def text_provider_profile(self, role: Literal["flashcard", "rag_answer"] = "flashcard") -> TextProviderProfile:
@@ -509,6 +611,7 @@ class Settings(BaseSettings):
             api_key_value=self._secret_value(getattr(self, f"{prefix}_api_key")),
             base_url=getattr(self, f"{prefix}_base_url"),
             temperature=getattr(self, f"{prefix}_temperature"),
+            thinking_level=getattr(self, f"{prefix}_thinking_level"),
             max_output_tokens=getattr(self, f"{prefix}_max_output_tokens"),
             timeout_seconds=getattr(self, f"{prefix}_provider_timeout_seconds"),
             max_retries=getattr(self, f"{prefix}_provider_max_retries"),
@@ -698,7 +801,10 @@ class Settings(BaseSettings):
         if self.telemetry_enabled and self.telemetry_endpoint is None:
             raise ValueError("Enabled telemetry requires TELEMETRY_ENDPOINT")
         if self.worker_health_stale_seconds < 2 * max(
-            self.generation_worker_poll_seconds, self.email_worker_poll_seconds, 5
+            self.generation_worker_poll_seconds,
+            self.rag_index_worker_poll_seconds,
+            self.email_worker_poll_seconds,
+            5,
         ):
             raise ValueError("Worker health stale threshold must cover two scheduling poll intervals")
         if not self.database_url:
@@ -790,6 +896,33 @@ class Settings(BaseSettings):
             raise ValueError("FLASHCARD_AI_BASE_URL is required for the openai_compatible provider")
         if self.flashcard_ai_provider == "gemini" and self.flashcard_ai_base_url is not None:
             raise ValueError("FLASHCARD_AI_BASE_URL is only valid for the openai_compatible provider")
+        if self.rag_ai_provider == "openai_compatible" and self.rag_ai_base_url is None:
+            raise ValueError("RAG_AI_BASE_URL is required for the openai_compatible provider")
+        if self.rag_ai_provider == "gemini" and self.rag_ai_base_url is not None:
+            raise ValueError(
+                "RAG_AI_BASE_URL is only valid for the openai_compatible provider"
+            )
+        if (
+            self.rag_embedding_provider == "openai_compatible"
+            and self.rag_embedding_base_url is None
+        ):
+            raise ValueError(
+                "RAG_EMBEDDING_BASE_URL is required for the openai_compatible provider"
+            )
+        if (
+            self.rag_embedding_provider == "gemini"
+            and self.rag_embedding_base_url is not None
+        ):
+            raise ValueError(
+                "RAG_EMBEDDING_BASE_URL is only valid for the openai_compatible provider"
+            )
+        if self.rag_embedding_provider == "gemini" and (
+            self.rag_embedding_model != "gemini-embedding-001"
+            or self.rag_embedding_dimensions != 1_536
+        ):
+            raise ValueError(
+                "The Gemini embedding profile requires gemini-embedding-001 with 1536 dimensions"
+            )
         if self.rag_ai_retry_base_seconds > self.rag_ai_retry_max_seconds:
             raise ValueError("RAG_AI_RETRY_BASE_SECONDS cannot exceed RAG_AI_RETRY_MAX_SECONDS")
         if self.rag_embedding_retry_base_seconds > self.rag_embedding_retry_max_seconds:
@@ -811,6 +944,24 @@ class Settings(BaseSettings):
                 "GENERATION_WORKER_CONCURRENCY cannot exceed "
                 "GENERATION_MAX_ACTIVE_JOBS_DEPLOYMENT"
             )
+        if self.rag_index_retry_base_seconds > self.rag_index_retry_max_seconds:
+            raise ValueError("RAG_INDEX_RETRY_BASE_SECONDS cannot exceed RAG_INDEX_RETRY_MAX_SECONDS")
+        if self.rag_index_heartbeat_seconds >= self.rag_index_lease_seconds:
+            raise ValueError("RAG_INDEX_HEARTBEAT_SECONDS must be lower than RAG_INDEX_LEASE_SECONDS")
+        if self.rag_index_max_job_input_tokens < self.rag_embedding_max_input_tokens:
+            raise ValueError("RAG_INDEX_MAX_JOB_INPUT_TOKENS cannot be lower than RAG_EMBEDDING_MAX_INPUT_TOKENS")
+        if self.rag_answer_retry_base_seconds > self.rag_answer_retry_max_seconds:
+            raise ValueError("RAG_ANSWER_RETRY_BASE_SECONDS cannot exceed RAG_ANSWER_RETRY_MAX_SECONDS")
+        if self.rag_answer_heartbeat_seconds >= self.rag_answer_lease_seconds:
+            raise ValueError("RAG_ANSWER_HEARTBEAT_SECONDS must be lower than RAG_ANSWER_LEASE_SECONDS")
+        if self.rag_answer_max_active_jobs_per_user > self.rag_answer_max_active_jobs_deployment:
+            raise ValueError("RAG answer per-user active limit cannot exceed the deployment active limit")
+        if self.rag_answer_max_threads_per_user > self.rag_answer_max_threads_deployment:
+            raise ValueError("RAG per-user thread limit cannot exceed the deployment thread limit")
+        if self.rag_answer_max_messages_per_thread > self.rag_answer_max_messages_per_user:
+            raise ValueError("RAG per-thread message limit cannot exceed the per-user message limit")
+        if self.rag_answer_max_messages_per_user > self.rag_answer_max_messages_deployment:
+            raise ValueError("RAG per-user message limit cannot exceed the deployment message limit")
         self.generation_source_encryption_key_bytes
 
         if self.environment == "production":

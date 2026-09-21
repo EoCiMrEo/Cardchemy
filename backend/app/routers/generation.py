@@ -15,6 +15,7 @@ from app.schemas.generation import (
     GenerationJobListResponse,
     GenerationJobResponse,
     GenerationLimitsResponse,
+    KnowledgeJobCreate,
 )
 from app.services.generation import GenerationJobService, read_bounded_pdf_body
 from app.services.pdf_processor import PDFProcessingError
@@ -64,6 +65,66 @@ async def create_generation_job(
             idempotency_key=idempotency_key,
         )
     response.headers["Location"] = f"/flashcards/generation-jobs/{job.id}"
+    return await _response(db, job)
+
+
+@router.post(
+    "/knowledge-jobs",
+    response_model=GenerationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_knowledge_job(
+    data: KnowledgeJobCreate,
+    response: Response,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    user: User = Depends(get_current_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJobResponse:
+    """Reserve a private Knowledge-only upload or explicit document revision."""
+
+    await SubjectService.check_subject_access(db, data.subject_id, user, require_owner=True)
+    user_id = user.id
+    await db.rollback()
+    async with db.begin():
+        job = await jobs.create_knowledge_reservation(
+            db, user_id=user_id, data=data, idempotency_key=idempotency_key
+        )
+    response.headers["Location"] = f"/flashcards/generation-jobs/{job.id}"
+    return await _response(db, job)
+
+
+@router.put(
+    "/knowledge-jobs/{job_id}/source",
+    response_model=GenerationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(limit_pdf_upload)],
+)
+async def upload_knowledge_source(
+    job_id: UUID,
+    request: Request,
+    user: User = Depends(get_current_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJobResponse:
+    job = await jobs.get_owner_job(db, job_id, user.id)
+    if job.job_kind != "knowledge_only":
+        from app.services.generation import generation_http_error
+        raise generation_http_error(status.HTTP_404_NOT_FOUND, "knowledge_job_not_found", "Knowledge job not found.")
+    try:
+        content = await read_bounded_pdf_body(request, settings.pdf_max_upload_bytes)
+        user_id = user.id
+        await db.rollback()
+        async with db.begin():
+            job = await jobs.attach_source(
+                db,
+                job_id=job_id,
+                user_id=user_id,
+                media_type=request.headers.get("content-type"),
+                content=content,
+            )
+    except PDFProcessingError as exc:
+        from app.services.generation import generation_http_error
+        http_status = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE if exc.code == "unsupported_media_type" else status.HTTP_422_UNPROCESSABLE_CONTENT
+        raise generation_http_error(http_status, exc.code, exc.safe_message) from None
     return await _response(db, job)
 
 

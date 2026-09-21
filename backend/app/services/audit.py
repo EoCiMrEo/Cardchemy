@@ -36,7 +36,7 @@ class AuditService:
             raise ValueError("Unsupported audit action")
         if actor_kind not in {"user", "operator", "operator_database"}:
             raise ValueError("Unsupported audit actor kind")
-        if target_type not in {"invitation", "card", "set", "account"}:
+        if target_type not in {"invitation", "card", "set", "knowledge", "account"}:
             raise ValueError("Unsupported audit target type")
         for role in (role_before, role_after):
             if role is not None and role not in {"student", "instructor"}:

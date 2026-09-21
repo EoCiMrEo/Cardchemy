@@ -33,7 +33,11 @@ class FlashcardGraph:
         if not isinstance(document, ExtractedDocument):
             legacy_text = state.get("pdf_text", "")
             document = ExtractedDocument(pages=[ExtractedPage(page_number=1, text=legacy_text)])
-        return await self.pipeline.run(document, int(state.get("target_count", 20)))
+        return await self.pipeline.run(
+            document,
+            int(state.get("target_count", 20)),
+            prepared=state.get("prepared_document"),
+        )
 
 
 def create_flashcard_graph(

@@ -87,6 +87,22 @@ def run_service_tests(command: list[str], *, cwd: Path, environment: dict[str, s
         )
         for identity in sorted(set(failures)):
             print(f"Failed service test: {identity}")
+        # Short tracebacks end with repository-relative test locations. Expose
+        # only those static paths/line numbers, never captured exception text.
+        locations = re.findall(
+            r"^(tests[\\/][A-Za-z0-9_.\\/-]+\.py:\d+)(?::|$)",
+            output,
+            flags=re.MULTILINE,
+        )
+        for location in list(dict.fromkeys(locations))[:20]:
+            print(f"Safe failure location: {location}")
+        failure_types = re.findall(
+            r"^(?:E\s+)?([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception))(?::|\()",
+            output,
+            flags=re.MULTILINE,
+        )
+        for failure_type in list(dict.fromkeys(failure_types))[:20]:
+            print(f"Safe failure type: {failure_type}")
         print("Detailed service-test diagnostics withheld to protect generated credentials and message content.")
     return result.returncode
 

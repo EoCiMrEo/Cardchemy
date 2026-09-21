@@ -10,6 +10,7 @@ import type { FlashcardSet, SetProgress, Subject } from "@/services/types"
 import { PageError } from "@/components/feedback/PageError"
 import { apiErrorMessage } from "@/services/errors"
 import { copy } from "@/i18n/en"
+import { AskAiPanel } from "@/components/rag/AskAiPanel"
 
 export default function StudentSubjectDetails() {
   const { id } = useParams<{ id: string }>()
@@ -91,6 +92,8 @@ function StudentSubjectContent() {
           <Button type="button" variant="outline" size="sm" onClick={reloadData}>{copy.common.retry}</Button>
         </div>
       ) : null}
+
+      {id ? <AskAiPanel subjectId={id} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {sets.map((set) => {

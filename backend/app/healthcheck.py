@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
         "--url",
         help="Probe an HTTP readiness URL instead of connecting to the database directly",
     )
-    parser.add_argument("--worker-kind", choices=["generation", "email"], help="Also require this container's worker loop to be fresh")
+    parser.add_argument("--worker-kind", choices=["generation", "email", "index", "answer"], help="Also require this container's worker loop to be fresh")
     arguments = parser.parse_args(argv)
     try:
         if arguments.url:

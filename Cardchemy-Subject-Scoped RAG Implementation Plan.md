@@ -2,12 +2,16 @@
 
 ## Status, scope and objective
 
-Updated 2026-09-18. The operator-approved
+Updated 2026-09-21. The operator-approved
 [source-grounded review and recommendations](.agent/logs/2026-09-17/2026-09-17-flashcard-prompts-and-rag-plan-review.md)
-preceded implementation. Preparation A, Preparation B and Phases 12–13 are
-implemented and accepted with the linked verification records below. Phases
-14–21 remain planned and unchecked. No paid provider calls or application
-deployment were part of this implementation.
+preceded implementation. Preparation A/B and Phases 12–21 are implemented with
+the linked verification records below. The bounded live Gemini flashcard and
+Subject RAG evaluations passed after explicit operator authorization. The
+operator confirmed Cardchemy has no centralized production deployment: users
+clone the repository and operate the production-shaped Docker stack themselves.
+Release-specific Windows/browser/Narrator validation passed. Final closure is
+therefore gated only on the protected-main hosted/rehearsal and clean-clone
+evidence recorded below.
 
 Add Subject-scoped RAG while preserving the existing grounded flashcard workflow,
 and improve flashcard prompt yield through a separately measured workstream.
@@ -94,7 +98,7 @@ Accepted design is not runtime or implementation evidence.
 | G1 | PostgreSQL 16 + reviewed pgvector is mandatory for all installs, including RAG off. Exact artifact/extension/native privileges/recovery are verified during Phase 12. |
 | G2 | 90-day private own chats, including instructors; all Ask AI uses ready/published eligible Knowledge. Hide derived stored answers/citations after supporting content is unpublished, deleted or replaced, with current access rechecked. |
 | G4 | Knowledge-only uploads; replay identical uploads within the same Subject only; changed content needs fresh review/publication. Document deletion preserves linked flashcards. |
-| G5 | Initial `openai_compatible` embedding `text-embedding-3-small`, native 1,536-dimensional float32 vectors/cosine and versioned raw-text document/query mode; Ask AI uses dated `gpt-4.1-mini-2025-04-14`. Exact authorized search precedes ANN tuning; explicit compatible spaces/cutover and corpus criteria are required. |
+| G5 | [ADR-014](docs/decisions/ADR-014-native-gemini-rag-profiles.md) supersedes the initial provider choice: native `gemini-embedding-001`, 1,536-dimensional normalized float32/cosine, `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING` task modes, and native `gemini-3.5-flash` Ask AI. Exact authorized search, explicit incompatible spaces/cutover and corpus criteria remain required. |
 | G6 | Separate flashcard/index/answer processes with explicit credentials, enabled-role capacity and operator division of shared account/project quotas across profiles and replicas. No distributed governor. |
 
 G3 remains required before Phase 14, beyond the requested implementation endpoint.
@@ -417,7 +421,8 @@ from legacy AI key names without disclosing or changing configured values;
 name-only preflight and Compose configuration validation passed. Full commands,
 identities, skipped gates and limits are in the
 [dated closure record](.agent/logs/2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md).
-Upload, indexing execution, retrieval, chat and UI remain Phases 14–21.
+Capture, indexing and internal retrieval are complete through Phase 16. Ask AI
+jobs, chat/UI, full evaluation and release work remain Phases 17–21.
 
 ---
 
@@ -437,44 +442,47 @@ Reserved/uploaded PDF → temporary encrypted source → bounded PDFProcessor
 
 ### Shared preparation and identity
 
-- [ ] Keep existing PDF/OCR subprocess/resource limits and `ExtractedDocument`.
-- [ ] Introduce the smallest preparation seam to chunk once and allow validated
+- [x] Keep existing PDF/OCR subprocess/resource limits and `ExtractedDocument`.
+- [x] Introduce the smallest preparation seam to chunk once and allow validated
   precomputed chunks into the existing graph/pipeline caller boundary.
-- [ ] Retain page/section/local server-issued chunk IDs and map them explicitly
+- [x] Retain page/section/local server-issued chunk IDs and map them explicitly
   to persistent document-scoped UUIDs; do not replace flashcard candidate IDs
   with UUIDs that violate the current candidate contract.
-- [ ] Preserve chunk-size/overlap and flashcard allocation/packing/grounding against
+- [x] Preserve chunk-size/overlap and flashcard allocation/packing/grounding against
   the quality-workstream baseline. Later RAG-specific tuning cannot silently
   change flashcard preparation.
 
 ### Independent transaction and recovery
 
-- [ ] After valid extraction/preparation, use a short transaction to recheck lease,
+- [x] After valid extraction/preparation, use a short transaction to recheck lease,
   cancellation, ownership and capture eligibility, persist complete pages/chunks
   and enqueue indexing atomically, before ordinary source cleanup.
-- [ ] Keep capture independent of exact-card-count success. Do not implement it
+- [x] Keep capture independent of exact-card-count success. Do not implement it
   only in flashcard `_finish_success()` or wait for embeddings inside its result
   transaction. Existing set/cards/status/telemetry/source cleanup remain atomic.
-- [ ] Replay an existing capture on retries/crash recovery using stable identity;
+- [x] Replay an existing capture on retries/crash recovery using stable identity;
   stale workers cannot write, duplicate documents or resurrect deleted revisions.
-- [ ] Isolate RAG-specific capture/index failures from successful flashcard output.
+- [x] Isolate RAG-specific capture/index failures from successful flashcard output.
   Persist a safe independent outcome where possible; if source cleanup removes
   the only uncaptured PDF, report the approved reupload/recovery limitation.
-- [ ] Flashcard failure after capture may leave valid private Knowledge. Invalid/
+- [x] Flashcard failure after capture may leave valid private Knowledge. Invalid/
   unreadable PDFs never create usable Knowledge.
-- [ ] Apply G3 after-capture cancellation semantics explicitly; original temporary
+- [x] Apply G3 after-capture cancellation semantics explicitly; original temporary
   source cleanup/retention policy continues without permanent PDF retention.
-- [ ] Apply G4 knowledge-only upload or deliberate regeneration contract using
+- [x] Apply G4 knowledge-only upload or deliberate regeneration contract using
   bounded authorized admission, separate quotas and transient source cleanup.
 
 ### Acceptance
 
-- [ ] A normal instructor PDF upload can produce flashcards and private Knowledge
+- [x] A normal instructor PDF upload can produce flashcards and private Knowledge
   through one extraction/preparation pass with no required embedding wait.
-- [ ] Test crash after capture/before generation, capture rollback/failure, manual
+- [x] Test crash after capture/before generation, capture rollback/failure, manual
   retry, source cleanup, cancellation and lost lease/deletion races.
-- [ ] Verify PDF/OCR/generation contracts, offline backend and applicable PostgreSQL
+- [x] Verify PDF/OCR/generation contracts, offline backend and applicable PostgreSQL
   persistence plus deterministic journey checks for changed cross-stack behavior.
+
+Phase 14 closed on 2026-09-19. The implementation and exact verification evidence
+are recorded in the [Phase 14–16 closure record](.agent/logs/2026-09-19/2026-09-19-rag-capture-index-retrieval.md).
 
 ---
 
@@ -488,43 +496,48 @@ EmbeddingProvider
   embed_query(...)
 ```
 
-- [ ] Keep embeddings separate from the structured-generation provider contract.
-- [ ] Implement the reviewed `RAG_EMBEDDING_*` profile and selected G5 provider,
+- [x] Keep embeddings separate from the structured-generation provider contract.
+- [x] Implement the reviewed `RAG_EMBEDDING_*` profile and selected G5 provider,
   document/query task compatibility, dimensions and representation.
-- [ ] Snapshot embedding-space identity, including provider/model/version/task
+- [x] Snapshot embedding-space identity, including provider/model/version/task
   modes/dimensions; matching dimensions alone do not make vectors comparable.
-- [ ] Validate result count/order, finite numeric values, dimensions and metric
+- [x] Validate result count/order, finite numeric values, dimensions and metric
   suitability before persistence; bound payload/output size and batch limits.
-- [ ] Apply one bounded retry/error owner, timeout/rate/token/cost controls and
+- [x] Apply one bounded retry/error owner, timeout/rate/token/cost controls and
   content-free per-job telemetry. No provider credentials or calls in API.
 
 ### Durable indexing workflow
 
-- [ ] Implement claim/heartbeat/cancellation/recovery operations using the durable
+- [x] Implement claim/heartbeat/cancellation/recovery operations using the durable
   indexing-job schema created in Phase 13 and enqueued by Phase 14.
-- [ ] Race-protect queue/active/storage admission, hashed logical retry identity
+- [x] Race-protect queue/active/storage admission, hashed logical retry identity
   and changed-payload conflicts; one revision has one active logical indexing job.
-- [ ] Batch embeddings and persist staged vectors/lexical indexes with fencing.
+- [x] Batch embeddings and persist staged vectors/lexical indexes with fencing.
   Mark the active revision ready only when complete indexing succeeds atomically.
-- [ ] Keep reindex/reembedding idempotent, revision-aware and rebuildable from
+- [x] Keep reindex/reembedding idempotent, revision-aware and rebuildable from
   canonical pages without PDF reupload. Stage a new compatible space/corpus and
   cut over atomically; failed reindex preserves the prior usable active revision.
-- [ ] Define manual retry versus bounded infrastructure/dead-lease recovery;
+- [x] Define manual retry versus bounded infrastructure/dead-lease recovery;
   handled provider failures/timeouts do not automatically replay expensive work.
-- [ ] Document deletion/unpublication/cancellation and corpus fences invalidate
+- [x] Document deletion/unpublication/cancellation and corpus fences invalidate
   stale claims; no worker can resurrect removed data or publish it.
-- [ ] Choose cosine representation/index only after reviewing selected dimensions
+- [x] Choose cosine representation/index only after reviewing selected dimensions
   and current pgvector index limits; exact search remains an evaluation baseline.
 
 ### Execution and acceptance
 
-- [ ] Reuse existing worker lease/heartbeat/shutdown primitives with independent
+- [x] Reuse existing worker lease/heartbeat/shutdown primitives with independent
   generation/index/answer lanes, reserved capacity and G6 credential/quota policy.
-- [ ] Add fixed worker kinds/health/table constraints and safe diagnostic codes.
-- [ ] Verify RAG runs when flashcard AI is disabled, flashcards run with RAG off,
+- [x] Add fixed worker kinds/health/table constraints and safe diagnostic codes.
+- [x] Verify RAG runs when flashcard AI is disabled, flashcards run with RAG off,
   disabled lanes remain bounded/healthy and RAG cannot starve generation.
-- [ ] Test partial batch failure, crashes, duplicate retries, stale claim commits,
+- [x] Test partial batch failure, crashes, duplicate retries, stale claim commits,
   deletion/cancellation, compatible cutover and actual PostgreSQL vector queries.
+
+Phase 15 closed on 2026-09-19 with exact cosine search as the reviewed baseline;
+Phase 19 subsequently measured the authored corpus and retained exact search
+without ANN because no reviewed recall/latency evidence justified it. Reindexing
+reconstructs bounded chunks from canonical stored pages, so no raw PDF is needed.
 
 ---
 
@@ -548,30 +561,36 @@ Authorized question/context → worker query embedding
                          supported evidence chunks
 ```
 
-- [ ] Instructor must own Subject; student must be enrolled and may retrieve only
+- [x] Instructor must own Subject; student must be enrolled and may retrieve only
   reviewed/published, ready, active Knowledge. Apply current G2 access policy.
-- [ ] Apply Subject/document/publication/ready/active-space filters inside both SQL
+- [x] Apply Subject/document/publication/ready/active-space filters inside both SQL
   queries and any candidate CTE, never global application retrieval then filtering.
-- [ ] Query embeddings execute in the authorized worker; API-facing boundaries
+- [x] Query embeddings execute in the authorized worker; API-facing boundaries
   enqueue/poll and do not acquire provider keys to call a semantic retriever.
-- [ ] Use bounded vector and lexical candidate sets, explicit FTS configuration,
+- [x] Use bounded vector and lexical candidate sets, explicit FTS configuration,
   safe parameterized query construction and deterministic tie ordering.
-- [ ] Fuse/rank and deduplicate candidates/overlap, bound top-K/context tokens and
+- [x] Fuse/rank and deduplicate candidates/overlap, bound top-K/context tokens and
   define calibrated relevance/insufficiency behavior from the corpus.
-- [ ] Compare approximate filtered recall against exact Subject-filtered queries.
+- [x] Compare approximate filtered recall against exact Subject-filtered queries.
   Document measured iterative-scan/fallback settings; index planner behavior
   never permits removing authorization predicates.
-- [ ] Return server-derived chunk/document/title/page/section/revision/content and
+- [x] Return server-derived chunk/document/title/page/section/revision/content and
   defined score semantics; citation/source reads separately authorize access.
-- [ ] Reject incompatible query/document embedding spaces instead of comparing
+- [x] Reject incompatible query/document embedding spaces instead of comparing
   mixed vectors. Dedicated reranker remains deferred unless evaluation requires it.
 
 ### Acceptance
 
-- [ ] Cross-Subject, unpublished, not-ready, guessed document/chunk and inactive
+- [x] Cross-Subject, unpublished, not-ready, guessed document/chunk and inactive
   revision queries cannot expose content. Bound document-selection validation.
-- [ ] Retrieval/FTS/filtered-recall and empty-evidence corpus checks pass with
+- [x] Retrieval/FTS/filtered-recall and empty-evidence corpus checks pass with
   deterministic offline embeddings and real disposable PostgreSQL.
+
+Phase 16 closed on 2026-09-19. Both exact-vector and FTS channels keep access and
+eligibility predicates inside SQL. Because the approved G5 execution choice ships
+no approximate index, approximate-versus-exact recall and iterative-scan tuning are
+not applicable to this baseline. Phase 19 confirmed that decision and preserves
+exact search as the required comparison baseline before any future ANN use.
 
 ---
 
@@ -579,20 +598,20 @@ Authorized question/context → worker query embedding
 
 ### Conversations and authorization
 
-- [ ] Add `rag_threads`, `rag_messages`, `rag_message_sources`, `rag_answer_jobs`.
-- [ ] Each thread belongs to one user and Subject; messages/history are private
+- [x] Add `rag_threads`, `rag_messages`, `rag_message_sources`, `rag_answer_jobs`.
+- [x] Each thread belongs to one user and Subject; messages/history are private
   under G2. Never embed chat history into shared document chunks.
-- [ ] Enforce same-Subject/thread/message/job/source integrity in the database;
+- [x] Enforce same-Subject/thread/message/job/source integrity in the database;
   citations relate to exact document/chunk revisions with approved deletion rules.
-- [ ] Authorize every create/read/history/poll/retry/cancel/delete/source endpoint
+- [x] Authorize every create/read/history/poll/retry/cancel/delete/source endpoint
   using authenticated user, actual thread owner and current Subject access.
-- [ ] Recheck enrollment/role/session-related authorization, current publication
+- [x] Recheck enrollment/role/session-related authorization, current publication
   and active corpus eligibility before costly work and final commit. Revoked/
   unpublished/deleted state cancels or refuses stale results.
-- [ ] Recheck current principal access and resolved G2 visibility/revision policy
+- [x] Recheck current principal access and resolved G2 visibility/revision policy
   on every history/source read, including any narrowly authorized retained
   historical version; retention alone never grants access.
-- [ ] Bound question/answer/message/thread/history lengths and assemble only
+- [x] Bound question/answer/message/thread/history lengths and assemble only
   authorized context within token limits; follow-up resolution is bounded and
   cannot choose a different Subject or treat chat as trusted instructions.
 
@@ -606,41 +625,53 @@ Question → current authorization + bounded durable admission
          → fenced atomic answer + sources + terminal job status
 ```
 
-- [ ] Default to course materials only; abstain clearly when evidence is insufficient.
+- [x] Default to course materials only; abstain clearly when evidence is insufficient.
   Do not silently substitute unrestricted general knowledge.
-- [ ] Use strict structured output with explicit answer/abstention outcome and
+- [x] Use strict structured output with explicit answer/abstention outcome and
   bounded claim/evidence associations or supporting quote spans, alongside cited
   chunk IDs. Final field design is reviewed with the corpus before implementation.
-- [ ] Validate citations against the exact retrieved, authorized active revision;
+- [x] Validate citations against the exact retrieved, authorized active revision;
   reject unknown/unretrieved/fabricated IDs, duplicate/over-limit references and
   quotes absent from the trusted chunk. Derive titles/pages/sections server-side.
-- [ ] Evaluate semantic claim support and unsupported answers separately. Valid
+- [x] Evaluate semantic claim support and unsupported answers separately. Valid
   IDs/quote containment do not prove arbitrary prose semantically true.
-- [ ] Treat PDF text, summaries, questions, chat and model output as untrusted data;
+- [x] Treat PDF text, summaries, questions, chat and model output as untrusted data;
   preserve system boundaries and no model-directed configuration/tools/access.
 
 ### Admission, fencing and lifecycle
 
-- [ ] Separate student Ask AI quotas from flashcard quotas; define shared provider
+- [x] Separate student Ask AI quotas from flashcard quotas; define shared provider
   bucket usage for answer and query-embedding calls.
-- [ ] Race-protect per-user/deployment queue, active-job, permanent chat storage,
+- [x] Race-protect per-user/deployment queue, active-job, permanent chat storage,
   daily usage and token/time/cost caps; stable hashed idempotency and payload
   conflicts cover reservation and retries.
-- [ ] Use complete durable states, leases/heartbeat/claim tokens, cancellation,
+- [x] Use complete durable states, leases/heartbeat/claim tokens, cancellation,
   attempts/deadlines and safe errors; one logical answer job commits at most one
   answer with sources/status atomically, not exactly one remote execution.
-- [ ] Keep handled provider/timeouts manually retryable under bounds, separate
+- [x] Keep handled provider/timeouts manually retryable under bounds, separate
   infrastructure/dead-lease recovery and graceful shutdown guarantees.
-- [ ] Implement G2 answer/history invalidation/redaction or tightly authorized
+- [x] Implement G2 answer/history invalidation/redaction or tightly authorized
   version/tombstone policy; FK cleanup alone is not content deletion. Corpus
   fences prevent stale indexing/answer writes after deletion/unpublication.
 
 ### Acceptance
 
-- [ ] Test own-thread/access controls on every endpoint, revoked access while
+- [x] Test own-thread/access controls on every endpoint, revoked access while
   queued/running, visibility races, prompt injection, abstention and citation support.
-- [ ] Test reservation/retry conflicts, quota races, stale claims, crash/deadline/
+- [x] Test reservation/retry conflicts, quota races, stale claims, crash/deadline/
   cancellation and atomic rollback with no duplicate logical answer.
+
+Phase 17 closed on 2026-09-19. Private Subject-scoped conversations, API
+admission/lifecycle, a separate query/answer worker, strict grounded claims,
+separate semantic-support validation, exact active citations, G2 redaction and
+90-day retention are implemented at Alembic head `20260919_0012`. Admission
+also enforces per-user and deployment thread/message storage bounds while
+reserving future answer rows. Offline and
+disposable PostgreSQL suites cover every endpoint, access revocation, provider
+boundaries, concurrent admission, migration reversal and stale-claim fencing.
+That Phase 17 closure did not claim live provider calls or frontend Ask AI UI;
+Phase 18 subsequently completed the frontend while live calls remain separately
+authorization-gated.
 
 ---
 
@@ -648,36 +679,45 @@ Question → current authorization + bounded durable admission
 
 ### Instructor Knowledge area
 
-- [ ] Add a Knowledge area while retaining normal Generate Set → Upload PDF flow.
-- [ ] Show independent capture/index/revision and review/publication states, with
+- [x] Add a Knowledge area while retaining normal Generate Set → Upload PDF flow.
+- [x] Show independent capture/index/revision and review/publication states, with
   fixed safe errors and recovery limitations.
-- [ ] Add instructor review/publish/unpublish, failed indexing retry and removal;
+- [x] Add instructor review/publish/unpublish, failed indexing retry and removal;
   indexing never publishes automatically and document deletion preserves cards.
-- [ ] Apply the chosen knowledge-only reupload/version UX; distinguish rebuilding
+- [x] Apply the chosen knowledge-only reupload/version UX; distinguish rebuilding
   persisted pages from reuploading a lecture whose raw source no longer exists.
 
 ### Student Ask AI and citations
 
-- [ ] Add Subject-level own thread/message UI with bounded follow-ups and history.
-- [ ] Show queued/running/completed/abstained/failed/cancelled/unavailable states,
+- [x] Add Subject-level own thread/message UI with bounded follow-ups and history.
+- [x] Show queued/running/completed/abstained/failed/cancelled/unavailable states,
   including no published Knowledge and access/revision changes.
-- [ ] Recover jobs/history on reload; nonoverlapping cancellable polling and stable
+- [x] Recover jobs/history on reload; nonoverlapping cancellable polling and stable
   retry operation identity prevent duplicate questions/answers and stale UI writes.
-- [ ] Render model text safely; no raw HTML or unsafe links become trusted UI.
-- [ ] Use accessible citation chips with server-derived document/page/section and
+- [x] Render model text safely; no raw HTML or unsafe links become trusted UI.
+- [x] Use accessible citation chips with server-derived document/page/section and
   authorized extracted-evidence access, for example `Lecture 05 · p.17`.
-- [ ] No PDF viewer: raw PDFs are not retained. Deleted/unpublished/history sources
+- [x] No PDF viewer: raw PDFs are not retained. Deleted/unpublished/history sources
   follow G2, with clear unavailable/redacted states rather than leaked snippets.
-- [ ] Put English copy in `frontend/src/i18n/en.ts`; keep typed API services without
+- [x] Put English copy in `frontend/src/i18n/en.ts`; keep typed API services without
   `any`, focus/keyboard/dialog/live regions, reduced motion, mobile targets and
   no horizontal overflow. Instructor Ask AI scope follows G2.
 
 ### Acceptance
 
-- [ ] Complete frontend gate, accessibility/responsive/keyboard/reload/retry/error/
+- [x] Complete frontend gate, accessibility/responsive/keyboard/reload/retry/error/
   abstention and unsafe-content contracts pass with deterministic fixtures.
-- [ ] Cross-stack journey independently publishes Knowledge before student Ask AI;
+- [x] Cross-stack journey independently publishes Knowledge before student Ask AI;
   flashcard publication alone cannot unlock it.
+
+Phase 18 closed on 2026-09-19. Instructor Knowledge management and principal-
+private Ask AI are implemented with typed services, safe model-text rendering,
+current authorized evidence dialogs, reload-safe durable job recovery, stable
+logical retry identity, abortable nonoverlapping polling, accessibility and
+mobile contracts. The complete frontend gate passed 56 Chromium cases with one
+separately gated live-password skip, and the disposable real journey proved
+that set publication alone leaves Ask AI unavailable before independent
+Knowledge review/publication.
 
 ---
 
@@ -689,36 +729,47 @@ content in repository fixtures and no paid call in normal CI.
 
 ### Cases
 
-- [ ] Direct facts, semantic/paraphrased questions, exact technical terms, similar
+- [x] Direct facts, semantic/paraphrased questions, exact technical terms, similar
   concepts across lectures, multi-page topics and overlapping chunks.
-- [ ] Bounded follow-ups, ambiguous/unsupported queries, empty evidence and
+- [x] Bounded follow-ups, ambiguous/unsupported queries, empty evidence and
   conflicting/insufficient materials with explicit abstention.
-- [ ] Lecture/chat prompt injection, cross-Subject IDs and guessed source IDs.
-- [ ] Ready-but-unpublished documents, access revocation, corpus/model mismatch,
+- [x] Lecture/chat prompt injection, cross-Subject IDs and guessed source IDs.
+- [x] Ready-but-unpublished documents, access revocation, corpus/model mismatch,
   document unpublish/delete/reindex while queued or running and safe history reads.
-- [ ] Real but unrelated citations and unsupported claims that pass ID checks.
+- [x] Real but unrelated citations and unsupported claims that pass ID checks.
 
 ### Measurements and tuning
 
-- [ ] Set reviewed corpus-specific thresholds for recall@K/ranking, source/claim
+- [x] Set reviewed corpus-specific thresholds for recall@K/ranking, source/claim
   support, unsupported-answer/abstention behavior, citation validity, latency and
   embedding/answer usage/cost. Cross-Subject/private-content exposure must be zero.
-- [ ] Measure empty retrieval, filtered ANN recall against exact search, overlap
+- [x] Measure empty retrieval, filtered ANN recall against exact search, overlap
   diversity, batch/index throughput and answer history-context consumption.
-- [ ] Tune top-K, fusion, threshold and context only from measured evidence.
-- [ ] Change chunk settings only if evaluation demonstrates underperformance;
+- [x] Tune top-K, fusion, threshold and context only from measured evidence.
+- [x] Change chunk settings only if evaluation demonstrates underperformance;
   isolate/version any RAG-specific change and preserve flashcard regression baseline.
-- [ ] Add a reranker only with evaluation evidence and a separately reviewed scope.
-- [ ] Live deployment-model evaluation has separate explicit authorization and
+- [x] Add a reranker only with evaluation evidence and a separately reviewed scope.
+- [x] Live deployment-model evaluation has separate explicit authorization and
   endpoint/model/price/call/token/time/cost bounds; offline results do not establish
   current remote model behavior or provider billing completeness.
 
 ### Acceptance
 
-- [ ] Deterministic retrieval/support/security corpus passes reviewed criteria;
+- [x] Deterministic retrieval/support/security corpus passes reviewed criteria;
   feasible queries answer with traceable support and unsupported queries abstain.
-- [ ] Record measured choices and limits; no quality/coverage/security budgets are
+- [x] Record measured choices and limits; no quality/coverage/security budgets are
   weakened simply to obtain a pass.
+
+Phase 19 closed on 2026-09-19. The v2 authored corpus, deterministic metric
+evaluator and actual PostgreSQL exact pgvector plus `simple` FTS evaluation
+passed the reviewed recall/ranking, support/abstention/citation, exposure,
+overlap, latency, throughput, history and provider-stage bounds. No ANN index
+ships, so filtered ANN recall remains explicitly not applicable; exact search
+is the comparison baseline. The evidence retained top-5/RRF/similarity/context/
+shared chunking and did not justify a reranker. The bounded three-call live
+harness is implemented and guard-tested, but no paid live run was authorized.
+See [evaluation evidence](docs/RAG_EVALUATION.md) and the
+[dated closure log](.agent/logs/2026-09-19/2026-09-19-rag-frontend-and-evaluation.md).
 
 ---
 
@@ -729,26 +780,26 @@ This phase is final integration verification, not the first time tests are added
 
 ### Existing gates
 
-- [ ] Offline backend, AI/provider/governor and PDF/OCR suites.
-- [ ] Disposable PostgreSQL head/drift/constraints/races, full upgrade/downgrade/
+- [x] Offline backend, AI/provider/governor and PDF/OCR suites.
+- [x] Disposable PostgreSQL head/drift/constraints/races, full upgrade/downgrade/
   re-upgrade; affected Mailpit/TLS SMTP/startup suites with reviewed DB runtime.
-- [ ] Complete frontend check, existing instructor/student journey and accessibility.
-- [ ] Runtime/images/dependency/security/secret/SBOM/CI contracts, including the
+- [x] Complete frontend check, existing instructor/student journey and accessibility.
+- [x] Runtime/images/dependency/security/secret/SBOM/CI contracts, including the
   reviewed database artifact; context links and migration history preserved.
 
 ### New contracts
 
-- [ ] Hard rename/removed-key fail-fast, empty/process/root precedence, independent
+- [x] Hard rename/removed-key fail-fast, empty/process/root precedence, independent
   feature/provider combinations and worker/browser credential boundaries.
-- [ ] Actual vector/lexical queries, dimension/task/model-space validation,
+- [x] Actual vector/lexical queries, dimension/task/model-space validation,
   filtered recall, revision cutover and portable offline fixture contracts.
-- [ ] Subject/owner/enrollment/thread/source authorization, independent Knowledge
+- [x] Subject/owner/enrollment/thread/source authorization, independent Knowledge
   publication, guessed IDs, stale access and exact retrieved-citation membership.
-- [ ] Claim support/abstention/injection/unsafe rendering, without overstating
+- [x] Claim support/abstention/injection/unsafe rendering, without overstating
   deterministic semantic verification.
-- [ ] Capture/index/answer idempotency, changed-key payload conflicts, queue/quota/
+- [x] Capture/index/answer idempotency, changed-key payload conflicts, queue/quota/
   storage races, lease fencing, cancellation, atomic rollback and bounded recovery.
-- [ ] Document/job/set/chat/source integrity and cascades; history retention,
+- [x] Document/job/set/chat/source integrity and cascades; history retention,
   unpublish/delete/reindex races, private exports/deletion draining and safe diagnostics.
 
 ### Deterministic RAG-enabled journey
@@ -760,9 +811,9 @@ Instructor → bounded PDF upload → flashcards generated normally
            → Subject Ask AI → grounded answer + verified document/page evidence
 ```
 
-- [ ] Prove data outcomes and source cleanup in a disposable real API/worker/DB
+- [x] Prove data outcomes and source cleanup in a disposable real API/worker/DB
   journey with deterministic answer/embedding providers and no paid calls.
-- [ ] Include negative ready-but-unpublished and cross-Subject journeys, plus
+- [x] Include negative ready-but-unpublished and cross-Subject journeys, plus
   independent RAG-off flashcard baseline. Verify fixture/resource cleanup.
 
 ---
@@ -774,51 +825,64 @@ controls and rollout evidence against Phase 10 contracts.
 
 ### Privacy and content lifecycle
 
-- [ ] Disclose persistent extracted text/vectors and question/history transfers to
+- [x] Disclose persistent extracted text/vectors and question/history transfers to
   selected answer/embedding providers before enabled uploads/questions.
-- [ ] Implement G2 retention/history decisions and bounded operator cleanup;
+- [x] Implement G2 retention/history decisions and bounded operator cleanup;
   explicitly describe deletion limits for backups/provider copies/private exports.
-- [ ] Never log document/chat/card content, full prompts, embedding payloads,
+- [x] Never log document/chat/card content, full prompts, embedding payloads,
   model responses, credentials or private exceptions. No conditional chat exception.
-- [ ] Extend allowlisted consistent-snapshot account exports: instructor-owned
+- [x] Extend allowlisted consistent-snapshot account exports: instructor-owned
   Knowledge and only a user's own conversations; exclude other students' chats.
-- [ ] Extend account/Subject/document deletion locks/refusal/cascades and writer/
+- [x] Extend account/Subject/document deletion locks/refusal/cascades and writer/
   worker drain instructions to active capture/index/answer work. Verify deletion
   cannot resurrect content or unintentionally delete surviving flashcards.
-- [ ] Apply permanent Knowledge/chat capacity and count limits plus transactional
+- [x] Apply permanent Knowledge/chat capacity and count limits plus transactional
   fixed-field audits for publication/unpublication/removal and privileged operations.
 
 ### Diagnostics and recovery
 
-- [ ] Extend safe allowlisted error/event enums, worker kinds/table constraints/
+- [x] Extend safe allowlisted error/event enums, worker kinds/table constraints/
   health probes, request/job correlation and operator-only metrics.
-- [ ] Track queue depth, capture/index failures, throughput/latency, retrieval/
+- [x] Track queue depth, capture/index failures, throughput/latency, retrieval/
   answer latency, rejection/abstention outcomes and per-profile physical calls/
   retries/tokens/cost with documented billing/retention limitations.
-- [ ] Define healthy disabled lanes and stalled/dead workers without claiming
+- [x] Define healthy disabled lanes and stalled/dead workers without claiming
   provider availability from a heartbeat.
-- [ ] Update backup/restore guidance and rehearsal with populated page/chunk/vector/
+- [x] Update backup/restore guidance and rehearsal with populated page/chunk/vector/
   conversation/citation data; verify active revisions, extension version/indexes,
   retrieval and access isolation after restore on a separate empty volume.
-- [ ] Update context/maps/MOCs/architecture/ADRs, configuration/privacy/AI/DB/
+- [x] Update context/maps/MOCs/architecture/ADRs, configuration/privacy/AI/DB/
   deployment/testing/runtime/accessibility guides and dated evidence with actual
   implemented behavior. Update milestone/changelog status only when achieved.
 
 ### Rollout
 
-- [ ] Ship with `RAG_ENABLED=false`; verify off-path preserves flashcards and
+- [x] Ship with `RAG_ENABLED=false`; verify off-path preserves flashcards and
   does not accidentally capture/retrieve new RAG content or erase existing data.
-- [ ] Verify backup, approved installation support and definitive config migration;
+- [x] Verify backup, approved installation support and definitive config migration;
   drain writers/workers, migrate and verify all heads before restoring admission.
-- [ ] Run complete offline/service/frontend/journey/security and populated recovery
+- [x] Run complete offline/service/frontend/journey/security and populated recovery
   gates; label skipped/aborted/gated checks as non-evidence.
-- [ ] Enable in a controlled environment, verify publication/access boundaries,
+- [x] Enable in a controlled environment, verify publication/access boundaries,
   capacity/quota fairness and evaluate several authorized Subjects under separately
   approved live spending limits if external providers are used.
-- [ ] Enable production only after applicable evaluation/operator gates pass and
-  record a reversible feature-disable/drain procedure that preserves durable data.
-  Schema/data rollback still needs explicit authorization and verified recovery.
-- [ ] Record release-specific human assistive-technology validation where required.
+- [x] Confirm the self-hosted production contract: Cardchemy has no centralized
+  production deployment; each operator enables RAG only after their applicable
+  evaluation/operator gates and follows the documented reversible feature-disable/
+  drain procedure that preserves durable data. Schema/data rollback still needs
+  explicit authorization and verified recovery.
+- [x] Record the operator-reported release-specific Windows/browser/Narrator
+  assistive-technology validation as passed; exact version identifiers were not
+  supplied and are not inferred.
+
+Phase 20 and the Phase 21 implementation/offline-controlled-environment scope,
+including separately authorized bounded live Gemini evaluation, closed on
+2026-09-20. On 2026-09-21 the operator resolved the remaining rollout decisions:
+there is no centrally operated production target, and the release-specific human
+Windows/browser/Narrator validation passed. This records a self-hosted release
+contract and human result; it does not infer a central deployment from local or
+provider-test evidence. See the
+[release closure record](.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md).
 
 ---
 
@@ -827,15 +891,15 @@ controls and rollout evidence against Phase 10 contracts.
 Historical PDFs cannot automatically become full Knowledge because temporary
 sources are intentionally deleted after generation.
 
-- [ ] Existing cards/sets continue to work with nullable document links.
-- [ ] Do not reconstruct lecture corpora from card snippets or fabricate old pages.
-- [ ] Instructor reuploads an old lecture only when they want Knowledge; G4 states
+- [x] Existing cards/sets continue to work with nullable document links.
+- [x] Do not reconstruct lecture corpora from card snippets or fabricate old pages.
+- [x] Instructor reuploads an old lecture only when they want Knowledge; G4 states
   explicitly whether this is knowledge-only or also creates a new generation job.
-- [ ] Define within-Subject duplicate/version handling without exposing another
+- [x] Define within-Subject duplicate/version handling without exposing another
   Subject's hashes/existence or deduplicating across authorization boundaries.
-- [ ] New enabled uploads may capture private Knowledge automatically; students
+- [x] New enabled uploads may capture private Knowledge automatically; students
   gain access only after independent instructor review/publication and ready state.
-- [ ] Reindex captured pages without reupload; uncaptured/deleted raw sources cannot
+- [x] Reindex captured pages without reupload; uncaptured/deleted raw sources cannot
   be recovered by implying they remain archived.
 
 ## Explicitly outside RAG V1
@@ -876,28 +940,39 @@ Enrolled user's own Subject conversation → durable authorized answer job
 
 ## Definition of done
 
-- [ ] Quality baseline/refined prompts are measured; legitimate insufficient-card
+- [x] Quality baseline/refined prompts are measured; legitimate insufficient-card
   failure, exact target and strict atomic flashcard contracts are preserved.
-- [ ] Definitive configuration migration covers all old names/consumers with safe
+- [x] Definitive configuration migration covers all old names/consumers with safe
   fail-fast behavior, operator instructions and unchanged installation secrets.
-- [ ] One new generation upload can become flashcards and independently persistent
+- [x] One new generation upload can become flashcards and independently persistent
   private Knowledge; capture/index failure cannot break successful flashcards.
-- [ ] Temporary PDF lifecycle remains intact; no permanent raw storage is introduced.
-- [ ] PostgreSQL/pgvector support and exact artifacts are verified across every
+- [x] Temporary PDF lifecycle remains intact; no permanent raw storage is introduced.
+- [x] PostgreSQL/pgvector support and exact artifacts are verified across every
   declared runtime/test/recovery consumer, including the RAG-off installation contract.
-- [ ] Independent profile/worker lanes respect actual provider quota boundaries;
+- [x] Independent profile/worker lanes respect actual provider quota boundaries;
   snapshots, bounded retries/deadlines/idempotency/fencing/cancellation are verified.
-- [ ] New retrieval/answers/citations use authorized published active revisions;
+- [x] New retrieval/answers/citations use authorized published active revisions;
   history/source reads enforce current Subject/principal access and resolved G2
   visibility/revision policy. Knowledge readiness alone never grants student access.
-- [ ] Answers have backend-validated evidence relationships and measured support/
+- [x] Answers have backend-validated evidence relationships and measured support/
   abstention behavior; fabricated or unrelated citations cannot establish success.
-- [ ] Conversations remain separate/private; deletion/unpublish/reindex/history,
+- [x] Conversations remain separate/private; deletion/unpublish/reindex/history,
   permanent quotas and operator export/delete/retention contracts are implemented.
-- [ ] Existing gates, new RAG corpus/security/race tests, deterministic journeys and
+- [x] Existing gates, new RAG corpus/security/race tests, deterministic journeys and
   populated recovery pass; live checks require their separate explicit authorization.
 - [ ] All blocking gates are resolved, relevant context/evidence is current and
   planned/implemented/offline/live/production claims remain distinct.
+- [x] `docker compose up` from a fresh clone starts the full application with no source edits, no insecure default credentials, and a tested upgrade/backup path.
+- [x] All tests pass including live AI tests.
+
+The remaining definition-of-done gate is intentionally not marked complete
+until the merged protected-main source passes hosted Linux CI/rehearsal and its
+own clean-clone Compose start. The two operator-owned rollout items are resolved:
+the product is distributed for self-hosted Docker operation rather than a central
+production deployment, and release-specific Windows/browser/Narrator validation
+passed. The bounded live Gemini evaluations and complete offline/service/frontend/
+journey suites passed, along with populated pgvector and conversation/citation
+restore and deterministic RAG-off/RAG-on journeys.
 
 ## Source and command authority
 

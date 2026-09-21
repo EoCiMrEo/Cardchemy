@@ -4,8 +4,15 @@ The database schema is owned by Alembic. The API never creates or alters tables
 at startup; it refuses to start when the database revision is not at the current
 head. The initial revision, `20260914_0001`, is a clean baseline and is not an
 adoption migration for older development databases. Current head
-`20260918_0010` creates private Subject Knowledge storage, revision/capacity
-integrity and durable index-job schema. Revision `20260918_0009` requires
+`20260920_0013` is the current head. It admits canonical native Gemini
+embedding-space/task-mode identities, adds RAG request correlation and stage
+timings, and adds fixed-field Knowledge publish/unpublish/removal audits.
+`20260919_0012` adds private Subject Ask AI threads/messages/exact sources,
+separate quota receipts and durable fenced answer jobs. Revision
+`20260919_0011` adds durable capture outcomes, Knowledge-only admission,
+embedding task-mode identity, local chunk mapping and index execution telemetry
+to the private Subject Knowledge schema created by `20260918_0010`. Revision
+`20260918_0009` requires
 PostgreSQL 16 and pgvector 0.8.6 in `public`, even with RAG disabled.
 The [runtime inventory](../runtime-artifacts.json) pins the supported container
 image/platform; [native prerequisites](RUNTIMES.md#database-runtime-and-native-installation)
@@ -87,6 +94,42 @@ chunks, vectors, indexing jobs and counters, and detaches its job/set links.
 Use it only in disposable verification or after an explicitly authorized,
 verified backup and product rollback decision; a real recovery normally
 restores the pre-upgrade archive into a separate target.
+
+Downgrading `20260919_0011` removes Knowledge-only queue receipts, capture/index
+execution fields and local chunk mappings before restoring the Phase 13 model.
+The durable documents/revisions themselves remain until an `0010` downgrade,
+but this is still a lossy operational rollback. Stop generation/index workers,
+take and verify a backup, and prefer restoring the pre-upgrade archive into a
+separate target. Normal verification exercises the downgrade only on a generated
+disposable database.
+
+Downgrading `20260920_0013` is deliberately lossy. The Phase 12 schema cannot
+represent native Gemini spaces, so the downgrade deletes Gemini-indexed
+conversation/index revisions and clears affected active cutovers while
+preserving canonical extracted pages for a future reindex. It also removes the
+new request/timing fields and Phase 21 Knowledge lifecycle audit rows. Stop all
+RAG admission/workers, export required private history and verify a backup
+before an authorized rollback; ordinary downgrade testing uses only a generated
+disposable database.
+
+## Subject Knowledge reindex and cutover
+
+Changing any embedding-space setting does not mix vectors or silently activate
+a partial corpus. After configuring the index worker, stage a new index for
+every active ready content revision, wait for all jobs to become ready, then
+perform the explicit all-or-nothing cutover:
+
+```powershell
+docker compose run --rm backend python -m app.cli rag-stage-reindex --subject-id SUBJECT_UUID --owner-id OWNER_UUID --apply
+docker compose exec backend python -m app.cli operations-status
+docker compose run --rm backend python -m app.cli rag-cutover --subject-id SUBJECT_UUID --owner-id OWNER_UUID --space-hash LOWERCASE_64_HEX_HASH --apply
+```
+
+Staging is idempotent for an existing pending/indexing/ready target. Cutover is
+refused unless every active ready content revision has a ready index in the
+target space; a failure leaves the prior active space usable. Unpublication or
+deletion changes the corpus fence, and stale retrieval/index claims fail closed.
+The CLI prints no document text, vectors, provider payloads or credentials.
 
 ## Moving the prior Debian installation to the reviewed Alpine build
 
@@ -172,7 +215,11 @@ docker compose run --rm backend alembic downgrade -1
 docker compose run --rm backend alembic current
 ```
 
-Downgrading `20260917_0008` drops request/heartbeat/audit history, origin request
+Downgrading `20260920_0013` first applies the native-Gemini and audit loss
+described above. Downgrading `20260919_0012` permanently drops all stored Ask AI conversations,
+citations, answer-job history and answer quota receipts and removes the answer
+worker heartbeat kind. Stop API/answer admission, drain or cancel answer jobs,
+and export any required private history first. Downgrading `20260917_0008` drops request/heartbeat/audit history, origin request
 correlation and the role audit trigger. Stop writers/workers and preserve
 required audit evidence before an explicitly authorized operational rollback;
 ordinary rehearsal uses only disposable databases. [Privacy controls](PRIVACY.md)

@@ -130,6 +130,37 @@ class _PendingChunk:
     section: str | None
 
 
+@dataclass(frozen=True)
+class PreparedDocument:
+    """One immutable extraction/chunking result shared by generation and RAG.
+
+    Callers must prepare once and pass the same object to every consumer. This
+    prevents provenance drift caused by independently re-chunking a PDF.
+    """
+
+    document: ExtractedDocument
+    chunks: tuple[DocumentChunk, ...]
+
+
+def prepare_document(
+    document: ExtractedDocument,
+    *,
+    max_tokens: int,
+    overlap_tokens: int = 0,
+) -> PreparedDocument:
+    chunks = tuple(
+        chunk_document(
+            document,
+            max_tokens=max_tokens,
+            overlap_tokens=overlap_tokens,
+        )
+    )
+    page_numbers = {page.page_number for page in document.pages}
+    if any(chunk.page_number not in page_numbers for chunk in chunks):
+        raise ValueError("Prepared chunks must reference extracted pages")
+    return PreparedDocument(document=document, chunks=chunks)
+
+
 def chunk_document(
     document: ExtractedDocument,
     *,

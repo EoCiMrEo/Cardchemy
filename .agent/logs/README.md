@@ -1,6 +1,6 @@
 # Agent Logs
 
-Last Updated: 2026-09-18
+Last Updated: 2026-09-21
 
 This directory records agent-visible development history for Cardchemy: what changed, why the work was needed, what problems appeared, how they were solved, and how the result was verified.
 
@@ -17,6 +17,11 @@ Do not store secrets, environment values, passwords, or long-lived credentials i
 
 | Date | Log | Summary |
 |---|---|---|
+| 2026-09-21 | [RAG Phase 20/21 release closure](2026-09-21/2026-09-21-rag-release-closure.md) | Records the self-hosted Docker production decision, passed release-specific Windows/browser/Narrator validation, protected-branch closure workflow and final main-source evidence. |
+| 2026-09-20 | [RAG Phase 20/21 technical closure](2026-09-20/2026-09-20-rag-phase20-phase21-closure.md) | Native Gemini RAG profiles, integrated RAG-off/RAG-on regression and security gates, privacy/operations controls, populated recovery, bounded live evaluation and pushed fresh-clone startup; hosted, production and human evidence remain explicit. |
+| 2026-09-19 | [RAG frontend and evaluation closure](2026-09-19/2026-09-19-rag-frontend-and-evaluation.md) | Closes Phases 18–19 with typed Knowledge/Ask AI UX, reload/retry/citation/accessibility contracts, the reviewed v2 retrieval/support/security corpus, actual exact-vector/FTS measurements, a guarded live harness and deterministic cross-stack proof. |
+| 2026-09-19 | [Subject Ask AI backend and durable answer jobs](2026-09-19/2026-09-19-rag-subject-ask-ai.md) | Closes Phase 17 with owner-private conversation APIs, race-safe admission, isolated query/answer work, strict citation/support validation, G2 redaction/retention and offline/PostgreSQL migration evidence. |
+| 2026-09-19 | [RAG capture, indexing and retrieval closure](2026-09-19/2026-09-19-rag-capture-index-retrieval.md) | Closes Phases 14–16 with one-pass private Knowledge capture, durable fenced embedding/index work, exact authorized hybrid retrieval, migration/runtime/privacy documentation and offline/PostgreSQL/journey evidence. |
 | 2026-09-18 | [Dependabot batch policy](2026-09-18/2026-09-18-dependabot-batch-policy.md) | Groups routine minor/patch updates, limits each ecosystem to one open version PR, and reserves major upgrades for planned work while retaining security updates. |
 | 2026-09-18 | [Final runtime-image PR reconciliation](2026-09-18/2026-09-18-final-runtime-image-pr-reconciliation.md) | Records bot-closed PR #24 and reconciles replacement PR #25 while retaining Node 24 and ignoring unsupported major Docker updates. |
 | 2026-09-18 | [Coupled frontend dependency PR remediation](2026-09-18/2026-09-18-coupled-frontend-dependency-merges.md) | PRs #4–8 preserved in normal merge history, aligned peers/npm resolver and loading/Subject/session fences with component, browser and image evidence. |

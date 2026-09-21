@@ -13,6 +13,8 @@ import {
 
 import { GenerationJobCard } from '@/components/generation/GenerationJobCard'
 import { EditSetDialog } from '@/components/sets/EditSetDialog'
+import { KnowledgeArea } from '@/components/knowledge/KnowledgeArea'
+import { AskAiPanel } from '@/components/rag/AskAiPanel'
 import { EditSubjectDialog } from '@/components/subjects/EditSubjectDialog'
 import { InviteStudentDialog } from '@/components/subjects/InviteStudentDialog'
 import { Button } from '@/components/ui/button'
@@ -393,6 +395,10 @@ function SubjectDetailsContent() {
           </div>
         </section>
       ) : null}
+
+      {id ? <KnowledgeArea subjectId={id} /> : null}
+
+      {id ? <AskAiPanel subjectId={id} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {sets.map((set) => (

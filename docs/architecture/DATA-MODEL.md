@@ -1,6 +1,6 @@
 # Data Model
 
-Current truth verified against code: 2026-09-18.
+Current truth verified against code: 2026-09-19.
 
 ## Purpose and scope
 
@@ -16,11 +16,12 @@ evolution. Account deletion/export are operator CLI controls described in
 | [models/user.py](../../backend/app/models/user.py) | `users`, `invite_links`, `auth_sessions`, `password_reset_tokens`, `rate_limit_buckets`: identity, single-use enrollment invitations, session/reset state and shared hashed abuse counters. |
 | [models/subject.py](../../backend/app/models/subject.py) | `subjects`, `flashcard_sets`: instructor-owned content and publication/time limits. |
 | [models/flashcard.py](../../backend/app/models/flashcard.py) | `flashcards`, `enrollments`, `study_progress`, `study_answer_submissions`: approved learning content, access, schedules and durable answer receipts. |
-| [models/generation.py](../../backend/app/models/generation.py) | `generation_jobs`, `generation_job_sources`, `generation_quota_events`: durable job state/telemetry, encrypted temporary sources and deletion-resistant daily quota charges. |
+| [models/generation.py](../../backend/app/models/generation.py) | `generation_jobs`, `generation_job_sources`, generation/Knowledge quota events: durable flashcard or Knowledge-only job state, capture outcome, encrypted temporary sources and deletion-resistant daily charges. |
 | [models/email.py](../../backend/app/models/email.py) | `email_outbox_messages`: durable email delivery state linked to reset or invitation rows. |
 | [models/operations.py](../../backend/app/models/operations.py) | `request_events`, `worker_heartbeats`: content-free request timing/correlation and worker-loop health. |
 | [models/audit.py](../../backend/app/models/audit.py) | `audit_events`: fixed-field privileged state changes, committed with their domain mutation. |
 | [models/knowledge.py](../../backend/app/models/knowledge.py) | `rag_embedding_spaces`, `knowledge_storage_usage`, `subject_documents`, content revisions/pages, index revisions/chunks/jobs: private Subject Knowledge, revision identity, reserved capacity and durable indexing target. |
+| [models/rag.py](../../backend/app/models/rag.py) | `rag_threads`, `rag_messages`, `rag_message_sources`, `rag_answer_jobs`, `rag_answer_quota_events`: private conversation ownership, exact citation revisions, durable fenced answer state and separate daily charges. |
 
 ## Primary relationships and flow
 
@@ -34,11 +35,18 @@ updates stage the answer receipt and progress in one transaction.
 Subject Knowledge is an independent durable store. A document belongs to its
 Subject's instructor; immutable content revisions own canonical pages, review
 and publication. Index revisions own chunks, full embedding-space snapshots and
-1,536-dimensional vectors. An index job targets one exact index revision and
-captures the Subject corpus revision. Generation jobs may authoritatively link
-one document; sets carry a nullable navigation link. Existing jobs/sets have no
-document link, and deleting job history leaves Knowledge intact. The schema
-does not itself upload files, execute indexing or expose retrieval routes.
+1,536-dimensional vectors. Each chunk preserves its server-issued local ID and
+gets a persistent UUID. An index job targets one exact index revision and
+captures the Subject corpus revision plus content-free usage/cost telemetry.
+Generation jobs may authoritatively link one document; sets carry a nullable
+navigation link. Existing jobs/sets have no document link, and deleting job
+history leaves Knowledge intact. Capture/index execution and internal retrieval
+feed durable answer jobs. Each Ask AI thread belongs to one principal and
+Subject; messages, jobs and sources repeat that scope through composite foreign
+keys. Answer sources identify exact active content/index/chunk revisions. The
+API, index/answer workers and typed Knowledge/Ask AI frontend presentation are
+implemented. Browser state is a projection of these durable server records; it
+does not own publication, authorization, evidence validity or retry identity.
 
 ## Important invariants
 
@@ -61,8 +69,26 @@ does not itself upload files, execute indexing or expose retrieval routes.
 - Knowledge starts private and cannot enter the eligible chunk view until its
   content and index revisions are active and ready, the content revision is
   reviewed/published, and the Subject's active embedding space matches. This
-  view is an eligibility predicate, not principal authorization; future
-  retrieval also checks current Subject owner/enrollment in its SQL.
+  view is an eligibility predicate, not principal authorization; the retriever
+  repeats current Subject owner/enrollment and all eligibility predicates in
+  vector, lexical and source-read SQL.
+- Embedding compatibility includes provider, base URL, model, space/format
+  versions, fixed document/query task modes, dimensions, representation and
+  cosine metric. Matching dimensions alone are insufficient.
+- A pre-provider dead index lease may be requeued within its attempt/deadline
+  bounds. Once a provider call starts, dead leases and handled provider failures
+  are terminal until an explicit new operator action; claim tokens fence writes.
+- Answer jobs snapshot the current corpus, embedding space, retrieval policy,
+  answer provider/model and authorizing session. They use separate admission and
+  quota rows, bounded manual retry, claim tokens, leases, deadlines and current-
+  access/corpus checks before each provider stage and final commit. Completion
+  atomically binds exactly one assistant message and zero sources for abstention
+  or one-to-five exact active citations for an answer.
+- Threads are private to their user even when that user is a student and the
+  reader is the Subject instructor. Answer/source reads hide stored content when
+  current publication, active revision, embedding space or corpus no longer
+  matches. Messages expire after the configured 90-day default; retention does
+  not grant access.
 - The PostgreSQL schema guards document, page, chunk/vector and aggregate
   Subject/uploader/deployment count and byte reservations under one ordered
   transaction advisory lock. Charges cover reserved payload, including
@@ -80,6 +106,7 @@ does not itself upload files, execute indexing or expose retrieval routes.
 | Reset or invitation | Linked outbox messages cascade. |
 | Audit actor account | Actor becomes null; opaque resource/subject IDs and transition history remain until configured audit cleanup. |
 | Knowledge document | Content revisions/pages and index revisions/chunks/jobs cascade. Generation-job and set links detach; the job records a capture-removal tombstone; flashcards survive. |
+| RAG thread/message | Thread deletion cascades its messages/jobs/sources. Question expiry cascades its job; source rows cascade with the cited chunk/revision, after which history redacts the answer. Detached quota receipts remain until metadata cleanup. |
 | Subject or instructor | Owned Knowledge cascades with its Subject; ordinary generation-history deletion does not cascade Knowledge. |
 
 Rate-limit buckets have no user foreign key and do not participate in account
@@ -91,7 +118,7 @@ alone do not prove them.
 ## Sources, verification and related decisions
 
 The [migration chain](../../backend/alembic/versions/) currently ends at
-`20260918_0010`, requiring PostgreSQL 16 and pgvector 0.8.6 even with RAG off;
+`20260920_0013`, requiring PostgreSQL 16 and pgvector 0.8.6 even with RAG off;
 [database startup](../../backend/app/database.py) verifies the
 database matches all configured heads. Never infer the live database revision
 from this code snapshot. See [database operations](../DATABASE_OPERATIONS.md),

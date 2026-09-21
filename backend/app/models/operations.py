@@ -34,7 +34,7 @@ class WorkerHeartbeat(Base):
     status = Column(String(16), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('generation', 'email')", name="ck_worker_heartbeats_kind"),
+        CheckConstraint("kind IN ('generation', 'email', 'index', 'answer')", name="ck_worker_heartbeats_kind"),
         CheckConstraint("status IN ('running', 'disabled', 'draining')", name="ck_worker_heartbeats_status"),
         Index("ix_worker_heartbeats_kind_seen", "kind", "last_seen_at"),
         Index("ix_worker_heartbeats_retention", "last_seen_at", "worker_id"),

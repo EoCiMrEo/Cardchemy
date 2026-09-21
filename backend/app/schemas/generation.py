@@ -38,6 +38,17 @@ class GenerationJobCreate(BaseModel):
         return value
 
 
+class KnowledgeJobCreate(BaseModel):
+    subject_id: UUID
+    document_id: UUID | None = None
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ]
+    source_pdf_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ]
+
+
 class GenerationLimitsResponse(BaseModel):
     generation_available: bool
     ai_provider: str
@@ -67,6 +78,14 @@ class GenerationLimitsResponse(BaseModel):
 class GenerationJobResponse(BaseModel):
     id: UUID
     subject_id: UUID
+    job_kind: Literal["flashcards", "knowledge_only"]
+    document_id: UUID | None
+    knowledge_content_revision_id: UUID | None
+    knowledge_capture_status: Literal[
+        "not_requested", "pending", "captured", "failed", "removed"
+    ]
+    knowledge_capture_error_code: str | None
+    knowledge_capture_error_message: str | None
     flashcard_set_id: UUID | None
     status: GenerationStatus
     progress: int = Field(ge=0, le=100)

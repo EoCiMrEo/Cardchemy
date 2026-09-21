@@ -1,6 +1,6 @@
 # Project Map
 
-Current navigation, verified 2026-09-17. Begin with
+Current navigation, verified 2026-09-20. Begin with
 [orientation](docs/00-START-HERE.md); use this map to find the smallest relevant
 source area. [Backend MOC](backend/MOC.md) and [frontend MOC](frontend/MOC.md)
 give the next level of detail.
@@ -16,14 +16,19 @@ give the next level of detail.
 | Sets/cards | [flashcards router](backend/app/routers/flashcards.py), [flashcard service](backend/app/services/flashcard.py), [schemas](backend/app/schemas/flashcard.py) | CRUD, strict four-option validation, approval/publication |
 | Generation admission | [generation router](backend/app/routers/generation.py), [generation service](backend/app/services/generation.py) | Job reservation, raw-PDF upload, quotas, polling/cancel/manual retry |
 | Generation execution | [worker entry](backend/app/worker.py), [generation worker](backend/app/workers/generation.py), [compatibility facade](backend/app/agents/graph.py) | Lease claims, extraction, pipeline invocation, fencing and atomic result |
+| Knowledge capture/indexing | [capture service](backend/app/services/knowledge_capture.py), [index operations](backend/app/services/knowledge_indexing.py), [index entry](backend/app/index_worker.py), [index worker](backend/app/workers/knowledge_index.py) | One-pass private capture, durable embedding claims, fenced batches, reindex staging and atomic space cutover |
+| Knowledge retrieval | [retriever](backend/app/services/knowledge_retrieval.py), [embedding adapter](backend/app/ai/embeddings.py) | Worker-owned query embeddings and authorized exact cosine plus PostgreSQL FTS retrieval with bounded deterministic fusion |
+| Subject Ask AI | [router](backend/app/routers/rag.py), [service](backend/app/services/rag_answers.py), [answer contract](backend/app/ai/answering.py), [answer entry](backend/app/answer_worker.py), [answer worker](backend/app/workers/rag_answer.py), [models](backend/app/models/rag.py) | Private threads, durable bounded admission, current-access checks, grounded/support-validated answers, citations and fenced lifecycle |
+| Knowledge management | [router](backend/app/routers/knowledge.py), [service](backend/app/services/knowledge_management.py), [schemas](backend/app/schemas/knowledge.py) | Owner-only document state, explicit review/publication, persisted-page index retry, unpublish and card-preserving deletion |
+| RAG evaluation | [v2 corpus](backend/tests/fixtures/rag_eval/subject_knowledge_v2.json), [metric support](backend/tests/support/rag_evaluation.py), [PostgreSQL evaluation](backend/tests/postgres/test_postgres_rag_pipeline.py) | Reviewed deterministic recall/ranking/support/security/latency/throughput gates and explicit exact-search/ANN/reranker decisions |
 | AI quality/providers | [pipeline](backend/app/ai/pipeline.py), [prompts](backend/app/ai/prompts.py), [grounding](backend/app/ai/grounding.py), [providers](backend/app/ai/providers/__init__.py), [rate governor](backend/app/ai/rate_limit.py) | Evidence packing, versioned prompts/refill exclusions, typed output, fixed quality diagnostics, duplicate rejection, one retry owner and request budgets |
 | PDF/source protection | [PDF processor](backend/app/services/pdf_processor.py), [source storage](backend/app/services/source_storage.py) | Subprocess bounds, optional OCR, encrypted temporary sources |
 | Study/progress | [study router](backend/app/routers/study.py), [flashcard service](backend/app/services/flashcard.py), [models](backend/app/models/flashcard.py) | Eligibility, due/review-all queries, server grading/scheduling and receipts |
 | Transactional email | [email service](backend/app/services/email.py), [worker entry](backend/app/email_worker.py), [email worker](backend/app/workers/email.py), [outbox model](backend/app/models/email.py) | Atomic enqueue, safe templates, SMTP delivery and ambiguity recovery |
 | Operators | [CLI](backend/app/cli.py), [health probe](backend/app/healthcheck.py), [shutdown](backend/app/workers/shutdown.py) | Instructor bootstrap, queue status/retry and process health/drain |
 | Diagnostics/privacy/audit | [safe diagnostics](backend/app/observability.py), [operations](backend/app/services/operations.py), [privacy](backend/app/services/privacy.py), [audit](backend/app/services/audit.py) | Correlation/errors, retained aggregate metrics, worker-loop health, operator lifecycle and transactional privileged history |
-| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260918_0010` head; Subject Knowledge constraints/triggers and mandatory vector extension |
-| Subject Knowledge foundation | [Knowledge models](backend/app/models/knowledge.py), [Knowledge lock](backend/app/services/knowledge_lock.py) | Private document/content/index revisions, reserved capacity, eligible-record predicate and durable index-job target; capture/retrieval routes follow later |
+| Schema evolution | [Alembic versions](backend/alembic/versions), [env](backend/alembic/env.py) | Baseline → current `20260920_0013` head; native Gemini embedding identity, request correlation/timings and Knowledge lifecycle audits extend the capture/index/Ask AI schema |
+| Subject Knowledge foundation | [Knowledge models](backend/app/models/knowledge.py), [Knowledge lock](backend/app/services/knowledge_lock.py) | Private document/content/index revisions, reserved capacity, eligible-record predicate, durable index queue and ordered writer/deletion locking |
 
 ## Frontend
 
@@ -34,6 +39,7 @@ give the next level of detail.
 | Instructor workflow | [instructor pages](frontend/src/pages/instructor), [subject dialogs](frontend/src/components/subjects), [set dialogs](frontend/src/components/sets) | Subjects, generation, review/edit/approval/publication, invitation |
 | Generation UI | [job hook](frontend/src/hooks/useGenerationJobs.ts), [job card](frontend/src/components/generation/GenerationJobCard.tsx), [flashcards API](frontend/src/services/flashcards.ts) | Reservation/upload, polling, cancellation/retry and bounded telemetry |
 | Student workflow | [student pages](frontend/src/pages/student), [study slice](frontend/src/store/slices/studySlice.ts), [study API](frontend/src/services/study.ts) | Enrollment views, due/review-all sessions, durable save/retry/progress |
+| Subject Knowledge/Ask AI UI | [KnowledgeArea](frontend/src/components/knowledge/KnowledgeArea.tsx), [AskAiPanel](frontend/src/components/rag/AskAiPanel.tsx), [Knowledge API](frontend/src/services/knowledge.ts), [RAG API](frontend/src/services/rag.ts) | Independent instructor Knowledge lifecycle plus principal-private conversations, job recovery, safe citations and accessible responsive states |
 | Join/recovery | [JoinCourse](frontend/src/pages/JoinCourse.tsx), [ForgotPassword](frontend/src/pages/ForgotPassword.tsx), [ResetPassword](frontend/src/pages/ResetPassword.tsx) | Invite validation/join and account recovery |
 | Shared experience | [UI controls](frontend/src/components/ui), [feedback](frontend/src/components/feedback), [English catalog](frontend/src/i18n/en.ts), [styles](frontend/src/index.css) | Accessible controls, errors, copy, responsive layout |
 
@@ -42,6 +48,7 @@ give the next level of detail.
 | Change | Trace and contract to read |
 | --- | --- |
 | Generation behavior | Instructor `SubjectDetails` → `useGenerationJobs`/flashcards API → generation router/service → generation worker → graph facade → pipeline/provider → models; [generation flow](docs/architecture/AI-GENERATION-FLOW.md) |
+| Subject Knowledge/Ask AI | Generation/Knowledge reservation and upload → shared bounded preparation → atomic capture/index enqueue → index worker → explicit publication/space cutover → authorized retriever → private answer queue/worker → grounded answer and citations; [Knowledge flow](docs/architecture/SUBJECT-KNOWLEDGE-FLOW.md) |
 | Card review/publication | `SetView`/dialogs → flashcards/subjects APIs → routers/services → card/set/subject constraints and migration trigger; [data model](docs/architecture/DATA-MODEL.md) |
 | Auth/invitation/reset | Auth/join pages and context → auth/subjects APIs → auth/subject services → user/session/invitation + outbox → email worker; [auth flow](docs/architecture/AUTH-FLOW.md) |
 | Answer/progress | `StudyMode`/study slice → study API with receipt key → study router → flashcard service → progress/receipt/enrollment rows; [study flow](docs/architecture/STUDY-PROGRESS-FLOW.md) |

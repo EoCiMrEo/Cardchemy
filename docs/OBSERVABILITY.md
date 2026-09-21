@@ -14,16 +14,19 @@ omit submitted input and exception context. Unexpected errors return a generic
 500. HTTP statuses, authentication headers and typed study conflicts remain
 authoritative. An ID is for support correlation, not authorization.
 
-Generation reservation stores the originating request ID. Worker events carry
-the job ID; email events carry the outbox ID. UUID context is isolated between
-concurrent tasks. Job diagnostics survive an API/worker restart while job
-history remains retained:
+Generation, Knowledge-index and answer reservations store the originating
+request ID; each worker restores that durable correlation context while it
+processes the claim. Worker events also carry the job ID; email events carry
+the outbox ID. UUID context is isolated between concurrent tasks. Job
+diagnostics survive an API/worker restart while job history remains retained:
 
 ```text
 docker compose exec backend python -m app.cli operations-status
 docker compose exec backend python -m app.cli operations-status --job-id JOB_UUID
 docker compose exec backend python -m app.cli audit-status --target-id RESOURCE_UUID --limit 20
 docker compose logs worker
+docker compose logs index-worker
+docker compose logs answer-worker
 ```
 
 Look up the job's stage, safe failure code, attempt count, timestamps, provider
@@ -34,9 +37,13 @@ Do not collect the source PDF or request body merely to diagnose an ID.
 ## Metrics and limitations
 
 `operations-status` returns retained request counts, 5xx rate, latency sum/mean,
-recent p95, route-template/status counts, generation/email queue and status
-counts, recent job duration, generated cards, provider/model usage and estimated
-and actual token-price cost, plus recent worker heartbeats. Micro-USD values
+recent p95, route-template/status counts, generation/email/Knowledge-index/answer
+queue and status counts, recent worker heartbeats, and bounded content-free RAG
+aggregates. Those aggregates include capture/index/answer failure and throughput
+counts; capture/index/answer duration samples; retrieval duration; answer versus
+abstention outcomes; support-rejection counts; and per-provider/model physical
+requests, retries, rate-limit waits, tokens and estimated/actual cost for index
+and answer lanes. Micro-USD values
 are millionths of a US dollar. Zero configured prices mean estimates are
 unavailable; these are not a complete billing ledger.
 
@@ -60,9 +67,10 @@ contents. Readiness does not promise provider/SMTP availability.
 
 Each worker pulses a local heartbeat file and a best-effort database heartbeat
 from its scheduling loop. Container probes use `app.healthcheck --worker-kind
-generation` or `email`: they check that specific container's loop freshness
-and database readiness. Fresh idle and intentionally disabled generation
-workers are healthy; stale or draining loops fail the worker probe. The
+generation`, `index`, `answer` or `email`: they check that specific container's loop freshness
+and database readiness. Fresh idle and intentionally disabled lanes are healthy;
+stale or draining loops fail the worker probe. A healthy worker does not prove
+the configured external provider or SMTP endpoint is available. The
 database heartbeat list helps operators find stale replicas; it does not
 replace per-container health or job lease fencing. Multiple native processes
 of the same kind share the default local heartbeat path; use containers for
@@ -89,12 +97,13 @@ and metadata remains restricted to operators.
 
 ## Audits
 
-Invitations, approval/unapproval (including manual/bulk approval), publication,
-instructor provisioning and account deletion stage fixed-field audit rows in
-the domain transaction. Rollbacks also roll back their audits. No-op state
-updates add no transition. A PostgreSQL trigger records direct account-role
-updates; the application has no role-change API. Database actors are recorded
-as `operator_database`, not an asserted human identity.
+Invitations, approval/unapproval (including manual/bulk approval), set and
+Knowledge publication/unpublication, Knowledge removal, instructor provisioning
+and account deletion stage fixed-field audit rows in the domain transaction.
+Rollbacks also roll back their audits. No-op state updates add no transition. A
+PostgreSQL trigger records direct account-role updates; the application has no
+role-change API. Database actors are recorded as `operator_database`, not an
+asserted human identity.
 
 Audits contain action, opaque actor/resource/subject IDs, time, request ID and
 fixed boolean/count/role transitions. They contain no free-form metadata or

@@ -44,9 +44,10 @@ Explicit API_PORT and VITE_API_URL values avoid reading that file, as used by
 requests to the host API_PORT, strips /api, and rewrites the refresh-cookie
 path. The built Compose frontend uses Nginx for the same-origin /api route;
 VITE_API_URL is a public value embedded at build time. Only VITE_* settings
-may be exposed to the browser. Provider keys are injected only into the
-generation worker, SMTP credentials only into the email worker, and the API
-receives the non-secret generation enablement setting.
+may be exposed to the browser. Flashcard keys are injected only into the
+generation worker, document-embedding keys into the index worker, answer and
+query-embedding keys into the answer worker, and SMTP credentials only into the
+email worker. The API receives only non-secret admission/profile metadata.
 
 The local email worker uses mailpit:1025 inside Compose, with both SMTP TLS
 flags false. For native email-worker development, use localhost:1025 through
@@ -120,7 +121,7 @@ trusted loopback without a separate network-security design.
 
 ## Diagnostics, telemetry and metadata retention
 
-These settings reach the API and both workers through the core Compose
+These settings reach the API and all workers through the core Compose
 environment. They contain no provider/SMTP credentials. See
 [observability](OBSERVABILITY.md) for fields, metric limits and health
 semantics, and [privacy](PRIVACY.md) for lifecycle/commands. Changes require
@@ -208,7 +209,7 @@ that calls are free. Paid live tests stay explicitly opted in.
 | FLASHCARD_AI_API_KEY=empty; FLASHCARD_AI_QUOTA_BUCKET=empty | Worker-only credential and explicit account/project quota label. An enabled worker requires both; no legacy key fallback. |
 | FLASHCARD_AI_BASE_URL=empty | Required for openai_compatible; must be an HTTP(S) origin/endpoint without embedded credentials, query, or fragment. Empty is correct for native Gemini. |
 | FLASHCARD_AI_ALLOW_UNSTABLE_MODEL=false | Explicit production opt-in for model names indicating preview/latest/experimental status. |
-| FLASHCARD_AI_TEMPERATURE=0.2; FLASHCARD_AI_MAX_OUTPUT_TOKENS=8192; FLASHCARD_AI_CONTEXT_WINDOW_TOKENS=1048576 | Sampling 0–2; per-call output 64–131072 tokens; model context 2048–4194304 tokens. |
+| FLASHCARD_AI_TEMPERATURE=0.2; FLASHCARD_AI_THINKING_LEVEL=low; FLASHCARD_AI_MAX_OUTPUT_TOKENS=8192; FLASHCARD_AI_CONTEXT_WINDOW_TOKENS=1048576 | Sampling 0–2 for compatible/older models; Gemini 3 omits sampling and uses validated `minimal`, `low`, `medium`, or `high` thinking; per-call output 64–131072 tokens; model context 2048–4194304 tokens. |
 | FLASHCARD_AI_PROVIDER_TIMEOUT_SECONDS=90; FLASHCARD_AI_PROVIDER_MAX_RETRIES=3 | Per-call timeout 1–600 seconds; 0–3 retries after the first attempt. |
 | FLASHCARD_AI_RETRY_BASE_SECONDS=3; FLASHCARD_AI_RETRY_MAX_SECONDS=30 | Provider retry delay bounds, 3–60 and 3–600 seconds; respect usable longer Retry-After hints. |
 | FLASHCARD_AI_CONCURRENCY=3 | Provider calls shared across one worker process, 1–32. Multiple worker replicas need divided quotas or a distributed governor. |
@@ -236,26 +237,44 @@ interpolation. Preserve
 the existing `.env`, installed secrets and generation-job provider/model
 snapshots; do not regenerate them to apply the rename.
 
-`RAG_ENABLED=false` keeps Knowledge capture/retrieval/Ask AI inactive, without
-purging any stored data. `RAG_AI_PROVIDER_ENABLED` and
-`RAG_EMBEDDING_PROVIDER_ENABLED` independently suspend their future worker
-roles. Enabling a profile is not authorization for paid requests. The complete
+`RAG_ENABLED=false` keeps new Knowledge capture/retrieval/Ask AI work inactive,
+without purging stored data. `RAG_EMBEDDING_PROVIDER_ENABLED` independently
+suspends the index worker and query embedding; `RAG_AI_PROVIDER_ENABLED`
+suspends answer admission/execution. Enabling a profile is not authorization for paid requests. The complete
 profile defaults are in the one root [.env.example](../.env.example):
 
 | Profile | Initial model and controls | Secret consumer |
 | --- | --- | --- |
 | `FLASHCARD_AI_*` | Existing selected text provider/model, card/summary/refill budgets, independent quota bucket/RPM/input TPM and cost ceiling | Generation worker |
-| `RAG_AI_*` | `openai_compatible`, `gpt-4.1-mini-2025-04-14`, answer-only temperature/output/context/timeout/retry/rate/token/cost limits, explicit quota bucket | Future answer worker |
-| `RAG_EMBEDDING_*` | `openai_compatible`, `text-embedding-3-small`, 1536 float32 cosine, `raw_text_v1`, `v1` space revision, batch/input/rate/cost limits, explicit quota bucket | Future indexing and answer workers for document/query vectors |
+| `RAG_AI_*` | Native `gemini`, stable `gemini-3.5-flash`, `minimal` thinking, answer-only output/context/timeout/retry/rate/token/cost limits, explicit quota bucket; Gemini 3 omits temperature and `BASE_URL` stays empty | Answer worker only |
+| `RAG_EMBEDDING_*` | Native `gemini`, stable `gemini-embedding-001`, 1536 normalized float32 cosine, `raw_text_v1`, `gemini-v1` space revision, provider-fixed `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING` modes, batch/input/rate/cost limits, explicit quota bucket; `BASE_URL` stays empty | Index worker for document vectors; answer worker for query vectors |
+| `RAG_CHAT_RETENTION_DAYS`, `RAG_ANSWER_*` | 90-day chat default; per-user and deployment thread/message storage, per-thread history, queue/active/daily, worker concurrency/lease/deadline/attempt/manual-retry/backoff/cleanup bounds | API admission, retention and answer worker |
 
 Each enabled role must receive only its own credentials. Sharing a provider
 account requires deliberately matching quota-bucket labels and dividing actual
 account/project limits across every profile and replica. Separate keys do not
 multiply a provider's quota. The API/email/frontend receive no profile key.
-Answer/index execution and durable space/corpus snapshots are implemented only
-in their specified later phases; these configuration fields alone do not run
-those processes. Initial prices in the template are planning inputs to verify
+The dedicated index worker implements document embedding; the dedicated answer
+worker owns query embedding, grounded answer generation and a separate semantic
+support pass. The API only enqueues durable work. These configuration fields alone do
+not authorize provider calls. Initial prices in the template are planning inputs to verify
 against current provider prices before any live calls.
+
+Knowledge-only uploads use a separate admitted queue and quota family:
+`KNOWLEDGE_MAX_ACTIVE_JOBS_*`, `KNOWLEDGE_MAX_QUEUED_JOBS_DEPLOYMENT`,
+`KNOWLEDGE_DAILY_JOBS_*`, `KNOWLEDGE_DAILY_UPLOAD_BYTES_*` and
+`KNOWLEDGE_MAX_RETAINED_SOURCE_BYTES_*`. They do not consume flashcard card/job
+quotas. Combined flashcard uploads capture Knowledge when `RAG_ENABLED=true`;
+supported capacity/capture failures are recorded independently without turning
+a successful flashcard result into a failure.
+
+`RAG_INDEX_WORKER_CONCURRENCY`, `RAG_INDEX_MAX_JOB_INPUT_TOKENS`, timeout,
+lease/heartbeat, attempt/backoff and cleanup settings bound the isolated index
+lane. The index worker requires the embedding key and quota bucket only when
+both RAG and its embedding provider are enabled. A pre-provider dead lease may
+be recovered within bounds; provider-started work is never automatically
+replayed. Provider/task/model/space/format/dimension/representation/metric
+identity is snapshotted and incompatible spaces are never compared.
 
 ## SMTP and email worker settings
 

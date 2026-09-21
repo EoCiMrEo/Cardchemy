@@ -81,6 +81,26 @@ function defaultResponse(call: ApiCall, auth: MockApiOptions['auth']): MockRespo
     return { json: userFor(auth ?? 'instructor') }
   }
   if (call.method === 'GET' && call.path === '/subjects') return { json: [] }
+  if (call.method === 'GET' && /^\/subjects\/[^/]+\/knowledge\/documents$/.test(call.path)) {
+    return { json: { documents: [] } }
+  }
+  if (call.method === 'GET' && /^\/subjects\/[^/]+\/rag\/threads$/.test(call.path)) {
+    return { json: { threads: [] } }
+  }
+  if (call.method === 'GET' && /^\/subjects\/[^/]+\/rag\/profile$/.test(call.path)) {
+    return {
+      json: {
+        rag_enabled: true,
+        answer_available: true,
+        answer_provider: 'gemini',
+        answer_model: 'gemini-3.5-flash',
+        embedding_available: true,
+        embedding_provider: 'gemini',
+        embedding_model: 'gemini-embedding-001',
+        chat_retention_days: 90,
+      },
+    }
+  }
   return {
     status: 501,
     json: { detail: `No browser-test mock is registered for ${call.method} ${call.path}` },
@@ -174,6 +194,12 @@ export const fixtures = {
   generationJob: {
     id: 'generation-job-1',
     subject_id: 'subject-1',
+    job_kind: 'flashcards',
+    document_id: null,
+    knowledge_content_revision_id: null,
+    knowledge_capture_status: 'not_requested',
+    knowledge_capture_error_code: null,
+    knowledge_capture_error_message: null,
     flashcard_set_id: 'set-1',
     status: 'completed',
     progress: 100,

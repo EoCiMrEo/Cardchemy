@@ -14,18 +14,33 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.graph import create_flashcard_graph
+from app.ai.chunking import prepare_document
 from app.ai.pipeline import PipelineError
 from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings, get_settings
 from app.database import async_session_maker
-from app.models.generation import GenerationJob, GenerationJobSource, GenerationJobStatus
+from app.models.generation import (
+    GenerationJob,
+    GenerationJobKind,
+    GenerationJobSource,
+    GenerationJobStatus,
+)
 from app.observability import job_context, safe_error_code
 from app.schemas.subject import FlashcardSetCreate
 from app.services.flashcard import FlashcardService
 from app.services.generation import GenerationJobService
+from app.services.knowledge_capture import (
+    KnowledgeCaptureFailure,
+    KnowledgeCaptureUnsafeFailure,
+    capture_prepared_document,
+    record_capture_failure,
+    remove_captured_knowledge,
+)
+from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.services.operations import pulse_worker
 from app.services.pdf_processor import PDFProcessingError, PDFProcessor
 from app.services.source_storage import SourceStorage, SourceStorageError
@@ -75,7 +90,7 @@ class GenerationWorker:
     async def run(self, stop_event: asyncio.Event) -> None:
         """Poll with bounded local concurrency until shutdown is requested."""
 
-        if not self.settings.flashcard_ai_provider_enabled:
+        if not self.settings.flashcard_ai_provider_enabled and not self.settings.rag_enabled:
             logger.info("worker_disabled", extra={"kind": "generation"})
             try:
                 while not stop_event.is_set():
@@ -170,6 +185,10 @@ class GenerationWorker:
                     .where(
                         GenerationJob.status == GenerationJobStatus.QUEUED.value,
                         GenerationJob.available_at <= utcnow(),
+                        or_(
+                            GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
+                            self.settings.flashcard_ai_provider_enabled,
+                        ),
                     )
                     .order_by(
                         GenerationJob.available_at,
@@ -232,9 +251,12 @@ class GenerationWorker:
         async with self.session_factory() as db:
             async with db.begin():
                 job = await self._claimed_job(db, job_id, claim_token, for_update=True)
+                now = utcnow()
                 job.stage = stage
                 job.progress = progress
-                job.updated_at = utcnow()
+                if stage == "capturing_knowledge" and job.knowledge_capture_started_at is None:
+                    job.knowledge_capture_started_at = now
+                job.updated_at = now
         logger.info("generation_stage", extra={"stage": stage})
 
     async def _heartbeat(
@@ -330,6 +352,25 @@ class GenerationWorker:
                 code="source_decryption_failed",
                 message="The retained PDF could not be read. Upload it again.",
                 retryable=False,
+            )
+        except KnowledgeCaptureFailure as exc:
+            await self._finish_failure(
+                job_id,
+                claim_token,
+                code=exc.code,
+                message=exc.safe_message,
+                retryable=False,
+                auto_retry=False,
+            )
+        except KnowledgeCaptureUnsafeFailure:
+            logger.warning("knowledge_capture_fenced")
+            await self._finish_failure(
+                job_id,
+                claim_token,
+                code="knowledge_capture_failed",
+                message="Knowledge capture could not be committed safely.",
+                retryable=False,
+                auto_retry=False,
             )
         except ModelGenerationFailure:
             await self._finish_failure(
@@ -432,6 +473,7 @@ class GenerationWorker:
                 encrypted_payload = bytes(source.payload)
                 fingerprint = job.request_fingerprint
                 requested_card_count = job.requested_card_count
+                job_kind = job.job_kind
                 job_provider = job.ai_provider
                 job_model = job.ai_model
 
@@ -454,6 +496,64 @@ class GenerationWorker:
             document = await asyncio.to_thread(extract)
             del source_bytes
 
+            prepared = prepare_document(
+                document,
+                max_tokens=self.settings.flashcard_ai_chunk_input_tokens,
+                overlap_tokens=self.settings.flashcard_ai_chunk_overlap_tokens,
+            )
+            capture_requested = (
+                job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value
+                or self.settings.rag_enabled
+            )
+            if capture_requested:
+                await self._update_stage(job_id, claim_token, "capturing_knowledge", 32)
+                try:
+                    await capture_prepared_document(
+                        self.session_factory,
+                        settings=self.settings,
+                        job_id=job_id,
+                        worker_id=self.worker_id,
+                        claim_token=claim_token,
+                        prepared=prepared,
+                    )
+                except KnowledgeCaptureFailure as exc:
+                    await record_capture_failure(
+                        self.session_factory,
+                        job_id=job_id,
+                        worker_id=self.worker_id,
+                        claim_token=claim_token,
+                        code=exc.code,
+                        message=exc.safe_message,
+                    )
+                    if job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+                        raise
+                except IntegrityError as exc:
+                    # Aggregate-capacity triggers are a supported independent
+                    # capture outcome. Any other integrity failure stays fatal.
+                    detail = str(getattr(exc, "orig", exc)).casefold()
+                    if not any(marker in detail for marker in (
+                        "knowledge storage", "knowledge_usage", "capacity",
+                    )):
+                        raise
+                    failure = KnowledgeCaptureFailure(
+                        "knowledge_capacity_exceeded",
+                        "Knowledge storage capacity was exceeded.",
+                    )
+                    await record_capture_failure(
+                        self.session_factory,
+                        job_id=job_id,
+                        worker_id=self.worker_id,
+                        claim_token=claim_token,
+                        code=failure.code,
+                        message=failure.safe_message,
+                    )
+                    if job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+                        raise failure
+
+            if job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+                await self._finish_knowledge_success(job_id, claim_token)
+                return
+
             await self._update_stage(job_id, claim_token, "generating_cards", 40)
             job_settings = self.settings.model_copy(
                 update={"flashcard_ai_provider": job_provider, "flashcard_ai_model": job_model}
@@ -467,6 +567,7 @@ class GenerationWorker:
             result = await graph.ainvoke(
                 {
                     "pdf_document": document,
+                    "prepared_document": prepared,
                     "target_count": requested_card_count,
                 },
             )
@@ -496,6 +597,7 @@ class GenerationWorker:
                     set_data,
                     source_pdf_name=job.source_pdf_name,
                     generation_job_id=job.id,
+                    document_id=job.document_id,
                 )
                 created_cards = await FlashcardService.create_flashcards_bulk(
                     db, cards_data, flashcard_set.id
@@ -524,9 +626,33 @@ class GenerationWorker:
 
         logger.info("generation_completed", extra={"job_id": job_id, "card_count": len(created_cards), "input_tokens": int((telemetry or {}).get("actual_input_tokens") or 0), "output_tokens": int((telemetry or {}).get("actual_output_tokens") or 0), "cost_microusd": int((telemetry or {}).get("actual_cost_microusd") or 0)})
 
+    async def _finish_knowledge_success(self, job_id: UUID, claim_token: str) -> None:
+        async with self.session_factory() as db:
+            async with db.begin():
+                job = await self._claimed_job(db, job_id, claim_token, for_update=True)
+                if job.knowledge_capture_status != "captured":
+                    raise KnowledgeCaptureUnsafeFailure("Knowledge capture did not commit.")
+                await db.execute(delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id))
+                now = utcnow()
+                job.status = GenerationJobStatus.COMPLETED.value
+                job.stage = "completed"
+                job.progress = 100
+                job.generated_card_count = 0
+                job.completed_at = now
+                job.heartbeat_at = now
+                job.lease_expires_at = None
+                job.worker_id = None
+                job.claim_token = None
+                job.error_code = None
+                job.error_message = None
+                job.error_retryable = False
+                job.updated_at = now
+        logger.info("knowledge_capture_completed", extra={"job_id": job_id})
+
     async def _finish_cancelled(self, job_id: UUID, claim_token: str) -> None:
         async with self.session_factory() as db:
             async with db.begin():
+                await acquire_knowledge_write_lock(db)
                 try:
                     job = await self._claimed_job(db, job_id, claim_token, for_update=True)
                 except JobCancellationRequested:
@@ -540,6 +666,8 @@ class GenerationWorker:
                 await db.execute(
                     delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id)
                 )
+                if job.knowledge_capture_status in {"pending", "captured"}:
+                    await remove_captured_knowledge(db, job)
                 now = utcnow()
                 job.status = GenerationJobStatus.CANCELLED.value
                 job.stage = "cancelled"
@@ -705,6 +833,7 @@ class GenerationWorker:
 
         async with self.session_factory() as db:
             async with db.begin():
+                await acquire_knowledge_write_lock(db)
                 now = utcnow()
                 awaiting = list(
                     (
@@ -721,6 +850,8 @@ class GenerationWorker:
                     ).all()
                 )
                 for job in awaiting:
+                    if job.knowledge_capture_status in {"pending", "captured"}:
+                        await remove_captured_knowledge(db, job)
                     job.status = GenerationJobStatus.CANCELLED.value
                     job.stage = "upload_expired"
                     job.progress = 100
@@ -750,6 +881,8 @@ class GenerationWorker:
                         .with_for_update()
                     )
                     if job.cancellation_requested_at is not None:
+                        if job.knowledge_capture_status in {"pending", "captured"}:
+                            await remove_captured_knowledge(db, job)
                         job.status = GenerationJobStatus.CANCELLED.value
                         job.stage = "cancelled"
                         job.progress = 100

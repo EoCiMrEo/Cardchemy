@@ -11,8 +11,9 @@ accepting real users. See [diagnostics/redaction](OBSERVABILITY.md),
 
 Accounts store normalized email, name, password hash and role. PostgreSQL holds
 subjects, cards, enrollment, progress/answer receipts, revocable auth/reset and
-invitation state, encrypted temporary PDFs, generation metadata, email outbox
-and content-free diagnostics/audits. Access tokens remain in browser memory;
+invitation state, encrypted temporary PDFs, generation metadata, private
+Subject Knowledge and per-user Ask AI conversations, email outbox and
+content-free diagnostics/audits. Access tokens remain in browser memory;
 refresh tokens use protected cookies. There is no offline answer store.
 
 When generation is enabled with `FLASHCARD_AI_PROVIDER=gemini`, extracted document text
@@ -27,17 +28,24 @@ the operator-selected endpoint, which can be hosted or local.
 
 The approved [Subject Knowledge boundary](architecture/SUBJECT-KNOWLEDGE-FLOW.md)
 adds durable extracted pages, chunks and vectors independently from temporary
-PDFs and flashcard publication. Phase 13 establishes their schema; upload,
-indexing, retrieval and chat arrive in later phases. Before any real Knowledge
-write, the operator notice must disclose this permanent text retention and
-embedding transfer to the configured endpoint. Embedding requests contain
-document chunks or a question; answer requests contain the question, eligible
-evidence and bounded private history. These transfers occur only in their
-authorized workers after those phases are implemented. Provider enablement or
+PDFs and flashcard publication. Phases 14–16 implement private capture,
+document embedding and internal authorized retrieval. Before enabling these
+writes for real users, the operator notice must disclose permanent text
+retention and embedding transfer to the configured endpoint. Embedding requests
+contain document chunks; answer-worker query embedding contains a question,
+and answer requests contain the question, eligible evidence and
+bounded private history. Transfers occur only in the responsible worker.
+Provider enablement or
 a key being present does not authorize evaluation spending.
 
-The initial embedding/answer profiles use the official OpenAI endpoint and the
-models in [ADR-012](decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
+The default embedding/answer profiles use Google's official Gemini endpoint,
+`gemini-embedding-001` and `gemini-3.5-flash` under
+[ADR-014](decisions/ADR-014-native-gemini-rag-profiles.md). The embedding
+worker sends document chunks with `RETRIEVAL_DOCUMENT`; the answer worker sends
+questions with `QUESTION_ANSWERING` and sends bounded evidence/history for the
+structured answer/support calls. The authorized profile endpoint supplies the
+provider/model disclosure shown before an enabled upload or question; it never
+returns keys or private endpoint credentials.
 Operators must review their current provider contract, retention and location
 before enabling any transfer. This guide makes no zero-retention or training-use
 claim about that provider. A disabled RAG flag suspends new RAG work and keeps
@@ -73,8 +81,8 @@ contains no document content.
 | Enrollment, study progress and answer receipts | Until owning account or related subject/card deletion. Receipts have no age-based purge, preserving logical retry idempotency. | Only the account's own records and allowlisted receipt results. |
 | Generation job history | Configurable terminal-history period; only terminal jobs without retained sources qualify. Content/result sets survive job-history deletion. Job reservation idempotency lasts while its history is retained. | Own safe job metadata/usage; no source bytes/hashes/claim tokens. |
 | Temporary encrypted PDFs | Success, cancellation and permanent failures remove sources atomically; retryable failures retain them for the configured 1–168 hours (default 24). Unfilled upload reservations expire (default 15 minutes). | Excluded; source storage is transient, not a document archive. |
-| Subject Knowledge (Phase 13 schema; write routes follow in Phase 14) | Extracted pages, chunks and vectors persist until explicit document/Subject/owner deletion. Private/staged/failed retained revisions count against permanent capacity. Reindexing uses retained pages; no permanent raw PDF is added. Document deletion preserves detached flashcards. | Design requires instructor-owned allowlisted pages/chunks/revision metadata; vectors, internal claims and other students' data excluded. Extend the operator exporter before first capture writes. |
-| Ask AI conversations (Phase 17 prerequisite) | Only their user can read them, including instructors. Each message and its sources expire 90 days after creation under bounded cleanup. Reads hide a stored answer/citations when any supporting content is unpublished, deleted or replaced, and recheck current Subject access. | Design permits only the requester's own threads/messages and currently eligible evidence. No instructor access to student chats. Implement before chat writes. |
+| Subject Knowledge | Extracted pages, chunks and vectors persist until explicit document/Subject/owner deletion. Private/staged/failed retained revisions count against permanent capacity. Reindexing uses retained pages; no permanent raw PDF is added. Cancellation deletes the revision/document created by that job; a flashcard failure can retain a valid private capture. Document deletion preserves detached flashcards. | Instructor-owned documents, pages, chunks and revision/job metadata are allowlisted. Vectors, claim/idempotency hashes, raw temporary PDFs and other students' data are excluded. |
+| Ask AI conversations | Only their user can read them, including instructors. Each message and its sources expire 90 days after creation by default under bounded cleanup. Reads hide a stored answer/citations when any supporting content is unpublished, deleted or replaced, and recheck current Subject access. | Only the requester's own threads/messages/sources/job metadata are allowlisted. No instructor access to student chats. Provider prompts, claim tokens, session IDs and idempotency hashes are excluded. |
 | Auth/reset/invitation metadata | Expired records may be pruned after the configured grace; linked outbox records prevent pruning. Consumed invitations remain consumed while retained. | Tokens/codes/hashes and email recipient bindings excluded. |
 | Email outbox | Worker cleanup: sent 7 days, failures 30 days by default; configurable. Active delivery and ambiguous-send recovery retain their existing guards. | Bodies/links/recipient lists excluded. |
 | Rate/quota metadata | Cleanup only after active rate/UTC quota windows and configured metadata grace. Quota operation receipts remain while linked job history exists, preserving manual-retry idempotency; detached charges survive subject/job deletion until their grace expires. | Excluded. |
@@ -118,22 +126,24 @@ Exports intentionally contain authorized private content; never send them to
 logs, telemetry, issue trackers or this repository. They omit other accounts,
 credentials, invitation codes, rendered email and temporary PDFs.
 
-The current exporter/cleanup CLI covers existing account and learning records.
-Its Knowledge/chat extensions are prerequisites for the later capture/chat
-phases, not implemented by a new table alone. Before those writes, extend the
-same consistent-snapshot allowlist and bounded cleanup workflow, fence/drain
-affected index/answer writers for deletion, and test Subject/account cascades
-and revision invalidation. Backups, provider copies and private export files
-retain their separate deletion limits.
+The current exporter includes instructor-owned Knowledge documents, pages,
+chunks and safe revision/index-job metadata from the same consistent snapshot;
+embedding values and internal hashes/claims remain excluded. Account deletion
+takes the global Knowledge writer lock and refuses running generation, capture,
+index or answer claims. Subject and document deletion use the same ordered lock
+and refuse active related work, so a stale worker cannot resurrect content.
+Ask AI exports include only the requester's private conversation and
+safe job fields; they never include another user's chat. Backups,
+provider copies and private export files retain their separate deletion limits.
 
 Before account deletion, verify authorization, the UUID and a usable backup;
-stop admission and drain/stop generation and email workers. Use an operator
+stop admission and drain/stop generation, index, answer and email workers. Use an operator
 container with the same validated settings to run:
 
 ```text
-docker compose stop -t 45 backend worker email-worker
+docker compose stop -t 45 backend worker index-worker answer-worker email-worker
 docker compose run --rm --no-deps backend python -m app.cli delete-account --id ACCOUNT_UUID --apply --writers-stopped
-docker compose up -d --wait backend worker email-worker
+docker compose up -d --wait backend worker index-worker answer-worker email-worker
 ```
 
 The acknowledgement flags are mandatory; the service additionally locks the

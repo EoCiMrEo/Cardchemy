@@ -47,6 +47,35 @@ SAFE_ERROR_CODES = frozenset({
     "user_daily_job_limit", "user_daily_card_limit", "user_daily_upload_limit", "user_source_storage_limit",
     "deployment_daily_job_limit", "deployment_daily_card_limit", "deployment_daily_upload_limit", "worker_lease_expired",
     "pdf_processing_failed",
+    "knowledge_capture_disabled", "knowledge_capture_failed", "knowledge_capture_unsupported",
+    "knowledge_capacity_exceeded", "knowledge_document_not_found", "knowledge_job_not_found",
+    "knowledge_user_active_limit", "knowledge_deployment_active_limit", "knowledge_queue_full",
+    "knowledge_user_daily_job_limit", "knowledge_user_daily_upload_limit",
+    "knowledge_deployment_daily_job_limit", "knowledge_deployment_daily_upload_limit",
+    "knowledge_user_source_storage_limit", "knowledge_deployment_source_storage_limit",
+    "knowledge_index_failed", "knowledge_cancelled", "knowledge_lease_expired",
+    "embedding_provider_timeout", "embedding_provider_unavailable",
+    "embedding_provider_invalid_request", "embedding_provider_authentication_failed",
+    "embedding_provider_access_denied", "embedding_model_unavailable",
+    "embedding_provider_rate_limited", "embedding_provider_rejected_request",
+    "embedding_provider_request_token_limit", "invalid_embedding_output",
+    "knowledge_retrieval_disabled", "knowledge_retrieval_invalid_request",
+    "knowledge_retrieval_failed", "knowledge_not_ready", "knowledge_index_not_ready",
+    "knowledge_space_not_ready", "knowledge_rebuild_required", "knowledge_not_published",
+    "knowledge_reupload_required", "knowledge_index_not_retryable",
+    "knowledge_rebuild_failed", "knowledge_index_already_pending", "knowledge_work_active",
+    "subject_work_active",
+    "knowledge_scope_unavailable", "knowledge_embedding_space_mismatch",
+    "knowledge_query_embedding_invalid", "knowledge_source_unavailable",
+    "rag_disabled", "rag_answer_unavailable", "rag_thread_not_found", "rag_thread_limit",
+    "rag_deployment_thread_limit", "rag_deployment_message_storage_limit",
+    "rag_user_active_limit", "rag_deployment_active_limit", "rag_answer_queue_full",
+    "rag_user_daily_limit", "rag_deployment_daily_limit", "rag_thread_message_limit",
+    "rag_message_storage_limit", "rag_question_too_long", "rag_knowledge_unavailable", "rag_answer_cost_limit",
+    "rag_answer_job_not_found", "rag_answer_not_retryable", "rag_answer_retry_limit",
+    "rag_answer_snapshot_changed", "rag_message_not_found", "rag_sources_unavailable",
+    "rag_answer_failed", "rag_answer_cancelled", "rag_answer_lease_expired",
+    "rag_access_revoked", "rag_corpus_changed", "rag_profile_mismatch",
 })
 EVENTS = frozenset({
     "api_started", "database_revision_verified", "api_stopped", "request_completed",
@@ -57,6 +86,9 @@ EVENTS = frozenset({
     "email_started", "email_sent", "email_failed", "email_lease_lost",
     "password_reset_enqueue_failed", "process_failed", "telemetry_failed", "telemetry_sent",
     "external_log",
+    "knowledge_capture_completed", "knowledge_capture_fenced", "index_heartbeat_failed",
+    "index_lease_lost", "index_internal_error",
+    "answer_completed", "answer_heartbeat_failed", "answer_lease_lost", "answer_internal_error",
 })
 NUMERIC_FIELDS = frozenset({
     "status_code", "latency_milliseconds", "duration_milliseconds", "attempt_count",
@@ -64,9 +96,9 @@ NUMERIC_FIELDS = frozenset({
     "provider_request_count", "provider_retry_count",
 })
 ENUM_FIELDS = {
-    "kind": {"generation", "email", "api"},
+    "kind": {"generation", "email", "index", "answer", "api"},
     "status": {"running", "disabled", "draining", "completed", "failed", "cancelled", "queued"},
-    "stage": {"starting", "validating_pdf", "extracting_text", "generating_cards", "persisting"},
+    "stage": {"starting", "validating_pdf", "extracting_text", "capturing_knowledge", "generating_cards", "persisting"},
 }
 
 
@@ -220,6 +252,33 @@ SAFE_DOMAIN_MESSAGES = frozenset({
     "Your daily generated-card limit has been reached.", "Your daily generation-job limit has been reached.",
     "Your retained temporary PDF storage is at capacity.", "card_count is outside the configured generation limits.",
     "This Idempotency-Key was already used for a different answer.",
+    "Ask AI is not enabled.", "Ask AI is temporarily unavailable.",
+    "Ask AI thread not found.", "Your Ask AI thread limit has been reached.",
+    "Finish or cancel your active Ask AI job first.", "Ask AI is temporarily at capacity.",
+    "The Ask AI queue is full.", "Your daily Ask AI limit has been reached.",
+    "The deployment daily Ask AI limit has been reached.",
+    "This Ask AI thread has reached its message limit.",
+    "Your Ask AI message storage limit has been reached.",
+    "Current course materials are unavailable for this request.",
+    "The Ask AI request exceeds the configured cost limit.", "Ask AI job not found.",
+    "This Ask AI job can no longer be retried.", "This Ask AI job reached its manual retry limit.",
+    "Ask AI configuration or course materials changed; submit a new question.",
+    "Ask AI message not found.", "Current answer sources are unavailable.",
+    "Knowledge must finish indexing before review and publication.",
+    "Knowledge has no ready index to publish.",
+    "Rebuild this document in the active Knowledge index before publication.",
+    "Knowledge is not currently published.",
+    "The stored pages are unavailable for retry; upload a new PDF revision.",
+    "This Knowledge index is not in a retryable state.",
+    "A compatible Knowledge index already exists or is in progress.",
+    "Stop or cancel active work for this Knowledge document before removal.",
+    "Stop or cancel active Subject work before deletion.",
+    "Subject is unavailable.", "Subject or embedding space is unavailable.",
+    "Cutover is blocked until every active content revision has a ready compatible index.",
+    "The content revision has no chunk snapshot.",
+    "The stored content requires a reviewed chunker migration.",
+    "The content revision has no canonical pages.",
+    "The canonical pages cannot be rebuilt within current Knowledge bounds.",
 })
 
 
@@ -243,7 +302,7 @@ def sanitize_validation(errors: list) -> list[dict]:
             "time_limit_seconds", "time_limit", "time_limit_per_card", "expires_in_hours", "recipient_email",
             "card_count", "target_count", "requested_card_count", "source_pdf_name", "set_title", "set_description",
             "selected_option", "selected_option_index", "time_spent_seconds", "mode", "limit", "offset",
-            "Idempotency-Key", "idempotency-key",
+            "Idempotency-Key", "idempotency-key", "thread_id", "message_id", "question", "document_ids",
         }
         location = error.get("loc", ())
         safe_location = [part if isinstance(part, str) and part in safe_fields else part if type(part) is int and 0 <= part < 10000 else "field" for part in location[:8]] if isinstance(location, (list, tuple)) else ["field"]
