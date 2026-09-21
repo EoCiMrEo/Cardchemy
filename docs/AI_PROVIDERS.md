@@ -135,9 +135,11 @@ retryable jobs. This avoids attempting an old model snapshot against a new
 provider account. Re-run the offline corpus and the deliberately opt-in live
 evaluation described in `AI_EVALUATION.md` before production rollout.
 
-The [subject-scoped RAG plan](<../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-adds independent `RAG_AI_*` and `RAG_EMBEDDING_*` profiles and a mandatory
-PostgreSQL 16 + pgvector foundation. See
+The implemented [Subject Knowledge flow](architecture/SUBJECT-KNOWLEDGE-FLOW.md)
+uses independent `RAG_AI_*` and `RAG_EMBEDDING_*` profiles and a mandatory
+PostgreSQL 16 + pgvector foundation. The completed phase checklist is retained
+in the [documentation archive](<archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>).
+See
 [ADR-012](decisions/ADR-012-subject-knowledge-and-rag-boundaries.md) for the
 accepted boundary. The isolated index worker now implements strict bounded
 document embeddings; the answer worker owns query embeddings, grounded answer

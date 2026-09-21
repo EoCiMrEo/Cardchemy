@@ -9,8 +9,9 @@ passed, including an actual clean-machine production-profile recovery rehearsal.
 
 ## Current phase
 
-The [remediation plan](../../issues-required-remediation.md) records Phases 0–11
-complete. All eleven separate v1.0 operational readiness items passed; see
+The [archived remediation tracker](../archive/issues-required-remediation.md)
+records Phases 0–11 complete. All eleven separate v1.0 operational readiness
+items passed; see
 [exact-source evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 Current product version is 0.1.0. The repository context system is implemented;
 its [completion log](../../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md) records its
@@ -66,8 +67,8 @@ configuration and database upgrade before starting this code.
 
 ## Current focus and known risks
 
-The separate [Subject-scoped RAG implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-is implemented through Preparation A/B and Phases 12–21 technical closure. Preparation A prompt,
+The [archived Subject-scoped RAG implementation plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+records completed Preparation A/B and Phases 12–21 closure. Preparation A prompt,
 diagnostic and offline-comparison implementation passed its offline and
 deterministic journey checks; on 2026-09-18 the operator accepted the authored
 card sample as "very good". Preparation B's definitive AI profile migration

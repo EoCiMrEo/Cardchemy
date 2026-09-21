@@ -111,4 +111,4 @@ guarded sample at that time; it does not establish future availability, price,
 provider billing completeness or quality for every production Subject. See
 [AI evaluation](AI_EVALUATION.md), [testing](TESTING.md), the
 [selected profile](decisions/ADR-014-native-gemini-rag-profiles.md)
-and the [RAG plan](<../Cardchemy-Subject-Scoped RAG Implementation Plan.md>).
+and the [archived RAG plan](<archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>).

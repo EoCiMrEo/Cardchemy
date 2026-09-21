@@ -74,7 +74,7 @@ def validate(root: Path = ROOT) -> tuple[list[str], int, int]:
     active.update(path for path in (root / "docs").rglob("*.md")
                   if "archive" not in path.relative_to(root / "docs").parts)
     active.update(root / name for name in (
-        "CHANGELOG.md", "issues-required-remediation.md",
+        "CHANGELOG.md",
         "frontend/README.md", ".agent/logs/README.md",
     ))
     active.update(root / name for name in (".agent/README.md", ".agent/MOC.md")

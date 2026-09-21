@@ -95,7 +95,7 @@ def validate_local(version: str, *, root: Path = ROOT) -> dict:
     require(len(re.findall(rf"(?m)^## \[{re.escape(version)}\]", changelog)) == 1, "Changelog needs exactly one target-version section")
     require("https://github.com/EoCiMrEo/Cardchemy/security/advisories/new" in (root / "SECURITY.md").read_text(encoding="utf-8"), "Private reporting channel missing")
     if int(version.split(".")[0]) >= 1:
-        roadmap = (root / "issues-required-remediation.md").read_text(encoding="utf-8")
+        roadmap = (root / "docs/archive/issues-required-remediation.md").read_text(encoding="utf-8")
         gate = roadmap.split("## v1.0 release gate", 1)[-1]
         require("- [ ]" not in gate, "v1.0 release gate still has incomplete items")
     return {"version": version, "tag": f"v{version}", "repository": REPOSITORY}

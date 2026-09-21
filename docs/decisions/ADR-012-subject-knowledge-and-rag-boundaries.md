@@ -8,10 +8,11 @@ The initial G5 provider/model selection is superseded by
 boundary in this record remains accepted.
 The operator approved G1/G2/G4/G6, delegated G5 selection, and approved the G3
 capture/cancellation outcome during implementation of the
-[RAG plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>) through
-Phase 19. Capture, indexing, internal authorized retrieval, private durable
+[archived RAG plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+through Phase 21. Capture, indexing, internal authorized retrieval, private durable
 conversation/answer APIs, the Knowledge/Ask AI UI and deterministic evaluation
-gates are implemented. Phase 20 and later integration/rollout remain separate.
+gates are implemented. Current shipped status remains in
+[current state](../development/CURRENT-STATE.md).
 
 ## Context
 

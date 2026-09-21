@@ -56,4 +56,5 @@ The audit trail is diagnostic, not tamper-proof. No legal-compliance,
 production-availability or paid-provider guarantee is implied by a passing
 offline test. Manual assistive-technology and deployment release gates remain
 documented in [accessibility](docs/ACCESSIBILITY.md) and the
-[remediation plan](issues-required-remediation.md).
+[release guide](docs/RELEASING.md); completed evidence is indexed by
+[current state](docs/development/CURRENT-STATE.md).

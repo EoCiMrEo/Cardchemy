@@ -102,6 +102,24 @@ runtime source or configuration behavior changes. These results resolve the
 aggregate definition-of-done gate without asserting a centralized production
 deployment.
 
+## Completed-plan archival
+
+After all checklist gates closed, the operator requested that both completed
+planning documents be archived. The root Subject-scoped RAG plan and remediation
+tracker moved, with names preserved, to `docs/archive/`. Each has a dated
+historical banner and repaired internal links; the archive index classifies them
+as completed task/gate evidence rather than current instructions.
+
+All active consumers were reviewed. Maintained milestone status now points to
+`docs/development/CURRENT-STATE.md`, current proposals to `ROADMAP.md`, and durable
+RAG contracts to architecture/ADRs. The public roadmap no longer misclassifies
+implemented RAG/vector search as an unaccepted proposal. Context validation no
+longer registers the completed root tracker as an active guide, while the release
+validator reads its archived v1.0 gate evidence. Historical dated log bodies were
+preserved unchanged even where they retain old point-in-time paths. This archive
+change modifies documentation/navigation and validation paths only; it does not
+change runtime source, configuration, schema or operator data.
+
 ## Limits and preservation
 
 - No centralized production deployment exists or is claimed.
