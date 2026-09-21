@@ -49,8 +49,9 @@ them for operational detail rather than copying their setting tables/commands.
 | [Accessibility](ACCESSIBILITY.md) | Automated interaction checks and manual release AT pass |
 | [Localization](LOCALIZATION.md) | English catalog and requirements for another language |
 
-[Remediation plan](../issues-required-remediation.md) owns detailed phase tasks;
-[public roadmap](../ROADMAP.md) separates implemented work from proposals.
+[Current state](development/CURRENT-STATE.md) owns completed milestone status;
+the [public roadmap](../ROADMAP.md) owns current proposals. Completed phase
+checklists are preserved in the [archive](archive/README.md).
 [Contribution](../CONTRIBUTING.md), [security](../SECURITY.md),
 [conduct](../CODE_OF_CONDUCT.md) and [brand terms](../BRANDING.md) govern participation.
 [changelog](../CHANGELOG.md) owns release history. Update guides with affected

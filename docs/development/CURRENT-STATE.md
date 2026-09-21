@@ -1,15 +1,17 @@
 # Current Development State
 
 Snapshot: 2026-09-21. Phases 0–11, Subject Knowledge RAG Phases 12–19 and the
-Phase 20/21 implementation, offline integration and bounded live-AI scope are complete. The public v0.1.0 release
+complete Phase 20/21 implementation, integration, bounded live-AI and release
+closure scope are complete. The public v0.1.0 release
 contains independently verified keyless-signed image digests, checksums,
 source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
 passed, including an actual clean-machine production-profile recovery rehearsal.
 
 ## Current phase
 
-The [remediation plan](../../issues-required-remediation.md) records Phases 0–11
-complete. All eleven separate v1.0 operational readiness items passed; see
+The [archived remediation tracker](../archive/issues-required-remediation.md)
+records Phases 0–11 complete. All eleven separate v1.0 operational readiness
+items passed; see
 [exact-source evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 Current product version is 0.1.0. The repository context system is implemented;
 its [completion log](../../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md) records its
@@ -49,7 +51,9 @@ separate documentation scope.
   authorized bounded live Gemini flashcard/RAG evaluations. The operator
   confirmed the release is self-hosted through the production-shaped Docker
   stack, with no centralized production deployment, and reported the current
-  release-specific Windows/browser/Narrator validation as passed.
+  release-specific Windows/browser/Narrator validation as passed. Protected-main
+  hosted CI, production recovery rehearsal #7 and an exact fresh-clone
+  `docker compose up -d` start all passed commit `8a5c0aa`.
 
 The [Phase 9 closure log](../../.agent/logs/2026-09-16/2026-09-16-phase-9-merge-closure.md)
 supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
@@ -63,8 +67,8 @@ configuration and database upgrade before starting this code.
 
 ## Current focus and known risks
 
-The separate [Subject-scoped RAG implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-is implemented through Preparation A/B and Phases 12–21 technical closure. Preparation A prompt,
+The [archived Subject-scoped RAG implementation plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+records completed Preparation A/B and Phases 12–21 closure. Preparation A prompt,
 diagnostic and offline-comparison implementation passed its offline and
 deterministic journey checks; on 2026-09-18 the operator accepted the authored
 card sample as "very good". Preparation B's definitive AI profile migration
@@ -95,8 +99,10 @@ health HTTP 200. The operator confirmed there is no centralized production targe
 users clone the repository and run its Docker stack, applying the documented
 operator gates and reversible feature-disable/drain procedure. The release-specific
 Windows/browser/Narrator validation passed; exact version identifiers were not
-supplied. The remaining closure evidence is protected-main hosted Linux CI,
-production rehearsal and a clean-clone Docker start from that merged source.
+supplied. PR #36 passed all 14 hosted checks and merged as protected-main commit
+`8a5c0aa`; production recovery rehearsal #7 and the final isolated clean-clone
+Docker start passed that exact source. No centralized production deployment is
+claimed by those self-hosted release gates.
 The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
 and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
 logical restore into a separate fresh target; the existing volume path alone

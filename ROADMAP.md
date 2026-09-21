@@ -2,9 +2,9 @@
 
 This page describes implemented capabilities and proposals. It is not a
 delivery-date commitment. [Current state](docs/development/CURRENT-STATE.md)
-summarizes milestones; the [remediation tracker](issues-required-remediation.md)
-owns engineering tasks and release gates. [Accepted ADRs](docs/decisions/ADR-000-INDEX.md)
-explain decisions already made.
+summarizes completed milestones; this page owns current proposals. Completed
+engineering trackers are in the [documentation archive](docs/archive/README.md).
+[Accepted ADRs](docs/decisions/ADR-000-INDEX.md) explain decisions already made.
 
 ## Implemented
 
@@ -23,13 +23,20 @@ explain decisions already made.
 - Content-free diagnostics/correlation, worker health, transactional audits,
   authorized operator exports/deletion and bounded metadata retention. Optional
   aggregate reporting remains disabled by default.
+- Instructor-owned, revisioned Subject Knowledge with PostgreSQL/pgvector and
+  full-text retrieval, isolated Gemini embedding/answer workers, private durable
+  Ask AI conversations, grounded citations, lifecycle controls and deterministic
+  RAG-off/RAG-on evaluation and recovery gates.
 
 ## Release work and verification
 
-Phase 11 covers consistent Cardchemy branding, governance, a no-quota demo,
-documentation/screenshots and verifiable release packaging. Its individual
-completion and publishing status belongs to the remediation tracker and
-[releases](https://github.com/EoCiMrEo/Cardchemy/releases).
+Phases 0–11 cover the secure self-hosted foundation, branding, governance,
+no-quota demo, documentation/screenshots and verifiable release packaging.
+Subject Knowledge/RAG Phases 12–21 cover the implemented retrieval, private
+Ask AI, privacy, observability and release closure. Their completed task detail
+is preserved in the [archived remediation tracker](docs/archive/issues-required-remediation.md)
+and [archived RAG implementation plan](<docs/archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>).
+Published artifacts belong to [releases](https://github.com/EoCiMrEo/Cardchemy/releases).
 
 The separate v1.0 readiness gate passed clean-machine production-profile
 deployment/recovery, actual local encrypted SMTP delivery/recovery, complete
@@ -41,12 +48,12 @@ quality, external SMTP/DNS/mailbox delivery and their own hosting/recovery goals
 ## Proposals requiring a decision
 
 Native mobile clients, another UI language, offline study/PWA/conflict handling,
-quiz/rewards features, RAG/vector search, a broker/Redis/Celery layer and broader
+quiz/rewards features, a broker/Redis/Celery layer and broader
 multi-tenant/distributed governance have **no accepted implementation or
 delivery commitment**. Evaluate a concrete user need, privacy/data design,
 operating costs and compatibility before accepting any proposal.
 
-The [archived early idea](docs/archive/idea.md) is historical brainstorming,
-including superseded tooling and affiliation claims. Cardchemy is a standalone
-project. Discuss new work in a feature issue; do not treat archived prose as a
-shipped feature or an approved architecture change.
+The [documentation archive](docs/archive/README.md) contains the completed phase
+trackers and early brainstorming, including superseded tooling and affiliation
+claims. Cardchemy is a standalone project. Discuss new work in a feature issue;
+do not treat archived prose as current instructions or a new architecture change.

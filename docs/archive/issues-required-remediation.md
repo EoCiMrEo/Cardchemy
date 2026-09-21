@@ -1,5 +1,12 @@
 # Production and Open-Source Remediation Plan
 
+> **Archived 2026-09-21; completed 2026-09-17.** This historical plan no longer
+> owns active work or release status. See [current development state](../development/CURRENT-STATE.md),
+> the maintained [public roadmap](../../ROADMAP.md), and the
+> [dated log index](../../.agent/logs/README.md). All remediation phases and the
+> separate v1.0 operational-readiness gate were complete when this tracker was
+> archived; the published product version remains 0.1.0.
+
 This document tracks the work required to turn the current MVP into a secure,
 reliable, self-hostable open-source product. Complete phases in order unless an
 item is explicitly independent.
@@ -13,12 +20,12 @@ Priority labels:
 ## Verified baseline and next work (2026-09-17)
 
 - Phases 0-11 are recorded complete; signed public v0.1.0 publication is
-  recorded in [Phase 11 evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+  recorded in [Phase 11 evidence](../../.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
   The separate v1.0 operational readiness gate passed; current version remains
-  0.1.0. [Gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md)
+  0.1.0. [Gate evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md)
   records exact-source CI, actual local TLS SMTP and clean-machine recovery.
   Phase 10 evidence is in
-  [the dated remediation log](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
+  [the dated remediation log](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md).
 - Phase 10 verification: 259 offline backend cases, 34 PostgreSQL cases with
   head/drift and full disposable downgrade/re-upgrade, three Mailpit cases,
   the deterministic real application journey, full frontend gate (47 Chromium
@@ -47,7 +54,7 @@ Priority labels:
   repaired hosted run 35129468986 passed every mandatory gate. Full locked
   audits remain mandatory where private-repository native dependency review
   requires an additional GitHub entitlement. Evidence is recorded in
-  [the dated Phase 9 log](.agent/logs/2026-09-16/2026-09-16-phase-9-remediation.md).
+  [the dated Phase 9 log](../../.agent/logs/2026-09-16/2026-09-16-phase-9-remediation.md).
 - Preserve existing user changes and the real root `.env`. Updating this plan
   does not authorize deleting local environments, data, credentials, or volumes.
 
@@ -666,9 +673,9 @@ breaks the full build, security boundaries, migrations, or critical user journey
 **Phase complete when:** operators can diagnose a failed generation from an ID
 and metrics without seeing secrets or unnecessary user content.
 
-**Completed 2026-09-17:** [closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md),
-[safe diagnostics](docs/OBSERVABILITY.md), [privacy/lifecycle controls](docs/PRIVACY.md)
-and [ADR-011](docs/decisions/ADR-011-operational-privacy-controls.md).
+**Completed 2026-09-17:** [closure evidence](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md),
+[safe diagnostics](../OBSERVABILITY.md), [privacy/lifecycle controls](../PRIVACY.md)
+and [ADR-011](../decisions/ADR-011-operational-privacy-controls.md).
 Alembic revision `20260917_0008` adds operational/audit records. Exports/deletion
 and bounded retention are guarded operator commands; telemetry is disabled by
 default and explicitly run. Metrics are best effort and audits are diagnostic,
@@ -772,7 +779,7 @@ Completion evidence (2026-09-17): the repository and root template are public,
 private vulnerability reporting is enabled, and [v0.1.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0)
 publishes all 17 verified attachments and three independently verified signed
 GHCR image digests. Anonymous asset downloads/image pulls passed. See the
-[Phase 11 closure evidence](.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
+[Phase 11 closure evidence](../../.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md).
 The separate v1.0 operational readiness checklist below also passed; completing
 readiness does not publish a v1.0 version or tag.
 
@@ -801,7 +808,7 @@ Do not publish v1.0 until all of the following are true:
   source-code changes.
 
 **Readiness completed 2026-09-17:** all eleven items are supported by
-[gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
+[gate evidence](../../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 [Clean-machine production/recovery 35266166852](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166852)
 and [exact-source CI 35266166793](https://github.com/EoCiMrEo/Cardchemy/actions/runs/35266166793)
 passed at protected source `79e3212cfa682ee0d9f643a03d45aeea66502162`.

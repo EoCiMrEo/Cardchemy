@@ -27,9 +27,10 @@ diffs and untracked files. Preserve pre-existing work. Then read in this order:
 6. The relevant [backend](backend/MOC.md) or [frontend](frontend/MOC.md) module map.
 7. Task-relevant operational guides, source files, migrations and tests.
 
-For phase work, read [current state](docs/development/CURRENT-STATE.md) and
-[the remediation roadmap](issues-required-remediation.md). For supporting
-artifacts, read [.agent governance](.agent/README.md) and its
+For phase work, read [current state](docs/development/CURRENT-STATE.md) and the
+[public roadmap](ROADMAP.md). Completed phase checklists are historical material
+in the [archive](docs/archive/README.md). For supporting artifacts, read
+[.agent governance](.agent/README.md) and its
 [workspace map](.agent/MOC.md) when present, or use the
 [log index](.agent/logs/README.md). Read only relevant dated logs.
 Follow global context into the affected subsystem rather than recursively
@@ -45,22 +46,24 @@ consumers, contracts and constraints against actual source.
   durable rationale: accepted ADRs.
 - Runtime/configuration support: [RUNTIMES](docs/RUNTIMES.md) and
   [CONFIGURATION](docs/CONFIGURATION.md); operational detail: [guide index](docs/README.md).
-- Individual phase tasks/status: remediation roadmap; milestone summary: current state.
+- Milestone status: current state; proposals: public roadmap; completed phase
+  tasks/checklists: archive and dated evidence.
 - Dated `.agent/logs/` and [archive](docs/archive/README.md): historical evidence.
   Early `idea.md` proposals do not define shipped features or active instructions.
 
 Cardchemy has instructor/student roles and browser → API → PostgreSQL workflows
 with separate generation and email workers. Read the canonical docs for detail.
-The roadmap records Phases 0–11 complete as of 2026-09-17;
-refresh it for later work. Observability/privacy/export/audit are documented
+Current state records Phases 0–11 and Subject Knowledge/RAG Phases 12–21
+complete. Observability/privacy/export/audit are documented
 operator controls; the separate v1.0 operational readiness gate passed.
 Current published version remains 0.1.0; readiness completion did not publish v1.0.
 Verify their current source and
 limits rather than inferring completion from individual components.
 Follow accepted ADRs; do not invent replacement architecture or expand into
 adjacent phases without authorization. Supersede decisions explicitly when
-evidence and the authorized task require a change. Introducing Redis, Celery,
-pgvector/RAG, another queue or persistence layer needs an approved architecture change.
+evidence and the authorized task require a change. Replacing the accepted
+pgvector/RAG design or introducing Redis, Celery, another queue or persistence
+layer needs an approved architecture change.
 Use independent subagents when useful for audits spanning multiple subsystems;
 give each a bounded task and ownership area.
 

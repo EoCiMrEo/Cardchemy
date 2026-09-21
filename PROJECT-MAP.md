@@ -98,6 +98,7 @@ give the next level of detail.
 [Guide index](docs/README.md) → [architecture](docs/architecture/SYSTEM-OVERVIEW.md)
 and [decision index](docs/decisions/ADR-000-INDEX.md). [Local setup](docs/development/LOCAL-SETUP.md)
 owns onboarding; [current state](docs/development/CURRENT-STATE.md) summarizes
-phases; [remediation plan](issues-required-remediation.md) owns individual tasks.
-[Dated logs](.agent/logs/README.md) and [archive](docs/archive/README.md) retain
-historical evidence. [Agent rules](AGENTS.md) define context maintenance.
+completed phases; the [public roadmap](ROADMAP.md) owns current proposals.
+[Dated logs](.agent/logs/README.md) and the [archive](docs/archive/README.md)
+retain completed phase checklists and historical evidence. [Agent rules](AGENTS.md)
+define context maintenance.

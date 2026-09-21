@@ -4,7 +4,7 @@ The former `AI_*` flashcard settings are removed in favor of
 `FLASHCARD_AI_*`. The legacy `GEMINI_API_KEY` fallback is removed. Existing
 installations must edit the one root `.env` or their private process-injection
 configuration before recreating application processes. The exact 29-key mapping
-is in the [approved plan](<../Cardchemy-Subject-Scoped RAG Implementation Plan.md#mandatory-key-mapping>).
+is retained in the [archived approved plan](<archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md#mandatory-key-mapping>).
 The application does not rename values or write an existing `.env` automatically.
 
 ## Safe sequence for an existing installation

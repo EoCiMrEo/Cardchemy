@@ -86,9 +86,39 @@ single-branch clone of that pushed commit bootstrapped independent generated
 secrets without printing them; exact root `docker compose up -d` exited zero,
 the migration exited zero, all eight long-running services became healthy,
 routed `/healthz` returned HTTP 200, and `git status --short` remained empty.
-Pending: merge the compatibility fix through protected CI, rerun the production
-rehearsal on the resulting `main`, repeat the final protected-main clean-clone
-proof, and then check the aggregate definition-of-done gate.
+PR #36 exact head `01ee388e0afa1f4e377206e0984b0e56b496c1ad` passed all
+14 GitHub checks, including every CI job, `ci-required` and dependency review,
+with no base conflict. It merged through the protected flow as commit
+`8a5c0aab14de7a6ef1bcf707f28507b9ba3dec6f`.
+
+Production recovery rehearsal run #7 (`35612905122`) targeted that exact `main`
+commit and passed in 2m26s; its `clean-install-recovery` job passed in 2m20s. A
+new isolated single-branch clone of exact protected `main` bootstrapped generated
+secrets without printing them. Exact root `docker compose up -d` exited zero,
+the migration exited zero, all eight long-running services became healthy,
+routed `/healthz` returned HTTP 200, and `git status --short` remained empty.
+Only evidence/status files change in the resulting checklist-closure commit; no
+runtime source or configuration behavior changes. These results resolve the
+aggregate definition-of-done gate without asserting a centralized production
+deployment.
+
+## Completed-plan archival
+
+After all checklist gates closed, the operator requested that both completed
+planning documents be archived. The root Subject-scoped RAG plan and remediation
+tracker moved, with names preserved, to `docs/archive/`. Each has a dated
+historical banner and repaired internal links; the archive index classifies them
+as completed task/gate evidence rather than current instructions.
+
+All active consumers were reviewed. Maintained milestone status now points to
+`docs/development/CURRENT-STATE.md`, current proposals to `ROADMAP.md`, and durable
+RAG contracts to architecture/ADRs. The public roadmap no longer misclassifies
+implemented RAG/vector search as an unaccepted proposal. Context validation no
+longer registers the completed root tracker as an active guide, while the release
+validator reads its archived v1.0 gate evidence. Historical dated log bodies were
+preserved unchanged even where they retain old point-in-time paths. This archive
+change modifies documentation/navigation and validation paths only; it does not
+change runtime source, configuration, schema or operator data.
 
 ## Limits and preservation
 

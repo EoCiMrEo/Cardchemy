@@ -36,10 +36,11 @@ application with an online-first study flow.
 
 ## Current development state
 
-Version 0.1.0; [the roadmap](../issues-required-remediation.md) and dated
-[closure evidence](../.agent/logs/2026-09-17/2026-09-17-phase-11-remediation.md)
-record Phases 0–11 complete and independently verified public v0.1.0
-publication. The separate v1.0 operational readiness gate passed; see
+Version 0.1.0; [current state](development/CURRENT-STATE.md) and dated
+[closure evidence](../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md)
+record Phases 0–21 complete, including independently verified public v0.1.0
+publication and Subject Knowledge/RAG closure. The separate v1.0 operational
+readiness gate passed; see
 [gate evidence](../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 The published version remains 0.1.0; readiness completion did not publish v1.0.
 See [release procedures](RELEASING.md).
@@ -105,8 +106,8 @@ operations use the [guide index](README.md).
 ## Current truth vs historical material
 
 Maps, architecture docs and operational guides describe current behavior.
-The remediation plan owns task status; current state owns the phase summary.
-Dated [agent logs](../.agent/logs/README.md), [archived early ideas](archive/README.md)
+Current state owns completed milestone status; the public roadmap owns proposals.
+Dated [agent logs](../.agent/logs/README.md) and [archived plans/ideas](archive/README.md)
 and the completed [context implementation log](../.agent/logs/2026-09-16/2026-09-16-repository-context-system.md)
 are evidence/reference. They may contain superseded paths, baseline failures or
 future ideas. Do not treat them as current instructions or shipped features.

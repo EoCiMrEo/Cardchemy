@@ -1,17 +1,25 @@
 # Cardchemy — Subject-Scoped RAG Implementation Plan
 
+> **Archived historical plan — completed 2026-09-21.** This file no longer
+> defines active work. See [current development state](../development/CURRENT-STATE.md),
+> the [public roadmap](../../ROADMAP.md), the accepted
+> [Subject Knowledge/RAG decision](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md)
+> and the [final closure record](../../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md)
+> for maintained status and contracts. All 210 checklist items were complete
+> when this plan was archived.
+
 ## Status, scope and objective
 
 Updated 2026-09-21. The operator-approved
-[source-grounded review and recommendations](.agent/logs/2026-09-17/2026-09-17-flashcard-prompts-and-rag-plan-review.md)
+[source-grounded review and recommendations](../../.agent/logs/2026-09-17/2026-09-17-flashcard-prompts-and-rag-plan-review.md)
 preceded implementation. Preparation A/B and Phases 12–21 are implemented with
 the linked verification records below. The bounded live Gemini flashcard and
 Subject RAG evaluations passed after explicit operator authorization. The
 operator confirmed Cardchemy has no centralized production deployment: users
 clone the repository and operate the production-shaped Docker stack themselves.
-Release-specific Windows/browser/Narrator validation passed. Final closure is
-therefore gated only on the protected-main hosted/rehearsal and clean-clone
-evidence recorded below.
+Release-specific Windows/browser/Narrator validation passed. Protected-main
+hosted CI, production recovery rehearsal #7 and the final exact clean-clone
+Compose start also passed, resolving final closure as recorded below.
 
 Add Subject-scoped RAG while preserving the existing grounded flashcard workflow,
 and improve flashcard prompt yield through a separately measured workstream.
@@ -90,7 +98,7 @@ because it appears in this plan.
 ### Resolved choices for implementation through Phase 13
 
 The operator approved G1/G2/G4/G6 and delegated G5 selection. Their contracts
-are recorded in [ADR-012](docs/decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
+are recorded in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
 Accepted design is not runtime or implementation evidence.
 
 | Gate | Selected contract |
@@ -98,7 +106,7 @@ Accepted design is not runtime or implementation evidence.
 | G1 | PostgreSQL 16 + reviewed pgvector is mandatory for all installs, including RAG off. Exact artifact/extension/native privileges/recovery are verified during Phase 12. |
 | G2 | 90-day private own chats, including instructors; all Ask AI uses ready/published eligible Knowledge. Hide derived stored answers/citations after supporting content is unpublished, deleted or replaced, with current access rechecked. |
 | G4 | Knowledge-only uploads; replay identical uploads within the same Subject only; changed content needs fresh review/publication. Document deletion preserves linked flashcards. |
-| G5 | [ADR-014](docs/decisions/ADR-014-native-gemini-rag-profiles.md) supersedes the initial provider choice: native `gemini-embedding-001`, 1,536-dimensional normalized float32/cosine, `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING` task modes, and native `gemini-3.5-flash` Ask AI. Exact authorized search, explicit incompatible spaces/cutover and corpus criteria remain required. |
+| G5 | [ADR-014](../decisions/ADR-014-native-gemini-rag-profiles.md) supersedes the initial provider choice: native `gemini-embedding-001`, 1,536-dimensional normalized float32/cosine, `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING` task modes, and native `gemini-3.5-flash` Ask AI. Exact authorized search, explicit incompatible spaces/cutover and corpus criteria remain required. |
 | G6 | Separate flashcard/index/answer processes with explicit credentials, enabled-role capacity and operator division of shared account/project quotas across profiles and replicas. No distributed governor. |
 
 G3 remains required before Phase 14, beyond the requested implementation endpoint.
@@ -168,7 +176,7 @@ that prompts are the dominant cause of any particular real-document failure.
 Implementation and offline verification are complete. The operator reviewed the
 four-card authored sample and accepted its questions, answers, distractors and
 evidence as "very good" on 2026-09-18. Review the sample and measured nine-case replay in the
-[comparison record](.agent/logs/2026-09-17/2026-09-17-flashcard-quality-offline-comparison.md).
+[comparison record](../../.agent/logs/2026-09-17/2026-09-17-flashcard-quality-offline-comparison.md).
 Focused quality/pipeline/grounding: 55 passes. Full backend: 413 passes,
 50 service-gated skips, one live-AI deselection. The deterministic browser/API/
 worker/PostgreSQL journey and context validation passed. The replay isolates
@@ -179,8 +187,8 @@ the authorization/guard contract, not execution of a live comparison.
 Checked preservation items reflect this checkpoint and were reverified in
 subsequent work. Preparation A and Preparation B are accepted; Phase 12 passed
 its runtime gate before Phase 13 was applied. See the
-[implementation log](.agent/logs/2026-09-17/2026-09-17-rag-through-phase-13-implementation.md)
-and [Phase 12–13 closure](.agent/logs/2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md)
+[implementation log](../../.agent/logs/2026-09-17/2026-09-17-rag-through-phase-13-implementation.md)
+and [Phase 12–13 closure](../../.agent/logs/2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md)
 for decisions, exact changes, checks and limits.
 
 ---
@@ -420,7 +428,7 @@ the application was not deployed to it. The private root `.env` was migrated
 from legacy AI key names without disclosing or changing configured values;
 name-only preflight and Compose configuration validation passed. Full commands,
 identities, skipped gates and limits are in the
-[dated closure record](.agent/logs/2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md).
+[dated closure record](../../.agent/logs/2026-09-18/2026-09-18-rag-foundation-and-knowledge-schema.md).
 Capture, indexing and internal retrieval are complete through Phase 16. Ask AI
 jobs, chat/UI, full evaluation and release work remain Phases 17–21.
 
@@ -482,7 +490,7 @@ Reserved/uploaded PDF → temporary encrypted source → bounded PDFProcessor
   persistence plus deterministic journey checks for changed cross-stack behavior.
 
 Phase 14 closed on 2026-09-19. The implementation and exact verification evidence
-are recorded in the [Phase 14–16 closure record](.agent/logs/2026-09-19/2026-09-19-rag-capture-index-retrieval.md).
+are recorded in the [Phase 14–16 closure record](../../.agent/logs/2026-09-19/2026-09-19-rag-capture-index-retrieval.md).
 
 ---
 
@@ -768,14 +776,14 @@ ships, so filtered ANN recall remains explicitly not applicable; exact search
 is the comparison baseline. The evidence retained top-5/RRF/similarity/context/
 shared chunking and did not justify a reranker. The bounded three-call live
 harness is implemented and guard-tested, but no paid live run was authorized.
-See [evaluation evidence](docs/RAG_EVALUATION.md) and the
-[dated closure log](.agent/logs/2026-09-19/2026-09-19-rag-frontend-and-evaluation.md).
+See [evaluation evidence](../RAG_EVALUATION.md) and the
+[dated closure log](../../.agent/logs/2026-09-19/2026-09-19-rag-frontend-and-evaluation.md).
 
 ---
 
 ## Phase 20 — Integrated regression, security and CI gate
 
-Every preceding phase runs applicable checks from [TESTING.md](docs/TESTING.md).
+Every preceding phase runs applicable checks from [TESTING.md](../TESTING.md).
 This phase is final integration verification, not the first time tests are added.
 
 ### Existing gates
@@ -882,7 +890,7 @@ there is no centrally operated production target, and the release-specific human
 Windows/browser/Narrator validation passed. This records a self-hosted release
 contract and human result; it does not infer a central deployment from local or
 provider-test evidence. See the
-[release closure record](.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md).
+[release closure record](../../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md).
 
 ---
 
@@ -960,33 +968,36 @@ Enrolled user's own Subject conversation → durable authorized answer job
   permanent quotas and operator export/delete/retention contracts are implemented.
 - [x] Existing gates, new RAG corpus/security/race tests, deterministic journeys and
   populated recovery pass; live checks require their separate explicit authorization.
-- [ ] All blocking gates are resolved, relevant context/evidence is current and
+- [x] All blocking gates are resolved, relevant context/evidence is current and
   planned/implemented/offline/live/production claims remain distinct.
 - [x] `docker compose up` from a fresh clone starts the full application with no source edits, no insecure default credentials, and a tested upgrade/backup path.
 - [x] All tests pass including live AI tests.
 
-The remaining definition-of-done gate is intentionally not marked complete
-until the merged protected-main source passes hosted Linux CI/rehearsal and its
-own clean-clone Compose start. The two operator-owned rollout items are resolved:
-the product is distributed for self-hosted Docker operation rather than a central
-production deployment, and release-specific Windows/browser/Narrator validation
-passed. The bounded live Gemini evaluations and complete offline/service/frontend/
-journey suites passed, along with populated pgvector and conversation/citation
-restore and deterministic RAG-off/RAG-on journeys.
+All definition-of-done gates are complete. PR #36 passed all 14 hosted checks,
+including `ci-required` and dependency review, and merged as protected-main
+commit `8a5c0aa`. Production recovery rehearsal #7 passed that exact commit, and
+an isolated fresh clone of it completed exact root `docker compose up -d` with
+migration exit zero, all eight long-running services healthy, routed `/healthz`
+HTTP 200 and a clean source tree. The product is distributed for self-hosted
+Docker operation rather than a central production deployment; release-specific
+Windows/browser/Narrator validation passed. The bounded live Gemini evaluations
+and complete offline/service/frontend/journey suites passed, along with populated
+pgvector and conversation/citation restore and deterministic RAG-off/RAG-on
+journeys.
 
 ## Source and command authority
 
-Follow [AGENTS.md](AGENTS.md) and [Start Here](docs/00-START-HERE.md), then the
-[project map](PROJECT-MAP.md), [backend MOC](backend/MOC.md) and
-[frontend MOC](frontend/MOC.md). Existing architecture and decisions remain
+Follow [AGENTS.md](../../AGENTS.md) and [Start Here](../00-START-HERE.md), then the
+[project map](../../PROJECT-MAP.md), [backend MOC](../../backend/MOC.md) and
+[frontend MOC](../../frontend/MOC.md). Existing architecture and decisions remain
 implementation authority until explicitly revised:
-[AI flow](docs/architecture/AI-GENERATION-FLOW.md),
-[data model](docs/architecture/DATA-MODEL.md),
-[ADR index](docs/decisions/ADR-000-INDEX.md),
-[configuration](docs/CONFIGURATION.md), [AI evaluation](docs/AI_EVALUATION.md),
-[privacy](docs/PRIVACY.md), [observability](docs/OBSERVABILITY.md),
-[database operations](docs/DATABASE_OPERATIONS.md),
-[runtimes](docs/RUNTIMES.md) and [testing](docs/TESTING.md).
+[AI flow](../architecture/AI-GENERATION-FLOW.md),
+[data model](../architecture/DATA-MODEL.md),
+[ADR index](../decisions/ADR-000-INDEX.md),
+[configuration](../CONFIGURATION.md), [AI evaluation](../AI_EVALUATION.md),
+[privacy](../PRIVACY.md), [observability](../OBSERVABILITY.md),
+[database operations](../DATABASE_OPERATIONS.md),
+[runtimes](../RUNTIMES.md) and [testing](../TESTING.md).
 Implementation-time vector/FTS choices must be checked against primary
 [pgvector](https://github.com/pgvector/pgvector),
 [pgvector Python](https://github.com/pgvector/pgvector-python) and

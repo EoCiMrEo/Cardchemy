@@ -2,9 +2,9 @@
 
 This records the implemented Subject-scoped Knowledge architecture through the
 Phase 20/21 technical closure. [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md)
-owns the durable choices, [the implementation plan](<../../Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-owns phase tasks, and [current state](../development/CURRENT-STATE.md) says
-which parts have actually shipped. Capture, indexing, internal retrieval,
+owns the durable choices, [current state](../development/CURRENT-STATE.md) owns
+shipped status, and the [archived implementation plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
+retains completed phase tasks. Capture, indexing, internal retrieval,
 private durable answer APIs/workers, the Knowledge/Ask AI UI and deterministic
 retrieval/support evaluation are implemented.
 A table's existence alone grants no student access or provider-call permission.
