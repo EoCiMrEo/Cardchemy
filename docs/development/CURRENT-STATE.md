@@ -1,6 +1,6 @@
 # Current Development State
 
-Snapshot: 2026-09-20. Phases 0–11, Subject Knowledge RAG Phases 12–19 and the
+Snapshot: 2026-09-21. Phases 0–11, Subject Knowledge RAG Phases 12–19 and the
 Phase 20/21 implementation, offline integration and bounded live-AI scope are complete. The public v0.1.0 release
 contains independently verified keyless-signed image digests, checksums,
 source/provenance, audits and SBOMs. The separate v1.0 operational readiness gate
@@ -88,9 +88,11 @@ in [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md).
 The integrated offline/service/frontend/journey/recovery gates and Phase 21
 privacy/observability controls are implemented. Bounded live Gemini flashcard
 and Subject RAG evaluations passed after explicit operator authorization. The
-remaining rollout items require external evidence: post-merge hosted/fresh-clone
-closure, production enablement and release-specific spoken assistive-technology
-validation.
+exact self-hosted startup command passed from a pushed fresh clone with generated
+secrets, no source edits, migration exit zero, all services healthy and routed
+health HTTP 200. The remaining rollout items require external evidence: hosted
+Linux closure, production enablement and release-specific spoken assistive-
+technology validation.
 The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
 and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
 logical restore into a separate fresh target; the existing volume path alone

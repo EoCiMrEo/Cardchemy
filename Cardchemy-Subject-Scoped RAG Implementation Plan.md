@@ -953,15 +953,16 @@ Enrolled user's own Subject conversation → durable authorized answer job
   populated recovery pass; live checks require their separate explicit authorization.
 - [ ] All blocking gates are resolved, relevant context/evidence is current and
   planned/implemented/offline/live/production claims remain distinct.
-- [ ] `docker compose up` from a fresh clone starts the full application with no source edits, no insecure default credentials, and a tested upgrade/backup path.
+- [x] `docker compose up` from a fresh clone starts the full application with no source edits, no insecure default credentials, and a tested upgrade/backup path.
 - [x] All tests pass including live AI tests.
 
-The remaining definition-of-done gates are intentionally not marked complete
-until the exact branch passes hosted Linux CI/rehearsal and a post-merge fresh-
-clone Compose start. Production enablement and release-specific human assistive-
-technology evidence also require external operator input. The bounded live
-Gemini evaluations and complete offline/service/frontend/journey suites passed,
-along with populated pgvector and conversation/citation restore and deterministic
+The remaining definition-of-done gate is intentionally not marked complete
+until the exact branch passes hosted Linux CI/rehearsal and the two rollout
+items above close. A pushed clean-clone Compose start now passes without source
+edits. Production enablement and release-specific human assistive-technology
+evidence also require external operator input. The bounded live Gemini
+evaluations and complete offline/service/frontend/journey suites passed, along
+with populated pgvector and conversation/citation restore and deterministic
 RAG-off/RAG-on journeys.
 
 ## Source and command authority

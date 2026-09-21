@@ -175,15 +175,22 @@ reported a usage-limit reset, so the primary agent re-audited those scopes.
   workers and Mailpit healthy; migration exited zero and `/healthz` returned
   HTTP 200. The real-browser login surface had correct accessible names, native
   required-field focus/error behavior and no browser console warning/error.
+- A new single-branch clone of pushed commit `51ff25e` was bootstrapped with
+  independently generated secrets and only ignored operator `.env` changes for
+  an isolated project name, ports and image tag. The exact
+  `docker compose up -d` command built the images and exited zero without source
+  edits. Migration exited zero; database, API, frontend, Mailpit and all four
+  workers reported healthy; the routed `/healthz` returned HTTP 200. The secure
+  default RAG-off workers stayed healthy without provider credentials.
 
 ## Limits and remaining gates
 
 The live results establish only the tested provider profiles at that time; they
 do not prove future availability, provider billing completeness or every
 production Subject. No current-source Linux clean-production rehearsal is
-claimed from the Windows refusal. A post-merge fresh-clone Compose run, hosted
-required CI/rehearsal, actual production enablement and a release-specific
-human spoken assistive-technology pass remain open at this checkpoint.
+claimed from the Windows refusal. Hosted required CI/rehearsal, actual
+production enablement and a release-specific human spoken assistive-technology
+pass remain open at this checkpoint.
 
 Product version remains 0.1.0. The user-authorized Cardchemy Compose volumes
 were removed for the empty-volume proof; generated service/journey/recovery
