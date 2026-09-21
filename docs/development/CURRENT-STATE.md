@@ -46,9 +46,10 @@ separate documentation scope.
   full deterministic RAG-off/RAG-on integration, request/job diagnostics,
   Knowledge lifecycle audits, private export/deletion/retention controls and
   populated page/vector/conversation/citation recovery, and explicitly
-  authorized bounded live Gemini flashcard/RAG evaluations. Production
-  enablement and release-specific human assistive-technology evidence remain
-  separate rollout gates rather than being inferred from test success.
+  authorized bounded live Gemini flashcard/RAG evaluations. The operator
+  confirmed the release is self-hosted through the production-shaped Docker
+  stack, with no centralized production deployment, and reported the current
+  release-specific Windows/browser/Narrator validation as passed.
 
 The [Phase 9 closure log](../../.agent/logs/2026-09-16/2026-09-16-phase-9-merge-closure.md)
 supersedes earlier unmerged checkpoints in its remediation log. Detailed tasks
@@ -90,9 +91,12 @@ privacy/observability controls are implemented. Bounded live Gemini flashcard
 and Subject RAG evaluations passed after explicit operator authorization. The
 exact self-hosted startup command passed from a pushed fresh clone with generated
 secrets, no source edits, migration exit zero, all services healthy and routed
-health HTTP 200. The remaining rollout items require external evidence: hosted
-Linux closure, production enablement and release-specific spoken assistive-
-technology validation.
+health HTTP 200. The operator confirmed there is no centralized production target:
+users clone the repository and run its Docker stack, applying the documented
+operator gates and reversible feature-disable/drain procedure. The release-specific
+Windows/browser/Narrator validation passed; exact version identifiers were not
+supplied. The remaining closure evidence is protected-main hosted Linux CI,
+production rehearsal and a clean-clone Docker start from that merged source.
 The reviewed database build uses PostgreSQL 16.15/pgvector 0.8.6, ICU `en-US`
 and a fail-closed legacy-volume guard. A prior Debian/libc installation needs a
 logical restore into a separate fresh target; the existing volume path alone
@@ -121,13 +125,15 @@ The [demo](../DEMO.md) uses authored data and an offline provider; the
 verified draft publication. Name screening and its limits are recorded in
 [name review](../NAME-REVIEW.md). The [published v0.1.0 release](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.1.0),
 public repository/image pulls and private vulnerability reporting are verified.
-The user reported a successful Chrome/Narrator manual pass at 1920×1080;
-browser/assistive-technology versions were unknown and are recorded as such.
+The user reported successful release-specific Windows/browser/Narrator manual
+validation, including the previously recorded 1920×1080 pass; exact operating-
+system, browser and assistive-technology version identifiers were not supplied.
 
 ## Important constraints
 
 - Local development is the reference environment. Production guides and
-  hardened images exist; no live production deployment is asserted here.
+  hardened images exist; Cardchemy is distributed for operator-owned self-hosted
+  Docker deployments and no centralized live production deployment is asserted.
 - Study-session payloads hide answers, but other authorized card-read responses
   contain correct answers. See [study flow](../architecture/STUDY-PROGRESS-FLOW.md).
 - Account deletion/export is available to authorized operators with documented

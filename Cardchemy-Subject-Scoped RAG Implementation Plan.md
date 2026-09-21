@@ -2,13 +2,16 @@
 
 ## Status, scope and objective
 
-Updated 2026-09-20. The operator-approved
+Updated 2026-09-21. The operator-approved
 [source-grounded review and recommendations](.agent/logs/2026-09-17/2026-09-17-flashcard-prompts-and-rag-plan-review.md)
 preceded implementation. Preparation A/B and Phases 12–21 are implemented with
 the linked verification records below. The bounded live Gemini flashcard and
-Subject RAG evaluations passed after explicit operator authorization. Final
-rollout remains gated on hosted/fresh-clone evidence, production enablement and
-release-specific human spoken assistive-technology validation.
+Subject RAG evaluations passed after explicit operator authorization. The
+operator confirmed Cardchemy has no centralized production deployment: users
+clone the repository and operate the production-shaped Docker stack themselves.
+Release-specific Windows/browser/Narrator validation passed. Final closure is
+therefore gated only on the protected-main hosted/rehearsal and clean-clone
+evidence recorded below.
 
 Add Subject-scoped RAG while preserving the existing grounded flashcard workflow,
 and improve flashcard prompt yield through a separately measured workstream.
@@ -863,17 +866,23 @@ controls and rollout evidence against Phase 10 contracts.
 - [x] Enable in a controlled environment, verify publication/access boundaries,
   capacity/quota fairness and evaluate several authorized Subjects under separately
   approved live spending limits if external providers are used.
-- [ ] Enable production only after applicable evaluation/operator gates pass and
-  record a reversible feature-disable/drain procedure that preserves durable data.
-  Schema/data rollback still needs explicit authorization and verified recovery.
-- [ ] Record release-specific human assistive-technology validation where required.
+- [x] Confirm the self-hosted production contract: Cardchemy has no centralized
+  production deployment; each operator enables RAG only after their applicable
+  evaluation/operator gates and follows the documented reversible feature-disable/
+  drain procedure that preserves durable data. Schema/data rollback still needs
+  explicit authorization and verified recovery.
+- [x] Record the operator-reported release-specific Windows/browser/Narrator
+  assistive-technology validation as passed; exact version identifiers were not
+  supplied and are not inferred.
 
 Phase 20 and the Phase 21 implementation/offline-controlled-environment scope,
 including separately authorized bounded live Gemini evaluation, closed on
-2026-09-20. The two rollout items above remain open because they need an actual
-production target/operator decision and a release-specific human spoken
-assistive-technology result. No production change is inferred from local or
-provider-test evidence.
+2026-09-20. On 2026-09-21 the operator resolved the remaining rollout decisions:
+there is no centrally operated production target, and the release-specific human
+Windows/browser/Narrator validation passed. This records a self-hosted release
+contract and human result; it does not infer a central deployment from local or
+provider-test evidence. See the
+[release closure record](.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md).
 
 ---
 
@@ -957,13 +966,13 @@ Enrolled user's own Subject conversation → durable authorized answer job
 - [x] All tests pass including live AI tests.
 
 The remaining definition-of-done gate is intentionally not marked complete
-until the exact branch passes hosted Linux CI/rehearsal and the two rollout
-items above close. A pushed clean-clone Compose start now passes without source
-edits. Production enablement and release-specific human assistive-technology
-evidence also require external operator input. The bounded live Gemini
-evaluations and complete offline/service/frontend/journey suites passed, along
-with populated pgvector and conversation/citation restore and deterministic
-RAG-off/RAG-on journeys.
+until the merged protected-main source passes hosted Linux CI/rehearsal and its
+own clean-clone Compose start. The two operator-owned rollout items are resolved:
+the product is distributed for self-hosted Docker operation rather than a central
+production deployment, and release-specific Windows/browser/Narrator validation
+passed. The bounded live Gemini evaluations and complete offline/service/frontend/
+journey suites passed, along with populated pgvector and conversation/citation
+restore and deterministic RAG-off/RAG-on journeys.
 
 ## Source and command authority
 
