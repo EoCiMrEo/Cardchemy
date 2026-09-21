@@ -41,6 +41,18 @@ def test_process_values_override_empty_file_without_exposing_values(tmp_path):
     assert PREFLIGHT["removed_names"](env_file, environment={}) == ()
 
 
+def test_compose_guard_is_single_pass_name_only_and_complete():
+    compose = (SCRIPTS.parent / "docker-compose.yml").read_text(encoding="utf-8")
+    guard = next(
+        line for line in compose.splitlines()
+        if line.startswith("x-removed-ai-name-guard:")
+    )
+    assert "CARDCH_LEGACY_AI_CONFIGURATION_ERROR" not in guard
+    for name in PREFLIGHT["REMOVED_AI_NAMES"]:
+        assert "${" + name + ":+-" + name + "}" in guard
+    assert "scale: *removed-ai-name-guard" in compose
+
+
 def test_bootstrap_preserves_existing_file_and_reports_removed_name(tmp_path, monkeypatch):
     bootstrap = runpy.run_path(str(SCRIPTS / "bootstrap_env.py"))
     env_file = tmp_path / ".env"

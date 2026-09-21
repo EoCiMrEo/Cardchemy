@@ -40,10 +40,12 @@ The application does not rename values or write an existing `.env` automatically
    `config`/`up` invocations. Keep the explicit preflight in operator procedures;
    an empty process value can shadow a nonempty old root value during Compose
    interpolation, whereas the preflight checks both sources independently.
-   The internal `CARDCH_LEGACY_AI_CONFIGURATION_ERROR` sentinel must remain
-   unset; configuring it can also bypass Compose's nested interpolation guard.
-   Treat that guard as defense in depth. The mandatory standalone preflight
-   rejects removed root/process names independently of the sentinel.
+   The Compose defense-in-depth guard uses single-pass interpolation to append
+   only nonempty removed key names to the otherwise valid one-shot migration
+   service scale; that makes direct `config`/`up` fail without passing old
+   values to a container or relying on version-sensitive nested interpolation.
+   The mandatory standalone preflight remains authoritative for empty/root/
+   process names and reports the complete migration mapping.
    The backend validates effective settings when each process starts.
 6. Recreate the affected API/worker containers, since Compose interpolates
    values when creating containers; a plain restart keeps old injections. For

@@ -125,12 +125,12 @@ def test_root_example_covers_application_and_compose_settings():
             "docker-compose.prod.yml",
         )
     )
-    # Deliberate fail-fast interpolation references removed keys, but those
-    # names are not supported template settings. Their guard contract has
+    # The deliberate name-only fail-fast restart-policy guard references removed
+    # keys, but those names are not supported template settings. Its contract has
     # separate migration tests; keep this check about active Compose inputs.
     active_compose_text = "\n".join(
         line for line in compose_text.splitlines()
-        if "CARDCH_LEGACY_AI_CONFIGURATION_ERROR" not in line
+        if "x-removed-ai-name-guard:" not in line
     )
     compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", active_compose_text))
     assert application_names | compose_names <= set(names)

@@ -44,12 +44,51 @@ recorded here.
 
 ## Final protected-main closure
 
-Pending in this checkpoint: merge PR #35, close PR #34, run the hosted production
-rehearsal against protected `main`, repeat the isolated fresh-clone exact Compose
-start from that merged source, record cleanup, and merge the documentation-only
-final checklist update through the protected PR flow. The aggregate definition-
-of-done checkbox stays open until those checks pass; this section will be updated
-with exact commit/run evidence rather than treating planned work as completed.
+- PR #35 was merged through the protected GitHub flow as merge commit
+  `5eb84b2b948d916a60b026a148e31c1be1afb669`; that commit contains exact tested
+  head `ed749515297e8055c75465ecc97f944f8b0615a7`.
+- PR #34 was closed without merging. Its remote branch was not deleted.
+- A new isolated clone of protected `main` at `5eb84b2` bootstrapped generated
+  secrets without printing them. Exact `docker compose up -d` exited zero,
+  migration exited zero, all eight long-running services became healthy, routed
+  `/healthz` returned HTTP 200, and `git status --short` remained empty.
+- Production recovery rehearsal run #6 targeted exact `main` commit `5eb84b2`
+  but failed in 10 seconds at its production-profile Compose configuration gate.
+  This failure is recorded as evidence against closure, not hidden by the otherwise
+  successful clean-clone start.
+
+## Hosted Compose compatibility failure and remediation
+
+The rehearsal runner reported Docker Compose 2.38.2. The production-profile
+configuration validated under the local Compose 5.5.1 but failed on 2.38.2 because
+that version eagerly evaluated the nested `CARDCH_LEGACY_AI_CONFIGURATION_ERROR`
+expression even when no removed AI key was present. The fixed failure category
+was `compose_config:command_failed`; no credentials or configuration values were
+printed.
+
+The failure was reproduced with Docker's official Compose 2.38.2 Windows binary,
+verified against published SHA-256
+`ba8f09d3873f7a9755b863ed2013a1276b96fcbbc074c69ff3d3cfbce3e0186f`.
+The base Compose guard now uses single-pass interpolation: every nonempty removed
+key appends only its key name to the otherwise numeric one-instance `migrate`
+scale. Compose 2.38.2 accepts the clean configuration and rejects an injected
+removed `AI_MODEL` as the value-free invalid scale `1-AI_MODEL`. The standalone
+Python preflight remains authoritative for empty/root/process cases.
+
+Targeted verification on the follow-up branch: Compose 2.38.2 clean configuration
+passed; its legacy-key negative control failed closed; installed Compose 5.5.1
+configuration passed; configuration migration preflight passed; 19 focused
+configuration/migration tests passed; context validation passed with 37 required
+files, 68 guides and 967 links. An initial root-cwd pytest invocation failed to
+resolve the backend `app` package; rerunning the documented command from `backend`
+passed. PR #36 was opened for exact implementation commit `12f73c3`. A fresh
+single-branch clone of that pushed commit bootstrapped independent generated
+secrets without printing them; exact root `docker compose up -d` exited zero,
+the migration exited zero, all eight long-running services became healthy,
+routed `/healthz` returned HTTP 200, and `git status --short` remained empty.
+Pending: merge the compatibility fix through protected CI, rerun the production
+rehearsal on the resulting `main`, repeat the final protected-main clean-clone
+proof, and then check the aggregate definition-of-done gate.
 
 ## Limits and preservation
 
