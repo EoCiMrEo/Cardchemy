@@ -130,6 +130,14 @@ reported a usage-limit reset, so the primary agent re-audited those scopes.
   of the Git-visible working tree. It refused immediately with
   `linux_host_required` on this Windows host, before credentials or containers
   were created. This is recorded as non-evidence rather than a pass.
+- The first hosted Linux frontend job rejected a synchronous loading-state
+  setter in the Ask AI Subject-load effect under `react-hooks/set-state-in-effect`.
+  Loading is now derived from the last loaded Subject ID instead. Besides
+  satisfying the hook contract, the transition path withholds stale threads,
+  messages, jobs, provider disclosure, errors and open citation content until
+  the requested Subject finishes loading. Local lint, typecheck and the complete
+  frontend authority reran successfully before the correction was pushed; the
+  failed hosted job remains non-evidence and requires a new current-commit run.
 
 ## Verification evidence
 

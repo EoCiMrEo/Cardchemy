@@ -22,12 +22,13 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
   const [question, setQuestion] = useState('')
   const [submissionKey, setSubmissionKey] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loadedSubjectId, setLoadedSubjectId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<RagSource | null>(null)
   const requestRevisionRef = useRef(0)
   const requestControllerRef = useRef<AbortController | null>(null)
   const retryKeysRef = useRef(new Map<string, string>())
+  const loading = loadedSubjectId !== subjectId
 
   const loadThread = useCallback(async (
     targetThreadId: string,
@@ -67,7 +68,6 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
     const controller = new AbortController()
     requestControllerRef.current = controller
     const revision = ++requestRevisionRef.current
-    setLoading(true)
     Promise.all([
       ragService.listThreads(subjectId, controller.signal),
       ragService.getProfile(subjectId, controller.signal),
@@ -84,12 +84,14 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
         if (!controller.signal.aborted) setError(apiErrorMessage(caught, copy.askAi.loadFailed))
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted && revision === requestRevisionRef.current) {
+          setLoadedSubjectId(subjectId)
+        }
       })
     return () => controller.abort()
   }, [loadThread, subjectId])
 
-  const hasActiveJob = jobs.some((job) => job.status === 'queued' || job.status === 'running')
+  const hasActiveJob = !loading && jobs.some((job) => job.status === 'queued' || job.status === 'running')
   useEffect(() => {
     if (!threadId || !hasActiveJob) return
     let stopped = false
@@ -182,7 +184,8 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
     }
   }
 
-  const latestJob = jobs[0] ?? null
+  const latestJob = loading ? null : jobs[0] ?? null
+  const visibleSource = loading ? null : selectedSource
 
   return (
     <section aria-labelledby="ask-ai-heading" className="min-w-0">
@@ -197,13 +200,13 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
               <CardDescription className="mt-1 max-w-2xl">{copy.askAi.description}</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => void createConversation()}>
+              <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={loading} onClick={() => void createConversation()}>
                 <MessageCirclePlus className="mr-1 h-4 w-4" aria-hidden="true" />{copy.askAi.newConversation}
               </Button>
-              {threadId ? <Button type="button" size="sm" variant="ghost" className="min-h-11 text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => void deleteConversation()}><Trash2 className="mr-1 h-4 w-4" aria-hidden="true" />{copy.askAi.deleteConversation}</Button> : null}
+              {!loading && threadId ? <Button type="button" size="sm" variant="ghost" className="min-h-11 text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => void deleteConversation()}><Trash2 className="mr-1 h-4 w-4" aria-hidden="true" />{copy.askAi.deleteConversation}</Button> : null}
             </div>
           </div>
-          {threads.length > 0 ? (
+          {!loading && threads.length > 0 ? (
             <div className="max-w-sm">
               <label htmlFor="rag-thread" className="text-xs font-medium text-slate-600">{copy.askAi.conversation}</label>
               <select id="rag-thread" className="mt-1 min-h-11 w-full rounded-md border bg-white px-3 text-sm" value={threadId ?? ''} onChange={(event) => void selectThread(event.target.value)}>
@@ -213,7 +216,7 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
           ) : null}
         </CardHeader>
         <CardContent className="min-w-0 space-y-4 p-4 sm:p-6">
-          {error ? (
+          {!loading && error ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-amber-200 bg-amber-50 p-3" role="alert">
               <span className="min-w-0 break-words text-sm text-amber-900">{error}</span>
               {threadId ? <Button variant="outline" size="sm" onClick={() => void loadThread(threadId)}>{copy.common.retry}</Button> : null}
@@ -222,7 +225,7 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
           {loading ? <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />{copy.common.loading}</p> : null}
 
           <div className="max-h-[34rem] min-h-48 space-y-4 overflow-y-auto overflow-x-hidden rounded-lg border bg-white p-3 sm:p-4" aria-live="polite" aria-label={copy.askAi.conversation}>
-            {messages.map((message) => (
+            {!loading && messages.map((message) => (
               <article key={message.id} className={`min-w-0 ${message.role === 'user' ? 'ml-auto max-w-[90%] sm:max-w-[78%]' : 'mr-auto max-w-[96%] sm:max-w-[88%]'}`}>
                 <div className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-500">
                   {message.role === 'user' ? <UserRound className="h-3.5 w-3.5" aria-hidden="true" /> : <Bot className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -263,7 +266,7 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
 
           <form className="space-y-2" onSubmit={(event) => void submitQuestion(event)}>
             <p className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-slate-700">
-              {profile
+              {!loading && profile
                 ? copy.askAi.providerDisclosure(profile.answer_provider, profile.answer_model, profile.chat_retention_days)
                 : copy.askAi.profileUnavailable}
             </p>
@@ -271,7 +274,7 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
             <textarea id="rag-question" className="min-h-28 w-full resize-y rounded-md border bg-white px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600" maxLength={4_000} value={question} placeholder={copy.askAi.questionPlaceholder} onChange={(event) => { setQuestion(event.target.value); setSubmissionKey(null) }} />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">{copy.askAi.characterCount(question.length)} · {copy.askAi.historyRetained}</p>
-              <Button type="submit" className="min-h-11 min-w-28" disabled={submitting || !question.trim() || hasActiveJob || !profile?.answer_available}>
+              <Button type="submit" className="min-h-11 min-w-28" disabled={loading || submitting || !question.trim() || hasActiveJob || !profile?.answer_available}>
                 {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="mr-2 h-4 w-4" aria-hidden="true" />}
                 {submitting ? copy.askAi.sending : submissionKey ? copy.askAi.retryAsk : copy.askAi.ask}
               </Button>
@@ -280,13 +283,13 @@ export function AskAiPanel({ subjectId }: AskAiPanelProps) {
         </CardContent>
       </Card>
 
-      <Dialog open={selectedSource !== null} onOpenChange={(open) => { if (!open) setSelectedSource(null) }}>
+      <Dialog open={visibleSource !== null} onOpenChange={(open) => { if (!open) setSelectedSource(null) }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{copy.askAi.citationDialogTitle}</DialogTitle>
             <DialogDescription>{copy.askAi.citationDialogDescription}</DialogDescription>
           </DialogHeader>
-          {selectedSource ? <div className="min-w-0 space-y-4 text-sm"><p className="font-medium text-blue-800">{copy.askAi.citationLabel(selectedSource.document_title, selectedSource.page_number, selectedSource.section)}</p><div><h3 className="font-semibold">{copy.askAi.supportedClaim}</h3><p className="mt-1 whitespace-pre-wrap break-words text-slate-700">{selectedSource.claim_text}</p></div><div><h3 className="font-semibold">{copy.askAi.sourceQuote}</h3><blockquote className="mt-1 whitespace-pre-wrap break-words border-l-4 border-blue-200 bg-blue-50 p-3 text-slate-800">{selectedSource.source_quote}</blockquote></div></div> : <p>{copy.askAi.sourceUnavailable}</p>}
+          {visibleSource ? <div className="min-w-0 space-y-4 text-sm"><p className="font-medium text-blue-800">{copy.askAi.citationLabel(visibleSource.document_title, visibleSource.page_number, visibleSource.section)}</p><div><h3 className="font-semibold">{copy.askAi.supportedClaim}</h3><p className="mt-1 whitespace-pre-wrap break-words text-slate-700">{visibleSource.claim_text}</p></div><div><h3 className="font-semibold">{copy.askAi.sourceQuote}</h3><blockquote className="mt-1 whitespace-pre-wrap break-words border-l-4 border-blue-200 bg-blue-50 p-3 text-slate-800">{visibleSource.source_quote}</blockquote></div></div> : <p>{copy.askAi.sourceUnavailable}</p>}
         </DialogContent>
       </Dialog>
     </section>
