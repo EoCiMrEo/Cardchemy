@@ -81,9 +81,14 @@ configuration passed; configuration migration preflight passed; 19 focused
 configuration/migration tests passed; context validation passed with 37 required
 files, 68 guides and 967 links. An initial root-cwd pytest invocation failed to
 resolve the backend `app` package; rerunning the documented command from `backend`
-passed. Pending: merge the compatibility fix through protected CI, rerun the
-production rehearsal on the resulting `main`, repeat the final clean-clone proof
-if the source commit changes, and then check the aggregate definition-of-done gate.
+passed. PR #36 was opened for exact implementation commit `12f73c3`. A fresh
+single-branch clone of that pushed commit bootstrapped independent generated
+secrets without printing them; exact root `docker compose up -d` exited zero,
+the migration exited zero, all eight long-running services became healthy,
+routed `/healthz` returned HTTP 200, and `git status --short` remained empty.
+Pending: merge the compatibility fix through protected CI, rerun the production
+rehearsal on the resulting `main`, repeat the final protected-main clean-clone
+proof, and then check the aggregate definition-of-done gate.
 
 ## Limits and preservation
 
