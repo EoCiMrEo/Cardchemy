@@ -116,6 +116,12 @@ reported a usage-limit reset, so the primary agent re-audited those scopes.
   blank. The Compose defaults were aligned with the root template and protected
   by a configuration regression test. After the authorized project-volume
   removal, all application services became healthy and migration exited zero.
+- The first pushed fresh-clone run caught a separate RAG-off defect: both new
+  workers constructed Gemini clients before their disabled lifecycle check, so
+  a secure keyless default clone restarted instead of remaining healthy-
+  disabled. Provider construction is now lazy, and credential-free disabled
+  lifecycle regressions cover both index and answer workers. The failed run is
+  non-evidence; only the clean rerun after the fix may close the clone gate.
 - The first exact CI coverage rerun failed its unchanged 73% overall, 77% line
   and 55% branch floors. Targeted answer-worker completion and lifecycle tests
   increased measured coverage without lowering any budget; the final gate
@@ -151,6 +157,9 @@ reported a usage-limit reset, so the primary agent re-audited those scopes.
 - Isolated security gate: no Git/worktree leaks and no HIGH/CRITICAL findings
   for backend, OCR backend or frontend; CycloneDX SBOMs/checksums retained under
   ignored `artifacts/security`. Exact runtime checks for all three images passed.
+- Fresh dependency advisories passed: the complete hashed Python development
+  graph had no known vulnerabilities, and both shipped-only and all-scope npm
+  audits reported zero vulnerabilities at every severity.
 - Release metadata, four CI workflows/protection/budget contracts, configuration
   migration and reviewed database runtime identity passed.
 - Context validation: 37 required files, 68 active guides and 966 local links.

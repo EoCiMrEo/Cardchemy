@@ -546,8 +546,6 @@ async def test_answer_worker_disabled_lifecycle_reports_health_and_drains(
     stop = asyncio.Event()
     worker = RagAnswerWorker(
         settings=_settings(rag_enabled=False),
-        answer_provider=SimpleNamespace(),
-        embedding_provider=SimpleNamespace(),
         worker_id="disabled-answer-worker",
     )
     statuses = []

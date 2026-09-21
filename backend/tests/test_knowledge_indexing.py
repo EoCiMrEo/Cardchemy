@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -21,6 +22,27 @@ from app.services.knowledge_indexing import (
     cutover_subject_embedding_space,
     enqueue_subject_reindex,
 )
+from app.workers.knowledge_index import KnowledgeIndexWorker
+
+
+async def test_index_worker_disabled_lifecycle_needs_no_provider_credentials(
+    monkeypatch,
+):
+    stop = asyncio.Event()
+    worker = KnowledgeIndexWorker(
+        settings=Settings(_env_file=None, environment="test", rag_enabled=False),
+        worker_id="disabled-index-worker",
+    )
+    statuses = []
+
+    async def pulse(status):
+        statuses.append(status)
+        if status == "disabled":
+            stop.set()
+
+    monkeypatch.setattr(worker, "_pulse", pulse)
+    await worker.run(stop)
+    assert statuses == ["disabled", "draining"]
 
 
 def space(revision: str) -> RagEmbeddingSpace:

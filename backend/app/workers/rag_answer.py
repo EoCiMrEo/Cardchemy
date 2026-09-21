@@ -125,12 +125,26 @@ class RagAnswerWorker:
     ) -> None:
         self.settings = settings or get_settings()
         self.session_factory = session_factory
-        self.answer_provider = answer_provider or get_ai_provider(self.settings, role="rag_answer")
-        self.embedding_provider = embedding_provider or get_embedding_provider(self.settings)
+        # RAG ships disabled. Keep that path credential-free and avoid creating
+        # remote SDK clients until an enabled worker actually performs work.
+        self._answer_provider = answer_provider
+        self._embedding_provider = embedding_provider
         self.worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:12]}"
         from app.models.knowledge import embedding_space_hash
         self.space_hash = embedding_space_hash(self.settings.rag_embedding_space_identity)
         self.history_service = RagAnswerService(self.settings)
+
+    @property
+    def answer_provider(self) -> AIProvider:
+        if self._answer_provider is None:
+            self._answer_provider = get_ai_provider(self.settings, role="rag_answer")
+        return self._answer_provider
+
+    @property
+    def embedding_provider(self) -> EmbeddingProvider:
+        if self._embedding_provider is None:
+            self._embedding_provider = get_embedding_provider(self.settings)
+        return self._embedding_provider
 
     async def run(self, stop_event: asyncio.Event) -> None:
         if not self.settings.rag_answer_available:

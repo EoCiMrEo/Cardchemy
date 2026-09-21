@@ -55,9 +55,18 @@ class KnowledgeIndexWorker:
     ) -> None:
         self.settings = settings or get_settings()
         self.session_factory = session_factory
-        self.provider = provider or get_embedding_provider(self.settings)
+        # A disabled RAG installation must not require provider credentials or
+        # instantiate an SDK client merely to publish healthy-disabled pulses.
+        # Resolve the provider lazily when active work first needs it.
+        self._provider = provider
         self.worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:12]}"
         self.space_hash = embedding_space_hash(self.settings.rag_embedding_space_identity)
+
+    @property
+    def provider(self) -> EmbeddingProvider:
+        if self._provider is None:
+            self._provider = get_embedding_provider(self.settings)
+        return self._provider
 
     async def run(self, stop_event: asyncio.Event) -> None:
         if not self.settings.rag_index_available:
