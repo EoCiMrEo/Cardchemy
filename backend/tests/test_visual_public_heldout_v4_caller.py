@@ -210,9 +210,9 @@ def test_preserved_unknown_still_counts_as_one_nonuseful_card():
 
 @pytest.mark.parametrize("pid,match", [(123, True), (124, True), (999, False), (True, False), (-1, False)])
 def test_resource_pid_accepts_only_current_or_direct_venv_parent(pid, match, monkeypatch):
-    monkeypatch.setattr(caller.os, "getpid", lambda: 123)
-    monkeypatch.setattr(caller.os, "getppid", lambda: 124)
-    monkeypatch.setattr(caller.os, "name", "nt")
+    simulated_os = SimpleNamespace(**(vars(caller.os) | {
+        "getpid": lambda: 123, "getppid": lambda: 124, "name": "nt"}))
+    monkeypatch.setattr(caller, "os", simulated_os)
     assert caller.resource_worker_pid_matches(pid) is match
 
 

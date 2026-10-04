@@ -857,6 +857,9 @@ def test_snapshot_copies_exact_four_sources_holds_locks_and_cleans_only_owned_co
         locked.append((path, handle))
         return kernel, handle
 
+    # Model the Windows-only source-lock boundary on either host without
+    # changing the global os.name used by pathlib and pytest.
+    monkeypatch.setattr(visual, "os", SimpleNamespace(name="nt", fsync=os.fsync))
     monkeypatch.setattr(visual, "_inside_windows_job", lambda: True)
     monkeypatch.setattr(visual.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(snapshot, "_lock_read", fake_lock)
@@ -876,13 +879,15 @@ def test_snapshot_copies_exact_four_sources_holds_locks_and_cleans_only_owned_co
                       for did, doc in synthetic_inputs["documents"].items()}
 
 
+@pytest.mark.parametrize("platform,in_job", [("nt", False), ("posix", False), ("posix", True)])
 def test_snapshot_admission_denies_unsupported_isolation_before_source_copy(
-    visual, synthetic_inputs, tmp_path, monkeypatch,
+    visual, synthetic_inputs, tmp_path, monkeypatch, platform, in_job,
 ):
     root = tmp_path / "preparation" / "source-snapshots"
     snapshot = visual._LockedPublicSources(synthetic_inputs["documents"], root)
     locks = []
-    monkeypatch.setattr(visual, "_inside_windows_job", lambda: False)
+    monkeypatch.setattr(visual, "os", SimpleNamespace(name=platform, fsync=os.fsync))
+    monkeypatch.setattr(visual, "_inside_windows_job", lambda: in_job)
     monkeypatch.setattr(snapshot, "_lock_read", lambda path: locks.append(path))
     with pytest.raises(visual.PreparationError, match="enforceable_resource_mode_required"):
         snapshot.__enter__()
@@ -903,6 +908,7 @@ def test_snapshot_substitution_between_copy_and_lock_is_rejected(
         if path.parent == root:
             path.write_bytes(b"substituted invented snapshot")
         return kernel, 201
+    monkeypatch.setattr(visual, "os", SimpleNamespace(name="nt", fsync=os.fsync))
     monkeypatch.setattr(visual, "_inside_windows_job", lambda: True)
     monkeypatch.setattr(visual.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(snapshot, "_lock_read", fake_lock)

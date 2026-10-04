@@ -267,9 +267,13 @@ def test_supervisor_reuses_immutable_assignment_and_hard_deadline(monkeypatch, t
             (output / 'aggregate.json').write_bytes(b'{"status":"synthetic_completed"}')
             output.with_name(output.name + '.supervisor-complete.json').write_bytes(
                 caller.canonical({'approval_sha256': digest, 'exit_code': 0}))
-    monkeypatch.setattr(caller.os, 'name', 'nt')
+    # Simulate only the caller's platform branch; pathlib and pytest must keep
+    # the host platform while resolving and reporting synthetic local paths.
+    native_name = os.name
+    monkeypatch.setattr(caller, 'os', SimpleNamespace(**(vars(os) | {'name': 'nt'})))
     monkeypatch.setattr(caller, 'FunctionType', Bound)
     caller.supervise(case.approval, case.sha, case.output)
+    assert os.name == native_name
     assert captured['code'] is audited.supervise.__code__
     assert captured['namespace']['MAX_SECONDS'] == 360
     assert captured['namespace']['CALLER'] == Path(caller.__file__).resolve()
@@ -291,14 +295,14 @@ def resource_receipt(case, *, job=None, **changes):
 
 
 def test_resource_pid_accepts_only_current_or_direct_windows_wrapper(monkeypatch):
-    monkeypatch.setattr(caller.os, 'getpid', lambda: 200)
-    monkeypatch.setattr(caller.os, 'getppid', lambda: 100)
-    monkeypatch.setattr(caller.os, 'name', 'nt')
+    simulated_os = SimpleNamespace(**(vars(os) | {
+        'getpid': lambda: 200, 'getppid': lambda: 100, 'name': 'nt'}))
+    monkeypatch.setattr(caller, 'os', simulated_os)
     assert caller.resource_worker_pid_matches(200)
     assert caller.resource_worker_pid_matches(100)
     for unrelated in (99, 201, -1, 0, True, '100', None):
         assert not caller.resource_worker_pid_matches(unrelated)
-    monkeypatch.setattr(caller.os, 'name', 'posix')
+    simulated_os.name = 'posix'
     assert not caller.resource_worker_pid_matches(100)
 
 

@@ -186,7 +186,7 @@ async def test_native_sdk_exact_endpoint_one_current_question_each(monkeypatch, 
     assert report['packet_sha256'] == sha256(output.read_bytes()).hexdigest()
     assert not any(q in json.dumps(report) for _, q in inputs.questions)
     other = tmp_path / 'new-output'
-    other.mkdir()
+    other.mkdir(mode=0o700)
     with pytest.raises(builder.snapshot.Refusal, match='output_exists'):
         await builder.build_packet(inputs, current, output=other / 'vectors.json', approval_id=token,
             provider_factory=lambda _: pytest.fail('used approval cannot dispatch'))

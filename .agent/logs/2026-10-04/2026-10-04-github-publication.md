@@ -152,3 +152,56 @@ PR 41 and its Actions runs are the authoritative evolving publication record.
 This dated snapshot records preparation and the first repair; final merge and
 exact-main outcomes will be checked against their actual remote commit, rather
 than predicted here. No local runtime deployment is part of this GitHub update.
+
+## Linux fixture portability repair
+
+The dependency repair commit `dd25710c429661538296351e41ddcdecec1080d8`
+passed nine mandatory jobs in hosted run `37223081912`: frontend, PostgreSQL,
+database artifact, journey, dependency audit, secret scanning and all three
+container checks. Both backend jobs and SMTP remained unsuccessful, so the
+required aggregator failed and the PR was not merged.
+
+Python 3.13 reached 5,355 passing tests, eight skips and 268 marker exclusions,
+with four concrete fixture failures. Python 3.11 stopped during failure
+reporting after a shared `os.name` monkeypatch made pathlib select WindowsPath
+on Linux. The test repair uses a caller-local OS simulation, leaving the host
+platform, pytest and pathlib unchanged. A mock query-replay test now creates its
+new private directory with mode 0700, so Linux reaches the intended consumed-
+approval guard. The Windows-only locked-source tests now explicitly simulate
+their required resource mode; unsupported POSIX/Windows isolation is still
+rejected before source copy, including POSIX with a claimed Windows job.
+
+SMTP's production fixture selected a retired model even with AI disabled.
+Removing this unrelated model override makes both exact fixture modes validate
+against the supported default. The four-outcome fixture probe and seventeen
+offline configuration tests passed, without connecting to SMTP or a database.
+Application settings/catalog and SMTP transport are unchanged.
+
+The query SDK's mock-only contracts passed 34/34 on Windows in newly owned
+private scratch. The default pytest scratch was inaccessible and produced nine
+setup errors in the first local attempt; it was neither deleted nor repaired
+by changing permissions. The successful scratch was validated and removed.
+The targeted caller portability contracts passed on cached Python 3.11 Linux:
+90 passed and one existing native-Windows redirector skip, with Docker network
+disabled, source read-only and four CPU/two GiB limits. This used copied local
+test tooling; the fresh hosted matrix remains the pinned-tooling gate.
+
+Only fixtures are changed in this repair, retaining every assertion and the
+strict runtime/privacy/resource guards. Coverage from the failed Python 3.13
+run was 79.65% line-plus-branch, but its formal budget step did not execute after
+pytest failed; this number is not labeled as a passing coverage gate.
+
+A later read-only inventory observed the retained Cardchemy containers stopped
+four hours earlier. Publication did not start, recreate or remove them. The
+earlier completed local activation remains historical; no current runtime
+health or new local deployment is claimed by this source-publication task.
+
+The final targeted Linux portability check also ran the updated SDK and visual
+fixtures: 139 passed with no skips. Together with the caller check this is
+229 passed, one existing platform skip and zero failures. Two isolated overlay
+bootstrap attempts stopped before any test execution; their evidence is kept,
+and the passing run is distinct. Windows visual contracts passed 105/105 after
+using fresh owned Temp for the same pre-existing cache-access problem. All
+owned synthetic Temp/tooling copies were removed; receipts remain ignored.
+Current-change diff checking and context validation passed. No application,
+workflow, migration or threshold changed in this second repair.
