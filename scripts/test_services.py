@@ -78,6 +78,37 @@ def run_service_tests(command: list[str], *, cwd: Path, environment: dict[str, s
         print(counts[-1])
     else:
         print(f"Service pytest completed with exit code {result.returncode}.")
+    # The Lane 4 PostgreSQL ablation emits only fixed policy IDs and numeric
+    # metrics. Forward that one allowlisted report while retaining the normal
+    # content/credential redaction for all other captured test output.
+    for line in output.splitlines():
+        marker = "RAG_LANE4_ABLATION="
+        if marker not in line:
+            continue
+        try:
+            report = json.loads(line.split(marker, 1)[1])
+            policies = report["policies_and_chunks"]
+            diversity = report["cross_document_diversity"]
+            if not isinstance(policies, list) or not isinstance(diversity, list):
+                continue
+            safe = {
+                "policies_and_chunks": [
+                    {key: row[key] for key in (
+                        "policy", "corpus", "recall_at_5", "mrr",
+                        "duplicate_rate", "p95_ms",
+                    ) if key in row}
+                    for row in policies
+                ],
+                "cross_document_diversity": [
+                    {key: row[key] for key in (
+                        "policy", "recall_at_5", "mrr", "duplicate_rate", "p95_ms",
+                    ) if key in row}
+                    for row in diversity
+                ],
+            }
+            print(marker + json.dumps(safe, separators=(",", ":")))
+        except (KeyError, TypeError, ValueError):
+            continue
     if result.returncode:
         # Parameter IDs and exception summaries can themselves carry secrets.
         # Report only static source-file/function identities, never either.
@@ -179,6 +210,7 @@ def main() -> int:
                 "POSTGRES_TEST_CONTAINER_NAME": database,
                 "SECRET_KEY": "test-only-secret-with-adequate-entropy-1234567890",
                 "GENERATION_SOURCE_ENCRYPTION_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "KNOWLEDGE_PDF_ENCRYPTION_KEY": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
                 "PYTHONUTF8": "1",
             }
             import sys
@@ -187,7 +219,24 @@ def main() -> int:
                 [sys.executable, "-m", "alembic", "current", "--check-heads"],
                 [sys.executable, "-m", "alembic", "check"],
             ):
-                subprocess.run(command, cwd=ROOT / "backend", env=environment, check=True)
+                subprocess.run(command, cwd=ROOT / "backend", env=environment,
+                               check=True, capture_output=True, text=True)
+            # Rehearse downgrade on the empty disposable schema before tests
+            # create retained new-policy jobs. Migration guards correctly refuse
+            # to reinterpret those jobs under the former three-call policy.
+            if arguments.suite == "postgres":
+                for target in ("base", "head"):
+                    operation = "downgrade" if target == "base" else "upgrade"
+                    subprocess.run([sys.executable, "-m", "alembic", operation, target],
+                                   cwd=ROOT / "backend", env=environment, check=True,
+                                   capture_output=True, text=True)
+                for command in (
+                    [sys.executable, "-m", "alembic", "current", "--check-heads"],
+                    [sys.executable, "-m", "alembic", "check"],
+                ):
+                    subprocess.run(command, cwd=ROOT / "backend", env=environment,
+                                   check=True, capture_output=True, text=True)
+            print("Disposable migration head and drift checks passed; downgrade/re-upgrade checked when selected.")
             if arguments.suite == "mailpit":
                 mailpit = f"flashcard-regression-mailpit-{suffix}"
                 names.append(mailpit)
@@ -201,23 +250,15 @@ def main() -> int:
                     "MAILPIT_SMTP_HOST": "127.0.0.1",
                     "MAILPIT_SMTP_PORT": str(port(mailpit, 1025)),
                 }
+            pytest_command = [sys.executable, "-m", "pytest", "-q", "--tb=short", "-m", arguments.suite + " and not smtp_tls"]
+            if arguments.suite == "postgres":
+                pytest_command.append("-s")
             returncode = run_service_tests(
-                [sys.executable, "-m", "pytest", "-q", "--tb=short", "-m", arguments.suite + " and not smtp_tls"],
+                pytest_command,
                 cwd=ROOT / "backend", environment=environment,
             )
             if returncode:
                 return returncode
-            # Rehearse the entire migration chain only on this generated DB.
-            if arguments.suite == "postgres":
-                for target in ("base", "head"):
-                    operation = "downgrade" if target == "base" else "upgrade"
-                    subprocess.run([sys.executable, "-m", "alembic", operation, target],
-                                   cwd=ROOT / "backend", env=environment, check=True)
-                for command in (
-                    [sys.executable, "-m", "alembic", "current", "--check-heads"],
-                    [sys.executable, "-m", "alembic", "check"],
-                ):
-                    subprocess.run(command, cwd=ROOT / "backend", env=environment, check=True)
             return 0
         finally:
             cleanup_containers(names)

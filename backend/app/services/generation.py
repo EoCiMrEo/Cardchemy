@@ -17,7 +17,9 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.ai.gemini_catalog import CATALOG_VERSION, SCHEMA_POLICY_VERSION
 from app.models.generation import (
+    GenerationCandidateStage,
     GenerationJob,
     GenerationJobKind,
     GenerationJobSource,
@@ -25,15 +27,27 @@ from app.models.generation import (
     GenerationQuotaEvent,
     KnowledgeUploadQuotaEvent,
 )
-from app.models.knowledge import SubjectDocument
-from app.models.subject import FlashcardSet
+from app.models.knowledge import (
+    SubjectDocument, SubjectDocumentContentRevision, SubjectDocumentIndexRevision,
+    embedding_space_hash,
+)
+from app.models.subject import FlashcardSet, Subject
 from app.schemas.generation import (
     GenerationLimitReason,
     GenerationJobCreate,
     GenerationJobResponse,
     GenerationLimitsResponse,
     KnowledgeJobCreate,
+    KnowledgeDuplicateCandidate,
 )
+from app.ai.contracts import ValidatedCard
+from app.ai.grounding import append_if_distinct, normalize_evidence
+from app.ai.pipeline import cost_microusd
+from app.services.candidate_storage import (
+    CandidateStorageError, VALIDATION_POLICY_VERSION, decrypt_candidates,
+)
+from app.schemas.subject import FlashcardSetCreate
+from app.services.flashcard import FlashcardService
 from app.services.knowledge_capture import remove_captured_knowledge
 from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.services.pdf_processor import PDFProcessingError, PDFProcessor
@@ -43,11 +57,14 @@ from app.time_utils import as_utc, utcnow
 
 ACTIVE_STATUSES = (
     GenerationJobStatus.AWAITING_UPLOAD.value,
+    GenerationJobStatus.AWAITING_CHOICE.value,
+    GenerationJobStatus.AWAITING_CARD_CHOICE.value,
     GenerationJobStatus.QUEUED.value,
     GenerationJobStatus.RUNNING.value,
 )
 PENDING_STATUSES = (
     GenerationJobStatus.AWAITING_UPLOAD.value,
+    GenerationJobStatus.AWAITING_CHOICE.value,
     GenerationJobStatus.QUEUED.value,
 )
 DEPLOYMENT_ADMISSION_LOCK = 7_314_159_265
@@ -96,6 +113,7 @@ def metadata_fingerprint(data: GenerationJobCreate, sanitized_filename: str) -> 
     canonical = json.dumps(
         {
             "subject_id": str(data.subject_id),
+            "document_id": str(data.document_id) if data.document_id else None,
             "set_title": data.set_title.strip(),
             "set_description": (data.set_description or "").strip() or None,
             "source_pdf_name": sanitized_filename,
@@ -198,7 +216,9 @@ class GenerationJobService:
             query = query.where(GenerationJob.user_id == user_id)
         return int(await db.scalar(query) or 0)
 
-    async def _check_reservation_capacity(self, db: AsyncSession, user_id: UUID) -> None:
+    async def _check_reservation_capacity(
+        self, db: AsyncSession, user_id: UUID, *, exclude_job_id: UUID | None = None,
+    ) -> None:
         await self._lock_admission(db)
         if not self.settings.flashcard_ai_provider_enabled:
             raise generation_http_error(
@@ -212,6 +232,7 @@ class GenerationJobService:
                     GenerationJob.user_id == user_id,
                     GenerationJob.job_kind == GenerationJobKind.FLASHCARDS.value,
                     GenerationJob.status.in_(ACTIVE_STATUSES),
+                    GenerationJob.id != exclude_job_id if exclude_job_id is not None else True,
                 )
             )
             or 0
@@ -316,13 +337,13 @@ class GenerationJobService:
             select(func.coalesce(func.sum(GenerationJob.source_size_bytes), 0)).where(
                 GenerationJob.user_id == user_id,
                 GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
-                GenerationJob.status.in_(("queued", "running", "failed")),
+                GenerationJob.status.in_(("awaiting_choice", "queued", "running", "failed")),
             )
         ) or 0)
         retained_all = int(await db.scalar(
             select(func.coalesce(func.sum(GenerationJob.source_size_bytes), 0)).where(
                 GenerationJob.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value,
-                GenerationJob.status.in_(("queued", "running", "failed")),
+                GenerationJob.status.in_(("awaiting_choice", "queued", "running", "failed")),
             )
         ) or 0)
         if retained_user + upload_bytes > self.settings.knowledge_max_retained_source_bytes_per_user:
@@ -414,12 +435,23 @@ class GenerationJobService:
                 )
             return existing
 
+        if data.document_id is not None:
+            if not self.settings.rag_enabled:
+                raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_capture_disabled", "Knowledge is not enabled for this generation job.")
+            target = await db.scalar(select(SubjectDocument.id).where(
+                SubjectDocument.id == data.document_id,
+                SubjectDocument.subject_id == data.subject_id,
+                SubjectDocument.uploader_id == user_id,
+            ))
+            if target is None:
+                raise generation_http_error(status.HTTP_404_NOT_FOUND, "knowledge_document_not_found", "Knowledge document not found.")
         await self._check_reservation_capacity(db, user_id)
         now = utcnow()
         job = GenerationJob(
             request_id=current_request_id(),
             user_id=user_id,
             subject_id=data.subject_id,
+            document_id=data.document_id,
             job_kind=GenerationJobKind.FLASHCARDS.value,
             idempotency_key_hash=key_hash,
             request_fingerprint=fingerprint,
@@ -433,6 +465,8 @@ class GenerationJobService:
             source_pdf_name=filename,
             ai_provider=self.settings.flashcard_ai_provider,
             ai_model=self.settings.flashcard_ai_model,
+            ai_catalog_version=CATALOG_VERSION,
+            ai_schema_policy_version=SCHEMA_POLICY_VERSION,
             max_attempts=self.settings.generation_max_attempts,
             available_at=now,
             upload_expires_at=now
@@ -514,6 +548,12 @@ class GenerationJobService:
         normalized_media_type = PDFProcessor.validate_media_type(media_type)
         PDFProcessor.validate_signature(content)
         source_hash = hashlib.sha256(content).hexdigest()
+        # Preserve the global Knowledge lock order without serializing uploads
+        # for jobs whose capture path is disabled.  The unlocked read is only a
+        # routing hint; all mutable state is re-read under the required locks.
+        preview = await self.get_owner_job(db, job_id, user_id)
+        if preview.knowledge_capture_status == "pending":
+            await acquire_knowledge_write_lock(db)
         job = await self.get_owner_job(db, job_id, user_id, for_update=True)
 
         if job.source_sha256 is not None:
@@ -586,11 +626,280 @@ class GenerationJobService:
         job.source_media_type = normalized_media_type
         job.source_size_bytes = len(content)
         job.source_sha256 = source_hash
+        if job.knowledge_capture_status == "pending":
+            if job.document_id is not None:
+                target = await db.scalar(select(SubjectDocument).where(
+                    SubjectDocument.id == job.document_id,
+                    SubjectDocument.subject_id == job.subject_id,
+                    SubjectDocument.uploader_id == job.user_id,
+                ).with_for_update())
+                if target is None:
+                    raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_document_changed", "The Knowledge document changed. Start a new upload.")
+                current = await self._current_revision(db, target.id)
+                if current is not None and current.source_sha256 == source_hash:
+                    job.knowledge_content_revision_id = current.id
+                    job.knowledge_capture_status = "unchanged"
+                    job.knowledge_upload_outcome = "no_changes"
+                    await self._continue_after_choice(db, job, now)
+                    await db.flush()
+                    return job
+            duplicate = await self._duplicate_candidate(db, job) if job.document_id is None else None
+            if duplicate is not None:
+                document, _revision, _can_reuse = duplicate
+                job.knowledge_choice_candidate_id = document.id
+                job.knowledge_choice_expires_at = now + timedelta(minutes=self.settings.generation_upload_reservation_minutes)
+                job.status = GenerationJobStatus.AWAITING_CHOICE.value
+                job.stage = "awaiting_choice"
+                job.progress = 5
+                source = await db.get(GenerationJobSource, job.id)
+                if source is not None:
+                    source.expires_at = job.knowledge_choice_expires_at
+                job.upload_expires_at = None
+                job.updated_at = now
+                await db.flush()
+                return job
         job.status = GenerationJobStatus.QUEUED.value
         job.stage = "queued"
         job.progress = 5
         job.available_at = now
         job.upload_expires_at = None
+        job.updated_at = now
+        await db.flush()
+        return job
+
+    @staticmethod
+    async def _current_revision(db: AsyncSession, document_id: UUID) -> SubjectDocumentContentRevision | None:
+        return await db.scalar(select(SubjectDocumentContentRevision).where(
+            SubjectDocumentContentRevision.document_id == document_id,
+        ).order_by(SubjectDocumentContentRevision.revision_no.desc()).limit(1))
+
+    async def _ready_to_reuse(self, db: AsyncSession, job: GenerationJob, revision: SubjectDocumentContentRevision) -> bool:
+        if revision.status != "ready" or not revision.is_active:
+            return False
+        expected_space = embedding_space_hash(self.settings.rag_embedding_space_identity)
+        subject = await db.get(Subject, job.subject_id)
+        if subject is None or subject.active_embedding_space_hash != expected_space:
+            return False
+        index = await db.scalar(select(SubjectDocumentIndexRevision).where(
+            SubjectDocumentIndexRevision.content_revision_id == revision.id,
+            SubjectDocumentIndexRevision.embedding_space_hash == expected_space,
+            SubjectDocumentIndexRevision.status == "ready",
+            SubjectDocumentIndexRevision.is_active.is_(True),
+            SubjectDocumentIndexRevision.actual_chunk_count > 0,
+            SubjectDocumentIndexRevision.actual_embedded_count == SubjectDocumentIndexRevision.actual_chunk_count,
+        ).order_by(SubjectDocumentIndexRevision.revision_no.desc()).limit(1))
+        return index is not None
+
+    async def _duplicate_candidate(self, db: AsyncSession, job: GenerationJob) -> tuple[SubjectDocument, SubjectDocumentContentRevision, bool] | None:
+        latest_no = select(func.max(SubjectDocumentContentRevision.revision_no)).where(
+            SubjectDocumentContentRevision.document_id == SubjectDocument.id
+        ).correlate(SubjectDocument).scalar_subquery()
+        rows = (await db.execute(select(SubjectDocument, SubjectDocumentContentRevision).join(
+            SubjectDocumentContentRevision,
+            SubjectDocumentContentRevision.document_id == SubjectDocument.id,
+        ).where(
+            SubjectDocument.subject_id == job.subject_id,
+            SubjectDocument.uploader_id == job.user_id,
+            SubjectDocument.id != job.document_id if job.document_id is not None else True,
+            SubjectDocumentContentRevision.revision_no == latest_no,
+            SubjectDocumentContentRevision.source_sha256 == job.source_sha256,
+        ).order_by(SubjectDocument.created_at.desc(), SubjectDocument.id.desc()).limit(50))).all()
+        fallback = None
+        for document, revision in rows:
+            can_reuse = await self._ready_to_reuse(db, job, revision)
+            if can_reuse:
+                return document, revision, True
+            if fallback is None:
+                fallback = (document, revision, False)
+        return fallback
+
+    @staticmethod
+    async def _continue_after_choice(db: AsyncSession, job: GenerationJob, now: datetime) -> None:
+        if job.job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
+            job.status = GenerationJobStatus.COMPLETED.value
+            job.stage = "completed"
+            job.progress = 100
+            job.generated_card_count = 0
+            job.completed_at = now
+            job.knowledge_choice_expires_at = None
+            await db.flush()
+            await db.execute(delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id))
+        else:
+            job.status = GenerationJobStatus.QUEUED.value
+            job.stage = "queued"
+            job.progress = 5
+            job.knowledge_choice_expires_at = None
+            await db.flush()
+            source = await db.get(GenerationJobSource, job.id)
+            if source is not None:
+                source.expires_at = None
+        job.available_at = now
+        job.upload_expires_at = None
+        job.updated_at = now
+
+    async def submit_knowledge_choice(self, db: AsyncSession, *, job_id: UUID, user_id: UUID, choice: str, idempotency_key: str) -> GenerationJob:
+        key_hash = hash_operation_key(idempotency_key)
+        await acquire_knowledge_write_lock(db)
+        job = await self.get_owner_job(db, job_id, user_id, for_update=True)
+        if job.knowledge_choice is not None:
+            if job.knowledge_choice == choice:
+                return job
+            raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_choice_conflict", "A different Knowledge choice was already submitted.")
+        if job.status != GenerationJobStatus.AWAITING_CHOICE.value:
+            raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_choice_unavailable", "This job is not awaiting a Knowledge choice.")
+        now = utcnow()
+        if job.knowledge_choice_expires_at is None or as_utc(job.knowledge_choice_expires_at) <= now:
+            raise generation_http_error(status.HTTP_410_GONE, "knowledge_choice_expired", "The Knowledge choice expired. Start a new upload.")
+        if choice == "reuse":
+            document = await db.scalar(select(SubjectDocument).where(
+                SubjectDocument.id == job.knowledge_choice_candidate_id,
+                SubjectDocument.subject_id == job.subject_id,
+                SubjectDocument.uploader_id == job.user_id,
+            ).with_for_update())
+            if document is None:
+                raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_choice_stale", "The matching Knowledge document changed. Start a new upload.")
+            revision = await self._current_revision(db, document.id)
+            if revision is None or revision.source_sha256 != job.source_sha256 or not await self._ready_to_reuse(db, job, revision):
+                raise generation_http_error(status.HTTP_409_CONFLICT, "knowledge_choice_stale", "The matching Knowledge document changed. Start a new upload.")
+            job.document_id = document.id
+            job.knowledge_content_revision_id = revision.id
+            job.knowledge_capture_status = "reused"
+            job.knowledge_upload_outcome = "reused"
+        else:
+            job.knowledge_upload_outcome = "separate_copy"
+        job.knowledge_choice = choice
+        job.knowledge_choice_key_hash = key_hash
+        if choice == "reuse":
+            await self._continue_after_choice(db, job, now)
+        else:
+            job.status = GenerationJobStatus.QUEUED.value
+            job.stage = "queued"
+            job.knowledge_choice_expires_at = None
+            job.available_at = now
+            job.updated_at = now
+            source = await db.get(GenerationJobSource, job.id)
+            if source is not None:
+                source.expires_at = None
+        await db.flush()
+        return job
+
+    @staticmethod
+    def _diverse_card_subset(cards: list[ValidatedCard], count: int) -> list[ValidatedCard]:
+        """Choose from authenticated validated cards without another AI call."""
+
+        remaining = list(enumerate(cards))
+        selected: list[ValidatedCard] = []
+        page_counts: dict[int, int] = {}
+        section_counts: dict[tuple[int, str | None], int] = {}
+        while len(selected) < count:
+            position, card = min(
+                remaining,
+                key=lambda item: (
+                    page_counts.get(item[1].source_page, 0),
+                    section_counts.get((item[1].source_page, item[1].source_section), 0),
+                    -item[1].quality_score,
+                    item[0],
+                ),
+            )
+            remaining.remove((position, card))
+            selected.append(card)
+            page_counts[card.source_page] = page_counts.get(card.source_page, 0) + 1
+            section_key = (card.source_page, card.source_section)
+            section_counts[section_key] = section_counts.get(section_key, 0) + 1
+        return selected
+
+    async def submit_card_choice(
+        self, db: AsyncSession, *, job_id: UUID, user_id: UUID,
+        card_count: int, idempotency_key: str,
+    ) -> GenerationJob:
+        key_hash = hash_operation_key(idempotency_key)
+        # Subject/Knowledge deletion and cancellation take this lock before
+        # locking generation jobs. Keep the same order while a confirmed set
+        # acquires Subject/Knowledge foreign-key locks during insertion.
+        await acquire_knowledge_write_lock(db)
+        job = await self.get_owner_job(db, job_id, user_id, for_update=True)
+        subject = await db.get(Subject, job.subject_id)
+        if subject is None or subject.instructor_id != user_id:
+            raise generation_http_error(status.HTTP_404_NOT_FOUND, "generation_job_not_found", "Generation job not found.")
+        if job.card_choice_key_hash is not None:
+            if (
+                job.card_choice_key_hash == key_hash
+                and job.selected_card_count == card_count
+                and job.status == GenerationJobStatus.COMPLETED.value
+            ):
+                return job
+            raise generation_http_error(status.HTTP_409_CONFLICT, "card_choice_conflict", "A different card choice was already submitted.")
+        if job.status != GenerationJobStatus.AWAITING_CARD_CHOICE.value:
+            raise generation_http_error(status.HTTP_409_CONFLICT, "card_choice_unavailable", "This job is not awaiting a card choice.")
+        now = utcnow()
+        if job.card_choice_expires_at is None or as_utc(job.card_choice_expires_at) <= now:
+            raise generation_http_error(status.HTTP_410_GONE, "card_choice_expired", "The validated-card choice expired.")
+        stage = await db.scalar(select(GenerationCandidateStage).where(
+            GenerationCandidateStage.job_id == job.id,
+        ).with_for_update())
+        source = await db.scalar(select(GenerationJobSource).where(
+            GenerationJobSource.job_id == job.id,
+        ).with_for_update())
+        if (
+            stage is None or source is None or source.expires_at is None
+            or as_utc(source.expires_at) <= now or as_utc(stage.expires_at) <= now
+            or stage.validation_policy_version != VALIDATION_POLICY_VERSION
+            or stage.manual_retry_number != job.manual_retry_count
+            or stage.attempt_number != job.attempt_count
+        ):
+            raise generation_http_error(status.HTTP_409_CONFLICT, "card_choice_unavailable", "The validated cards are no longer available.")
+        if not 1 <= card_count <= stage.candidate_count < job.requested_card_count:
+            raise generation_http_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_card_choice_count", "Choose a count from the validated cards available.")
+        try:
+            staged = decrypt_candidates(
+                self.settings, job_id=job.id, fingerprint=job.request_fingerprint,
+                manual_retry_number=stage.manual_retry_number,
+                attempt_number=stage.attempt_number,
+                nonce=bytes(stage.nonce), payload=bytes(stage.payload),
+                expected_count=stage.candidate_count,
+            )
+        except CandidateStorageError:
+            raise generation_http_error(status.HTTP_409_CONFLICT, "card_choice_unavailable", "The validated cards are no longer available.") from None
+        distinct: list[ValidatedCard] = []
+        for card in staged.cards:
+            if (
+                normalize_evidence(card.back_content) not in normalize_evidence(card.source_snippet)
+                or not append_if_distinct(
+                    distinct, card,
+                    threshold=staged.duplicate_similarity_threshold,
+                )
+            ):
+                raise generation_http_error(status.HTTP_409_CONFLICT, "card_choice_unavailable", "The validated cards are no longer available.")
+        selected = self._diverse_card_subset(staged.cards, card_count)
+        from app.services.subject import SubjectService
+        set_data = FlashcardSetCreate(
+            subject_id=job.subject_id, title=job.set_title,
+            description=job.set_description,
+        )
+        flashcard_set = await SubjectService.create_flashcard_set(
+            db, set_data, source_pdf_name=job.source_pdf_name,
+            generation_job_id=job.id, document_id=job.document_id,
+        )
+        created = await FlashcardService.create_flashcards_bulk(
+            db, [card.model_dump(mode="json") for card in selected], flashcard_set.id,
+        )
+        if len(created) != card_count:
+            raise RuntimeError("Confirmed card count did not match the selected count")
+        await db.delete(stage)
+        await db.delete(source)
+        job.card_choice_key_hash = key_hash
+        job.selected_card_count = card_count
+        job.status = GenerationJobStatus.COMPLETED.value
+        job.stage = "completed"
+        job.progress = 100
+        job.generated_card_count = card_count
+        job.accepted_card_count = card_count
+        job.completed_at = now
+        job.error_code = None
+        job.error_message = None
+        job.error_retryable = False
+        job.limit_reason_code = None
+        job.limit_reason_message = None
         job.updated_at = now
         await db.flush()
         return job
@@ -644,9 +953,12 @@ class GenerationJobService:
         now = utcnow()
         if job.status in (
             GenerationJobStatus.AWAITING_UPLOAD.value,
+            GenerationJobStatus.AWAITING_CHOICE.value,
+            GenerationJobStatus.AWAITING_CARD_CHOICE.value,
             GenerationJobStatus.QUEUED.value,
         ):
             await db.execute(delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id))
+            await db.execute(delete(GenerationCandidateStage).where(GenerationCandidateStage.job_id == job.id))
             if job.knowledge_capture_status in {"pending", "captured"}:
                 await remove_captured_knowledge(db, job)
             job.status = GenerationJobStatus.CANCELLED.value
@@ -670,6 +982,7 @@ class GenerationJobService:
         job_id: UUID,
         user_id: UUID,
         idempotency_key: str,
+        acknowledge_additional_cost: bool = False,
     ) -> GenerationJob:
         retry_key_hash = hash_operation_key(idempotency_key)
         await self._lock_admission(db)
@@ -686,7 +999,16 @@ class GenerationJobService:
                     "idempotency_key_reused",
                     "This Idempotency-Key was already used for another operation.",
                 )
-            return await self.get_owner_job(db, job_id, user_id)
+            existing_job = await self.get_owner_job(db, job_id, user_id)
+            if existing_job.idempotency_key_hash == retry_key_hash:
+                # The initial upload also has a quota receipt for this job.
+                # It is not evidence that a paid retry was submitted.
+                raise generation_http_error(
+                    status.HTTP_409_CONFLICT,
+                    "idempotency_key_reused",
+                    "This Idempotency-Key was already used for another operation.",
+                )
+            return existing_job
 
         job = await self.get_owner_job(db, job_id, user_id, for_update=True)
         source = await db.scalar(
@@ -694,12 +1016,26 @@ class GenerationJobService:
             .where(GenerationJobSource.job_id == job.id)
             .with_for_update()
         )
+        awaiting_card_choice = job.status == GenerationJobStatus.AWAITING_CARD_CHOICE.value
+        if awaiting_card_choice and not acknowledge_additional_cost:
+            raise generation_http_error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "additional_cost_acknowledgement_required",
+                "Confirm that a new AI attempt may incur additional cost.",
+            )
         if (
-            job.status != GenerationJobStatus.FAILED.value
+            job.status not in (
+                GenerationJobStatus.FAILED.value,
+                GenerationJobStatus.AWAITING_CARD_CHOICE.value,
+            )
             or not job.error_retryable
             or source is None
             or source.expires_at is None
             or as_utc(source.expires_at) <= utcnow()
+            or (awaiting_card_choice and (
+                job.card_choice_expires_at is None
+                or as_utc(job.card_choice_expires_at) <= utcnow()
+            ))
         ):
             raise generation_http_error(
                 status.HTTP_409_CONFLICT,
@@ -712,8 +1048,21 @@ class GenerationJobService:
                 "manual_retry_limit",
                 "This generation job reached its manual retry limit.",
             )
+        if (
+            job.ai_provider != "gemini"
+            or job.ai_model != self.settings.flashcard_ai_model
+            or job.ai_catalog_version != CATALOG_VERSION
+            or job.ai_schema_policy_version != SCHEMA_POLICY_VERSION
+        ):
+            raise generation_http_error(
+                status.HTTP_409_CONFLICT,
+                "ai_model_policy_changed",
+                "The model policy changed; create a new generation job.",
+            )
 
-        await self._check_reservation_capacity(db, user_id)
+        await self._check_reservation_capacity(
+            db, user_id, exclude_job_id=job.id if awaiting_card_choice else None,
+        )
         await self._check_quota_charge(
             db,
             user_id=user_id,
@@ -731,6 +1080,11 @@ class GenerationJobService:
                 created_at=now,
             )
         )
+        if awaiting_card_choice:
+            await db.execute(delete(GenerationCandidateStage).where(
+                GenerationCandidateStage.job_id == job.id
+            ))
+            job.card_choice_expires_at = None
         source.expires_at = None
         job.status = GenerationJobStatus.QUEUED.value
         job.stage = "queued"
@@ -761,14 +1115,52 @@ class GenerationJobService:
         source_expires_at = await db.scalar(
             select(GenerationJobSource.expires_at).where(GenerationJobSource.job_id == job.id)
         )
+        stage_count = await db.scalar(select(GenerationCandidateStage.candidate_count).where(
+            GenerationCandidateStage.job_id == job.id
+        )) if job.status == GenerationJobStatus.AWAITING_CARD_CHOICE.value else None
         now = utcnow()
         can_retry = bool(
-            job.status == GenerationJobStatus.FAILED.value
+            job.status in (
+                GenerationJobStatus.FAILED.value,
+                GenerationJobStatus.AWAITING_CARD_CHOICE.value,
+            )
             and job.error_retryable
             and source_expires_at
             and as_utc(source_expires_at) > now
             and job.manual_retry_count < self.settings.generation_max_manual_retries
+            and (job.status != GenerationJobStatus.AWAITING_CARD_CHOICE.value or (
+                job.card_choice_expires_at is not None and as_utc(job.card_choice_expires_at) > now
+            ))
         )
+        latest_quality = (job.quality_attempts or [])[-1] if job.quality_attempts else None
+        previous_cost_unknown = bool(
+            latest_quality and latest_quality.get("uncertain_request_count", 0) > 0
+            or (job.provider_request_count > 0 and (
+                job.actual_cost_microusd is None
+                or job.actual_input_tokens is None
+                or job.actual_output_tokens is None
+            ))
+        )
+        retry_estimate = cost_microusd(
+            self.settings, job.estimated_input_tokens, job.estimated_output_tokens,
+        ) if can_retry and job.estimated_input_tokens > 0 else None
+        duplicate_candidate = None
+        if job.status == GenerationJobStatus.AWAITING_CHOICE.value and job.knowledge_choice_candidate_id is not None:
+            candidate = await db.scalar(select(SubjectDocument).where(
+                SubjectDocument.id == job.knowledge_choice_candidate_id,
+                SubjectDocument.subject_id == job.subject_id,
+                SubjectDocument.uploader_id == job.user_id,
+            ))
+            if candidate is not None:
+                revision = await self._current_revision(db, candidate.id)
+                duplicate_candidate = KnowledgeDuplicateCandidate(
+                    document_id=candidate.id,
+                    title=candidate.title,
+                    can_reuse=bool(
+                        revision is not None and revision.source_sha256 == job.source_sha256
+                        and await self._ready_to_reuse(db, job, revision)
+                    ),
+                )
         return GenerationJobResponse(
             id=job.id,
             subject_id=job.subject_id,
@@ -776,6 +1168,9 @@ class GenerationJobService:
             document_id=job.document_id,
             knowledge_content_revision_id=job.knowledge_content_revision_id,
             knowledge_capture_status=job.knowledge_capture_status,
+            duplicate_candidate=duplicate_candidate,
+            choice_expires_at=job.knowledge_choice_expires_at if job.status == GenerationJobStatus.AWAITING_CHOICE.value else None,
+            knowledge_upload_outcome=job.knowledge_upload_outcome,
             knowledge_capture_error_code=job.knowledge_capture_error_code,
             knowledge_capture_error_message=job.knowledge_capture_error_message,
             flashcard_set_id=result_set_id,
@@ -801,6 +1196,17 @@ class GenerationJobService:
             usage_estimated=job.usage_estimated,
             accepted_card_count=job.accepted_card_count,
             rejected_card_count=job.rejected_card_count,
+            valid_candidate_count=stage_count or 0,
+            card_choice_expires_at=job.card_choice_expires_at if stage_count else None,
+            selected_card_count=job.selected_card_count,
+            can_accept_smaller_target=bool(
+                stage_count and job.card_choice_expires_at
+                and as_utc(job.card_choice_expires_at) > now
+            ),
+            latest_attempt_rejected_card_count=(latest_quality or {}).get("rejected_count", 0),
+            latest_attempt_quality_diagnostics=latest_quality,
+            retry_estimated_additional_cost_microusd=retry_estimate,
+            previous_attempt_cost_unknown=previous_cost_unknown,
             limit_reason_code=job.limit_reason_code,
             limit_reason_message=job.limit_reason_message,
             source_pdf_name=job.source_pdf_name,

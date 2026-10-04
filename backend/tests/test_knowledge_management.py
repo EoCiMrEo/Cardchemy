@@ -34,9 +34,8 @@ def _settings() -> Settings:
         generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         rag_enabled=True,
         rag_embedding_provider_enabled=True,
-        rag_embedding_provider="openai_compatible",
-        rag_embedding_base_url="https://api.openai.com/v1",
-        rag_embedding_model="text-embedding-3-small",
+        rag_embedding_provider="gemini",
+        rag_embedding_model="gemini-embedding-001",
         rag_embedding_api_key="test-key",
         rag_embedding_quota_bucket="test-bucket",
     )
@@ -54,15 +53,15 @@ async def _seed_document(db, *, failed: bool = False):
     space = RagEmbeddingSpace(
         identity_hash=space_hash,
         provider=settings.rag_embedding_provider,
-        base_url=str(settings.rag_embedding_base_url).rstrip("/"),
+        base_url=settings.rag_embedding_endpoint_identity,
         model=settings.rag_embedding_model,
         space_revision=settings.rag_embedding_space_revision,
         format_version=settings.rag_embedding_format_version,
         dimensions=settings.rag_embedding_dimensions,
         representation=settings.rag_embedding_representation,
         metric=settings.rag_embedding_metric,
-        document_task_mode=settings.rag_embedding_document_task_mode,
-        query_task_mode=settings.rag_embedding_query_task_mode,
+        document_task_mode=settings.rag_embedding_provider_task_modes[0],
+        query_task_mode=settings.rag_embedding_provider_task_modes[1],
     )
     subject = Subject(
         id=uuid4(),

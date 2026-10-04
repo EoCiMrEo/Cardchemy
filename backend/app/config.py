@@ -23,8 +23,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import dotenv_values
 
 
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT_DIR = BACKEND_DIR.parent
+GEMINI_2_EMBEDDING_FORMAT = "gemini2_qa_section_v1"
+GEMINI_2_DOCUMENT_TASK_MODE = "title_section_text_v1"
+GEMINI_2_QUERY_TASK_MODE = "question_answering_query_v1"
+ASK_REQUIRED_RELEASE_POLICY_VERSION = "related_knowledge_navigation_v8"
+ASK_SOURCE_ONLY_READ_POLICIES = (
+    "related_knowledge_v1", "related_knowledge_navigation_v2",
+    "related_knowledge_navigation_v3", "related_knowledge_navigation_v4",
+    "related_knowledge_navigation_v5", "related_knowledge_navigation_v6",
+    "related_knowledge_navigation_v7", ASK_REQUIRED_RELEASE_POLICY_VERSION,
+)
+# The measured source-only policy still requires explicit installation flags.
+# Fresh installations stay off; retired job snapshots cannot execute here.
+ASK_RUNTIME_POLICY_VERSION = "related_knowledge_navigation_v8"
 INSECURE_SECRET_VALUES = {
     "your-super-secret-key-change-in-production",
     "your-super-secret-key-change-in-production-please",
@@ -245,7 +259,7 @@ class Settings(BaseSettings):
 
     # Flashcard text-generation profile. The 29 former AI_* names are removed.
     flashcard_ai_provider_enabled: bool = False
-    flashcard_ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    flashcard_ai_provider: Literal["gemini"] = "gemini"
     flashcard_ai_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=128)
     flashcard_ai_api_key: SecretStr | None = None
     flashcard_ai_base_url: AnyHttpUrl | None = None
@@ -287,8 +301,9 @@ class Settings(BaseSettings):
     # RAG remains off by default. Answer and embedding roles have independent
     # connection material and divided local capacity; no implicit key fallback.
     rag_enabled: bool = False
+    rag_ask_enabled: bool = False
     rag_ai_provider_enabled: bool = False
-    rag_ai_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    rag_ai_provider: Literal["gemini"] = "gemini"
     rag_ai_model: str = Field(default="gemini-3.5-flash", min_length=1, max_length=128)
     rag_ai_api_key: SecretStr | None = None
     rag_ai_base_url: AnyHttpUrl | None = None
@@ -312,13 +327,37 @@ class Settings(BaseSettings):
     rag_ai_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
     rag_ai_quota_bucket: str = Field(default="", max_length=128)
 
+    # Dormant v7 visual source-ID judgment is a separate provider role from the
+    # retired answer generator. Its credential belongs only in the Ask worker.
+    rag_source_judge_provider_enabled: bool = False
+    rag_source_judge_provider: Literal["gemini"] = "gemini"
+    rag_source_judge_model: Literal["gemini-3.5-flash-lite"] = "gemini-3.5-flash-lite"
+    rag_source_judge_thinking_level: Literal["high"] = "high"
+    rag_source_judge_api_key: SecretStr | None = None
+    rag_source_judge_max_input_tokens: int = Field(default=32_768, ge=1, le=32_768)
+    rag_source_judge_max_output_tokens: int = Field(default=4_096, ge=1, le=4_096)
+    rag_source_judge_provider_timeout_seconds: float = Field(default=120, ge=1, le=120)
+    # An integer field accepts the root-template string "0" while still
+    # rejecting every retry value above zero.
+    rag_source_judge_provider_max_retries: int = Field(default=0, ge=0, le=0)
+    rag_source_judge_concurrency: int = Field(default=1, ge=1, le=32)
+    rag_source_judge_requests_per_minute: int = Field(default=5, ge=1, le=100_000)
+    rag_source_judge_input_tokens_per_minute: int = Field(default=250_000, ge=1, le=100_000_000)
+    rag_source_judge_rate_limit_safety_percent: int = Field(default=80, ge=1, le=100)
+    # Reserve against the conservative standard price already enforced by the
+    # worker, rather than admitting snapshots that the worker cannot claim.
+    rag_source_judge_input_cost_per_million_usd: Decimal = Field(default=Decimal("0.30"), ge=Decimal("0.30"), le=10_000)
+    rag_source_judge_output_cost_per_million_usd: Decimal = Field(default=Decimal("2.50"), ge=Decimal("2.50"), le=10_000)
+    rag_source_judge_max_estimated_cost_usd: Decimal = Field(default=Decimal("1"), gt=0, le=100_000)
+    rag_source_judge_quota_bucket: str = Field(default="", max_length=128)
+
     rag_embedding_provider_enabled: bool = False
-    rag_embedding_provider: Literal["gemini", "openai_compatible"] = "gemini"
+    rag_embedding_provider: Literal["gemini"] = "gemini"
     rag_embedding_model: str = Field(default="gemini-embedding-001", min_length=1, max_length=128)
     rag_embedding_api_key: SecretStr | None = None
     rag_embedding_base_url: AnyHttpUrl | None = None
     rag_embedding_dimensions: int = Field(default=1_536, ge=1_536, le=1_536)
-    rag_embedding_format_version: Literal["raw_text_v1"] = "raw_text_v1"
+    rag_embedding_format_version: Literal["raw_text_v1", "gemini2_qa_section_v1"] = "raw_text_v1"
     rag_embedding_space_revision: str = Field(default="gemini-v1", min_length=1, max_length=64)
     rag_embedding_representation: Literal["float32"] = "float32"
     rag_embedding_metric: Literal["cosine"] = "cosine"
@@ -339,6 +378,9 @@ class Settings(BaseSettings):
     rag_embedding_quota_bucket: str = Field(default="", max_length=128)
 
     generation_source_encryption_key: SecretStr
+    # Original Knowledge PDFs have a separate key and long-lived lifecycle.
+    # Empty keeps old installations startable; archive operations fail closed.
+    knowledge_pdf_encryption_key: SecretStr | None = None
 
     # PDF ingestion and durable generation-job limits. These defaults are
     # intentionally conservative for a small self-hosted deployment and can be
@@ -385,6 +427,16 @@ class Settings(BaseSettings):
     generation_retry_base_seconds: float = Field(default=2.0, ge=0.1, le=300)
     generation_retry_max_seconds: float = Field(default=60.0, ge=1, le=3_600)
     generation_source_retry_retention_hours: int = Field(default=24, ge=1, le=168)
+    generation_candidate_choice_retention_hours: int = Field(default=24, ge=1, le=168)
+    generation_candidate_choice_max_bytes_per_job: int = Field(
+        default=16 * 1024 * 1024, ge=32 * 1024, le=16 * 1024 * 1024
+    )
+    generation_candidate_choice_max_bytes_per_user: int = Field(
+        default=32 * 1024 * 1024, ge=32 * 1024, le=1024 * 1024 * 1024
+    )
+    generation_candidate_choice_max_bytes_deployment: int = Field(
+        default=256 * 1024 * 1024, ge=32 * 1024, le=10 * 1024 * 1024 * 1024
+    )
     generation_upload_reservation_minutes: int = Field(default=15, ge=1, le=120)
     generation_cleanup_interval_seconds: int = Field(default=60, ge=5, le=3_600)
 
@@ -451,6 +503,12 @@ class Settings(BaseSettings):
     rag_answer_heartbeat_seconds: float = Field(default=10.0, ge=1, le=120)
     rag_answer_max_attempts: int = Field(default=3, ge=1, le=10)
     rag_answer_max_manual_retries: int = Field(default=2, ge=0, le=10)
+    # This non-secret deployment assertion is shared with the API.  Only the
+    # answer worker receives the model path and mounts the verified artifacts.
+    rag_local_support_enabled: bool = False
+    # Local support artifacts are operator-provided files mounted only in the
+    # answer worker. A missing path keeps the verifier unavailable.
+    rag_local_support_model_dir: Path | None = None
     rag_answer_retry_base_seconds: float = Field(default=3.0, ge=3, le=300)
     rag_answer_retry_max_seconds: float = Field(default=60.0, ge=3, le=3_600)
     rag_answer_cleanup_interval_seconds: int = Field(default=60, ge=5, le=3_600)
@@ -513,9 +571,7 @@ class Settings(BaseSettings):
     def flashcard_ai_provider_configured(self) -> bool:
         """Return whether this process has the provider connection material."""
 
-        if self.flashcard_ai_provider == "gemini":
-            return self.flashcard_ai_api_key_value is not None
-        return self.flashcard_ai_base_url is not None
+        return self.flashcard_ai_api_key_value is not None
 
     def require_generation_worker_config(self) -> "Settings":
         """Fail worker startup when an enabled provider lacks credentials."""
@@ -543,14 +599,55 @@ class Settings(BaseSettings):
         return self._secret_value(self.rag_ai_api_key)
 
     @property
+    def rag_source_judge_api_key_value(self) -> str | None:
+        return self._secret_value(self.rag_source_judge_api_key)
+
+    @property
     def rag_embedding_api_key_value(self) -> str | None:
         return self._secret_value(self.rag_embedding_api_key)
 
     @property
-    def rag_answer_available(self) -> bool:
-        """Nonsecret admission metadata; authorization is checked elsewhere."""
+    def rag_source_only_available(self) -> bool:
+        """Nonsecret source-only Ask admission; authorization is checked elsewhere."""
 
-        return self.rag_enabled and self.rag_ai_provider_enabled and self.rag_embedding_provider_enabled
+        return (
+            self.rag_ask_effective_enabled
+            and self.rag_embedding_provider_enabled
+            and self.rag_source_judge_provider_enabled
+            and self.rag_related_pricing_configured
+        )
+
+    @property
+    def rag_answer_available(self) -> bool:
+        """Compatibility alias for worker liveness during source-only cutover."""
+
+        return self.rag_source_only_available
+
+    @property
+    def rag_related_pricing_configured(self) -> bool:
+        """Both prospective Ask provider roles need nonzero prices."""
+
+        return (
+            self.rag_embedding_input_cost_per_million_usd > 0
+            and self.rag_source_judge_input_cost_per_million_usd > 0
+            and self.rag_source_judge_output_cost_per_million_usd > 0
+        )
+
+    @property
+    def rag_answer_pricing_configured(self) -> bool:
+        """Compatibility alias for older consumers of the Ask profile."""
+
+        return self.rag_related_pricing_configured
+
+    @property
+    def rag_ask_effective_enabled(self) -> bool:
+        """Expose the release gate, never a raw flag that cannot reopen legacy Ask."""
+
+        return (
+            ASK_RUNTIME_POLICY_VERSION == ASK_REQUIRED_RELEASE_POLICY_VERSION
+            and self.rag_enabled
+            and self.rag_ask_enabled
+        )
 
     @property
     def rag_index_available(self) -> bool:
@@ -558,28 +655,28 @@ class Settings(BaseSettings):
 
     @property
     def rag_ai_endpoint_identity(self) -> str:
-        if self.rag_ai_provider == "gemini":
-            return "https://generativelanguage.googleapis.com"
-        assert self.rag_ai_base_url is not None
-        return str(self.rag_ai_base_url).rstrip("/")
+        return "https://generativelanguage.googleapis.com"
+
+    @property
+    def rag_source_judge_endpoint_identity(self) -> str:
+        return "https://generativelanguage.googleapis.com"
+
+    @property
+    def rag_source_judge_contract_version(self) -> str:
+        from app.ai.source_judgment_visual_v5 import CONTRACT_VERSION
+        return CONTRACT_VERSION
 
     @property
     def rag_embedding_endpoint_identity(self) -> str:
-        if self.rag_embedding_provider == "gemini":
-            return "https://generativelanguage.googleapis.com"
-        assert self.rag_embedding_base_url is not None
-        return str(self.rag_embedding_base_url).rstrip("/")
+        return "https://generativelanguage.googleapis.com"
 
     @property
     def rag_embedding_provider_task_modes(self) -> tuple[str, str]:
         """Return the physical provider task modes that define vector compatibility."""
 
-        if self.rag_embedding_provider == "gemini":
-            return ("RETRIEVAL_DOCUMENT", "QUESTION_ANSWERING")
-        return (
-            self.rag_embedding_document_task_mode,
-            self.rag_embedding_query_task_mode,
-        )
+        if self.rag_embedding_model == "gemini-embedding-2":
+            return (GEMINI_2_DOCUMENT_TASK_MODE, GEMINI_2_QUERY_TASK_MODE)
+        return ("RETRIEVAL_DOCUMENT", "QUESTION_ANSWERING")
 
     @property
     def rag_embedding_space_identity(
@@ -625,18 +722,27 @@ class Settings(BaseSettings):
         )
 
     def require_rag_answer_worker_config(self) -> "Settings":
-        """Require only answer/query credentials when that role is enabled."""
+        """Require the query-embedding and source-judge worker profiles."""
 
-        if not self.rag_enabled or not self.rag_ai_provider_enabled:
+        if not self.rag_ask_effective_enabled:
             return self
         if not self.rag_embedding_provider_enabled:
             raise ValueError("Ask AI requires RAG_EMBEDDING_PROVIDER_ENABLED")
-        if self.rag_ai_api_key_value is None:
-            raise ValueError("Ask AI worker requires RAG_AI_API_KEY")
+        if not self.rag_related_pricing_configured:
+            raise ValueError("Ask AI requires a nonzero embedding price")
         if self.rag_embedding_api_key_value is None:
             raise ValueError("Ask AI worker requires RAG_EMBEDDING_API_KEY")
-        if not self.rag_ai_quota_bucket or not self.rag_embedding_quota_bucket:
-            raise ValueError("Ask AI worker requires RAG_AI_QUOTA_BUCKET and RAG_EMBEDDING_QUOTA_BUCKET")
+        if not self.rag_embedding_quota_bucket:
+            raise ValueError("Ask AI worker requires RAG_EMBEDDING_QUOTA_BUCKET")
+        if not self.rag_source_judge_provider_enabled:
+            raise ValueError("Ask AI worker requires RAG_SOURCE_JUDGE_PROVIDER_ENABLED")
+        if self.rag_source_judge_api_key_value is None:
+            raise ValueError("Ask AI worker requires RAG_SOURCE_JUDGE_API_KEY")
+        if not self.rag_source_judge_quota_bucket:
+            raise ValueError("Ask AI worker requires RAG_SOURCE_JUDGE_QUOTA_BUCKET")
+        # V6 renders authenticated current originals inside the Ask worker.
+        # Disabled installations remain startable without archive credentials.
+        self.knowledge_pdf_encryption_key_bytes
         return self
 
     def require_rag_index_worker_config(self) -> "Settings":
@@ -669,6 +775,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 "GENERATION_SOURCE_ENCRYPTION_KEY must decode to exactly 32 bytes"
             )
+        return key
+
+    @property
+    def knowledge_pdf_encryption_key_bytes(self) -> bytes:
+        encoded = self._secret_value(self.knowledge_pdf_encryption_key)
+        if not encoded:
+            raise ValueError("KNOWLEDGE_PDF_ENCRYPTION_KEY is required for original PDFs")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", encoded):
+            raise ValueError("KNOWLEDGE_PDF_ENCRYPTION_KEY must be URL-safe base64")
+        try:
+            key = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError("KNOWLEDGE_PDF_ENCRYPTION_KEY must be URL-safe base64") from exc
+        if len(key) != 32:
+            raise ValueError("KNOWLEDGE_PDF_ENCRYPTION_KEY must decode to exactly 32 bytes")
         return key
 
     @property
@@ -784,7 +905,7 @@ class Settings(BaseSettings):
             raise ValueError("RAG_EMBEDDING_SPACE_REVISION must be a non-secret stable label")
         return value
 
-    @field_validator("flashcard_ai_quota_bucket", "rag_ai_quota_bucket", "rag_embedding_quota_bucket")
+    @field_validator("flashcard_ai_quota_bucket", "rag_ai_quota_bucket", "rag_embedding_quota_bucket", "rag_source_judge_quota_bucket")
     @classmethod
     def validate_quota_bucket(cls, value: str) -> str:
         if value and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value):
@@ -845,6 +966,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "GENERATION_RETRY_BASE_SECONDS cannot exceed GENERATION_RETRY_MAX_SECONDS"
             )
+        if self.generation_candidate_choice_max_bytes_per_job > self.generation_candidate_choice_max_bytes_per_user:
+            raise ValueError("Candidate choice per-job storage cannot exceed the per-user limit")
+        if self.generation_candidate_choice_max_bytes_per_user > self.generation_candidate_choice_max_bytes_deployment:
+            raise ValueError("Candidate choice per-user storage cannot exceed the deployment limit")
         if self.flashcard_ai_retry_base_seconds > self.flashcard_ai_retry_max_seconds:
             raise ValueError("FLASHCARD_AI_RETRY_BASE_SECONDS cannot exceed FLASHCARD_AI_RETRY_MAX_SECONDS")
         if self.flashcard_ai_chunk_overlap_tokens >= self.flashcard_ai_chunk_input_tokens:
@@ -892,37 +1017,41 @@ class Settings(BaseSettings):
         )
         if (prices[0] == 0) != (prices[1] == 0):
             raise ValueError("AI input and output prices must both be configured or both be zero")
-        if self.flashcard_ai_provider == "openai_compatible" and self.flashcard_ai_base_url is None:
-            raise ValueError("FLASHCARD_AI_BASE_URL is required for the openai_compatible provider")
-        if self.flashcard_ai_provider == "gemini" and self.flashcard_ai_base_url is not None:
-            raise ValueError("FLASHCARD_AI_BASE_URL is only valid for the openai_compatible provider")
-        if self.rag_ai_provider == "openai_compatible" and self.rag_ai_base_url is None:
-            raise ValueError("RAG_AI_BASE_URL is required for the openai_compatible provider")
-        if self.rag_ai_provider == "gemini" and self.rag_ai_base_url is not None:
-            raise ValueError(
-                "RAG_AI_BASE_URL is only valid for the openai_compatible provider"
-            )
-        if (
-            self.rag_embedding_provider == "openai_compatible"
-            and self.rag_embedding_base_url is None
+        for name, value in (
+            ("FLASHCARD_AI_BASE_URL", self.flashcard_ai_base_url),
+            ("RAG_AI_BASE_URL", self.rag_ai_base_url),
+            ("RAG_EMBEDDING_BASE_URL", self.rag_embedding_base_url),
         ):
-            raise ValueError(
-                "RAG_EMBEDDING_BASE_URL is required for the openai_compatible provider"
-            )
-        if (
-            self.rag_embedding_provider == "gemini"
-            and self.rag_embedding_base_url is not None
+            if value is not None:
+                raise ValueError(f"{name} is retired; native Gemini uses the official endpoint")
+        for role, model, thinking, context, output in (
+            ("flashcard", self.flashcard_ai_model, self.flashcard_ai_thinking_level,
+             self.flashcard_ai_context_window_tokens, self.flashcard_ai_max_output_tokens),
+            ("rag_answer", self.rag_ai_model, self.rag_ai_thinking_level,
+             self.rag_ai_context_window_tokens, self.rag_ai_max_output_tokens),
         ):
-            raise ValueError(
-                "RAG_EMBEDDING_BASE_URL is only valid for the openai_compatible provider"
+            # Import after Settings is initialized: app.ai's package facade
+            # imports the provider adapters, which themselves import Settings.
+            from app.ai.gemini_catalog import resolve_text_model
+            resolve_text_model(
+                model,
+                role=role,
+                thinking_level=thinking,
+                context_window_tokens=context,
+                max_output_tokens=output,
             )
-        if self.rag_embedding_provider == "gemini" and (
-            self.rag_embedding_model != "gemini-embedding-001"
-            or self.rag_embedding_dimensions != 1_536
-        ):
-            raise ValueError(
-                "The Gemini embedding profile requires gemini-embedding-001 with 1536 dimensions"
-            )
+        if self.rag_embedding_dimensions != 1_536:
+            raise ValueError("The Gemini embedding profile requires 1536 dimensions")
+        if self.rag_embedding_model == "gemini-embedding-001":
+            if self.rag_embedding_format_version != "raw_text_v1":
+                raise ValueError("gemini-embedding-001 requires raw_text_v1")
+        elif self.rag_embedding_model == "gemini-embedding-2":
+            if self.rag_embedding_format_version != GEMINI_2_EMBEDDING_FORMAT:
+                raise ValueError("gemini-embedding-2 requires gemini2_qa_section_v1")
+            if self.rag_embedding_max_input_tokens > 8192:
+                raise ValueError("gemini-embedding-2 inputs cannot exceed 8192 tokens")
+        else:
+            raise ValueError("The configured Gemini embedding model is not supported")
         if self.rag_ai_retry_base_seconds > self.rag_ai_retry_max_seconds:
             raise ValueError("RAG_AI_RETRY_BASE_SECONDS cannot exceed RAG_AI_RETRY_MAX_SECONDS")
         if self.rag_embedding_retry_base_seconds > self.rag_embedding_retry_max_seconds:
@@ -937,6 +1066,8 @@ class Settings(BaseSettings):
             raise ValueError("RAG_AI_MAX_JOB_INPUT_TOKENS exceeds safety-adjusted RAG_AI_INPUT_TOKENS_PER_MINUTE")
         if self.rag_embedding_max_input_tokens > self.rag_embedding_input_tokens_per_minute * self.rag_embedding_rate_limit_safety_percent // 100:
             raise ValueError("RAG_EMBEDDING_MAX_INPUT_TOKENS exceeds safety-adjusted RAG_EMBEDDING_INPUT_TOKENS_PER_MINUTE")
+        if self.rag_source_judge_max_input_tokens > self.rag_source_judge_input_tokens_per_minute * self.rag_source_judge_rate_limit_safety_percent // 100:
+            raise ValueError("RAG_SOURCE_JUDGE_MAX_INPUT_TOKENS exceeds safety-adjusted RAG_SOURCE_JUDGE_INPUT_TOKENS_PER_MINUTE")
         if self.generation_heartbeat_seconds >= self.generation_lease_seconds:
             raise ValueError("GENERATION_HEARTBEAT_SECONDS must be lower than GENERATION_LEASE_SECONDS")
         if self.generation_worker_concurrency > self.generation_max_active_jobs_deployment:
@@ -963,6 +1094,9 @@ class Settings(BaseSettings):
         if self.rag_answer_max_messages_per_user > self.rag_answer_max_messages_deployment:
             raise ValueError("RAG per-user message limit cannot exceed the deployment message limit")
         self.generation_source_encryption_key_bytes
+        if self._secret_value(self.knowledge_pdf_encryption_key):
+            if self.knowledge_pdf_encryption_key_bytes == self.generation_source_encryption_key_bytes:
+                raise ValueError("KNOWLEDGE_PDF_ENCRYPTION_KEY must differ from the temporary source key")
 
         if self.environment == "production":
             if not self.flashcard_ai_allow_unstable_model and UNSTABLE_MODEL_PATTERN.search(self.flashcard_ai_model):

@@ -209,8 +209,15 @@ test.describe('recoverable application errors', () => {
 
     await expect(page.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
     breakRendering = false
-    await page.getByRole('button', { name: 'Try again' }).click()
+    await Promise.all([
+      page.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/api/subjects'
+        && response.request().method() === 'GET'
+        && response.ok(),
+      ),
+      page.getByRole('button', { name: 'Try again' }).click(),
+    ])
     await expect(page).toHaveURL(/\/dashboard$/)
-    await expect(page.getByRole('heading', { name: 'Your Subjects' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your Subjects' })).toBeVisible({ timeout: 15_000 })
   })
 })

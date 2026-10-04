@@ -7,6 +7,7 @@ import type {
   GenerationJobCreate,
   GenerationJobList,
   GenerationLimits,
+  KnowledgeDuplicateChoice,
 } from './types'
 
 export const flashcardService = {
@@ -66,10 +67,36 @@ export const flashcardService = {
     return response.data
   },
 
-  async retryGenerationJob(jobId: string, idempotencyKey: string): Promise<GenerationJob> {
+  async chooseKnowledgeDuplicate(
+    jobId: string,
+    choice: KnowledgeDuplicateChoice,
+    idempotencyKey: string,
+  ): Promise<GenerationJob> {
+    const response = await api.post<GenerationJob>(
+      `/flashcards/generation-jobs/${jobId}/knowledge-choice`,
+      { choice },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    )
+    return response.data
+  },
+
+  async chooseValidatedCardCount(
+    jobId: string,
+    cardCount: number,
+    idempotencyKey: string,
+  ): Promise<GenerationJob> {
+    const response = await api.post<GenerationJob>(
+      `/flashcards/generation-jobs/${jobId}/card-choice`,
+      { card_count: cardCount },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    )
+    return response.data
+  },
+
+  async retryGenerationJob(jobId: string, idempotencyKey: string, acknowledgeAdditionalCost: boolean): Promise<GenerationJob> {
     const response = await api.post<GenerationJob>(
       `/flashcards/generation-jobs/${jobId}/retry`,
-      undefined,
+      acknowledgeAdditionalCost ? { acknowledge_additional_cost: true } : undefined,
       { headers: { 'Idempotency-Key': idempotencyKey } },
     )
     return response.data

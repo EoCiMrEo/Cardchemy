@@ -9,7 +9,7 @@ from app.models.subject import FlashcardSet, Subject
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_instructor, get_current_student
 from app.routers.flashcards import create_flashcard, get_flashcard
-from app.routers.study import update_study_progress
+from app.routers.study import get_set_progress, update_study_progress
 from app.routers.subjects import create_flashcard_set
 from app.schemas.flashcard import FlashcardCreateRequest, StudyProgressUpdate
 from app.schemas.subject import FlashcardSetCreateRequest
@@ -127,6 +127,22 @@ async def test_progress_requires_enrollment_publication_and_approval(db):
     with pytest.raises(HTTPException) as unpublished:
         await update_study_progress(data, "authorization-answer-0003", student, db)
     assert unpublished.value.status_code == 404
+
+    with pytest.raises(HTTPException) as unpublished_progress:
+        await get_set_progress(flashcard_set.id, student, db)
+    assert unpublished_progress.value.status_code == 404
+
+    flashcard_set.is_published = True
+    await db.commit()
+    visible_progress = await get_set_progress(flashcard_set.id, student, db)
+    assert visible_progress["total"] == 1
+    assert visible_progress["ever_correct_count"] == 0
+
+    flashcard_set.is_published = False
+    await db.commit()
+    with pytest.raises(HTTPException) as private_again:
+        await get_set_progress(flashcard_set.id, student, db)
+    assert private_again.value.status_code == 404
 
     count = await db.scalar(select(func.count()).select_from(StudyProgress))
     assert count == 0

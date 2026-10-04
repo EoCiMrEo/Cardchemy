@@ -10,6 +10,7 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["SECRET_KEY"] = "test-only-secret-key-with-adequate-entropy-1234567890"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/test"
 os.environ["GENERATION_SOURCE_ENCRYPTION_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+os.environ["KNOWLEDGE_PDF_ENCRYPTION_KEY"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
 if os.environ.get("RUN_LIVE_AI_TESTS") != "1":
     os.environ["FLASHCARD_AI_API_KEY"] = "test-only-provider-key"
 os.environ["EMAIL_LEASE_SECONDS"] = "240"

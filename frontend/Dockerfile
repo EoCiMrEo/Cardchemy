@@ -21,7 +21,7 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:1.31.6-alpine-slim@sha256:dcc9bf9c084901dddbbce305130a7295c5637b6a8fce3e29cf678d86336982e4 AS runtime
 
 USER root
-RUN apk upgrade --no-cache
+RUN apk upgrade --no-cache && apk add --no-cache 'pcre2>=10.49-r0'
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-security-headers.conf /etc/nginx/security-headers.conf

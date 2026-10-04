@@ -93,14 +93,30 @@ test('real instructor generation, review, publish, emailed invitation and studen
     return
   }
 
-  await test.step('flashcard publication does not unlock Ask AI before separate Knowledge publication', async () => {
+  await test.step('Knowledge is published independently of source-only Ask', async () => {
     await expect(page.getByText('Awaiting instructor review')).toBeVisible({ timeout: 30_000 })
     const askAi = page.locator('section[aria-labelledby="ask-ai-heading"]')
-    await askAi.getByRole('textbox', { name: 'Question' }).fill('What color does chlorophyll give leaves?')
-    await askAi.getByRole('button', { name: 'Ask', exact: true }).click()
-    await expect(askAi.getByRole('alert')).toContainText(/unavailable|published/i)
+    await expect(askAi.getByRole('textbox', { name: 'Question' })).toBeDisabled()
+    if (!authorization) throw new Error('The instructor access token was not observed')
+    const subjectId = subjectPath.split('/').at(-1)
+    if (!subjectId) throw new Error('The generated Subject path was invalid')
+    const headers = { Authorization: authorization }
+    const profileResponse = await request.get(
+      `${appOrigin}/api/subjects/${subjectId}/rag/profile`, { headers },
+    )
+    expect(profileResponse.ok()).toBe(true)
+    expect(await profileResponse.json()).toMatchObject({
+      rag_enabled: true,
+      ask_enabled: false,
+      ask_available: false,
+      ask_policy: 'related_knowledge_navigation_v8',
+      answer_available: false,
+      embedding_available: true,
+    })
     await page.getByRole('button', { name: 'Review & publish' }).click()
     await expect(page.getByText('Published for enrolled students')).toBeVisible()
+    await page.reload()
+    await expect(askAi.getByRole('textbox', { name: 'Question' })).toBeEnabled()
   })
 
   let invitationLink = ''
@@ -160,13 +176,7 @@ test('real instructor generation, review, publish, emailed invitation and studen
     await page.getByRole('button', { name: 'Go to Dashboard' }).click()
     await page.goto(subjectPath)
     const askAi = page.locator('section[aria-labelledby="ask-ai-heading"]')
-    await askAi.getByRole('textbox', { name: 'Question' }).fill('What color does chlorophyll give leaves?')
-    await askAi.getByRole('button', { name: 'Ask', exact: true }).click()
-    await expect(askAi.getByText('Chlorophyll gives leaves their Green color.', { exact: true })).toBeVisible({ timeout: 30_000 })
-    await askAi.getByRole('button', { name: /p\.1/ }).click()
-    const evidence = page.getByRole('dialog', { name: 'Authorized evidence' })
-    await expect(evidence).toContainText('Chlorophyll gives leaves their Green color.')
-    await evidence.getByRole('button', { name: 'Close' }).click()
+    await expect(askAi.getByRole('textbox', { name: 'Question' })).toBeEnabled()
     await page.getByRole('link', { name: 'Study Now' }).click()
     for (let index = 0; index < 2; index += 1) {
       const question = page.getByRole('heading', { level: 1 })
@@ -179,35 +189,51 @@ test('real instructor generation, review, publish, emailed invitation and studen
     }
     await expect(page.getByRole('heading', { name: 'Session Complete!' })).toBeVisible()
     await page.goto(subjectPath)
-    await expect(page.getByText('100% complete', { exact: true })).toBeVisible()
+    await expect(page.getByText('2/2', { exact: true })).toBeVisible()
+    await expect(page.getByText('Accuracy 100%', { exact: true })).toBeVisible()
+    await expect(page.getByText('Attempted 2/2 (100%)', { exact: true })).toBeVisible()
     await expect(page.getByText('0% mastery', { exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Review Again' })).toBeVisible()
   })
 
-  await test.step('a student enrolled in both Subjects cannot cross the RAG Subject boundary', async () => {
+  await test.step('source-only Ask opens the exact lecture page and isolates Subjects', async () => {
     if (!authorization) throw new Error('The student access token was not observed')
     const firstSubjectId = subjectPath.split('/').at(-1)
     const secondSubjectId = secondSubjectPath.split('/').at(-1)
     if (!firstSubjectId || !secondSubjectId) throw new Error('A generated Subject path was invalid')
     const headers = { Authorization: authorization }
-    const firstThreadsResponse = await request.get(
-      `${appOrigin}/api/subjects/${firstSubjectId}/rag/threads`,
-      { headers },
+    const askAi = page.locator('section[aria-labelledby="ask-ai-heading"]')
+    await askAi.getByRole('textbox', { name: 'Question' }).fill('What is chlorophyll?')
+    await askAi.getByRole('button', { name: 'Ask', exact: true }).click()
+    await expect(askAi.getByText('Related Knowledge found', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(askAi.getByText(/Chlorophyll is a green pigment in leaves/)).toBeVisible()
+    const originalPdfResponse = page.waitForResponse((response) =>
+      response.url().includes('/related-excerpts/1/original-pdf')
+      && response.request().method() === 'GET'
+      && response.status() === 206,
     )
-    expect(firstThreadsResponse.ok()).toBe(true)
-    const firstThreads = await firstThreadsResponse.json() as { threads: { id: string }[] }
-    expect(firstThreads.threads).toHaveLength(1)
+    await askAi.getByRole('button', { name: 'Read lecture page 1' }).click()
+    const dialog = page.getByRole('dialog')
+    await originalPdfResponse
+    await expect(dialog.getByText('PDF page 1 of 1')).toBeVisible()
+    await expect(dialog.getByRole('img', { name: 'PDF page 1 of 1' })).toBeVisible()
+    await expect(dialog.locator('mark')).toContainText('Chlorophyll is a green pigment in leaves.')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 
-    const secondThreadResponse = await request.post(
-      `${appOrigin}/api/subjects/${secondSubjectId}/rag/threads`,
-      { headers },
-    )
-    expect(secondThreadResponse.status()).toBe(201)
-    const crossSubjectResponse = await request.get(
-      `${appOrigin}/api/subjects/${secondSubjectId}/rag/threads/${firstThreads.threads[0].id}`,
-      { headers },
-    )
+    const threadsResponse = await request.get(`${appOrigin}/api/subjects/${firstSubjectId}/rag/threads`, { headers })
+    const threads = await threadsResponse.json() as { threads: { id: string }[] }
+    expect(threads.threads).toHaveLength(1)
+    const threadId = threads.threads[0].id
+    const historyResponse = await request.get(`${appOrigin}/api/subjects/${firstSubjectId}/rag/threads/${threadId}`, { headers })
+    const history = await historyResponse.json() as { messages: { role: string }[] }
+    expect(history.messages.map((message) => message.role)).toEqual(['user'])
+    const crossSubjectResponse = await request.get(`${appOrigin}/api/subjects/${secondSubjectId}/rag/threads/${threadId}`, { headers })
     expect(crossSubjectResponse.status()).toBe(404)
+
+    await askAi.getByRole('textbox', { name: 'Question' }).fill('What does Neptune measure?')
+    await askAi.getByRole('button', { name: 'Ask', exact: true }).click()
+    await expect(askAi.getByText('No related reference was found for this question. Try a more specific question or open the published lecture.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(askAi.getByText("I don't have enough support", { exact: false })).toHaveCount(0)
   })
   expect(errors).toEqual([])
 })

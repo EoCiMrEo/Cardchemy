@@ -1,5 +1,21 @@
 # Frontend map of content
 
+## Current local Lane 6 closure — 2026-10-04
+
+The local source-only v8/visual-v5/admission-v2 installation on head `0033`
+is enabled after its measured quality, PDF/display and release gates. Fresh
+installations remain default-off. See the
+[closure and activation evidence](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
+checkpoints below remain historical snapshots; the linked closure supersedes
+their off/pending status, while default-off and upgrade safeguards still apply.
+
+The current source-only panel fences new admission/retry to v8/visual-v5,
+while retaining earlier published-reference history including v7. Its transfer
+disclosure and source-only PDF behavior are unchanged. Full current frontend
+checks passed; retained installation and independent private quality remain
+separate from frontend source verification. See
+[completion work](../.agent/logs/2026-10-03/2026-10-03-v8-completion-work.md).
+
 Read [Start Here](../docs/00-START-HERE.md) and the
 [project map](../PROJECT-MAP.md) first. This map describes the current React
 client; the [system overview](../docs/architecture/SYSTEM-OVERVIEW.md) explains
@@ -9,8 +25,8 @@ its API, worker, and database boundaries.
 
 The browser supports instructor subject/Knowledge management, PDF generation,
 card/Knowledge publication, private Subject Ask AI, invitations, and student
-study. FastAPI owns authorization, durable generation/index/answer execution,
-evidence validity, answer correctness, and persistent progress. Browser guards
+study. FastAPI owns authorization, durable generation/index/source-only Ask
+execution, evidence validity, card answer correctness, and persistent progress. Browser guards
 and form checks improve interaction but do not replace server enforcement.
 
 The built Nginx edge emits only numeric status/duration access events and
@@ -36,9 +52,10 @@ are in [package.json](package.json) and [package-lock.json](package-lock.json).
 | Public account/join pages | [src/pages/](src/pages/) | Login, invited student registration, recovery/reset, joining, dashboard shell, and not-found handling. |
 | Shared interactions | [src/components/](src/components/) | Generation telemetry, subject/invitation/set/preview dialogs, UI primitives, and failure views. |
 | Brand | [BrandWordmark.tsx](src/components/BrandWordmark.tsx), [public/brand/](public/brand/), [index.html](index.html) | Shared accessible wordmark and supplied ICO; originals preserved under [separate terms](../BRANDING.md). |
-| Job polling | [src/hooks/useGenerationJobs.ts](src/hooks/useGenerationJobs.ts) | Owner-scoped jobs/limits, active-job polling, cancellation/retry, and completion refresh. |
+| Job polling | [src/hooks/useGenerationJobs.ts](src/hooks/useGenerationJobs.ts) | Owner-scoped jobs/limits, active and both pending-choice statuses, cancellation/cost-aware retry, idempotent Knowledge and card-count choice, and completion refresh. |
 | Subject Knowledge | [KnowledgeArea.tsx](src/components/knowledge/KnowledgeArea.tsx), [knowledge.ts](src/services/knowledge.ts) | Instructor-only Knowledge upload/revision, capture/index/review/publication state, persisted-page retry, unpublish and removal. |
-| Subject Ask AI | [AskAiPanel.tsx](src/components/rag/AskAiPanel.tsx), [rag.ts](src/services/rag.ts) | Principal-private threads/history, durable job recovery, stable logical retry identity, safe answer text and authorized evidence dialogs. |
+| Subject Ask AI | [AskAiPanel.tsx](src/components/rag/AskAiPanel.tsx), [rag.ts](src/services/rag.ts) | Principal-private threads/history, durable job recovery, dormant v7 visual source-judge and bounded literal-subject disclosure, distinct related/no-match/clarification/provider-failure states, unverified source-labeled cues, authenticated lazy original-PDF viewer and stable logical retry identity. Ask admission remains closed pending the separate release gates. |
+| Student published lectures | [PublishedKnowledgeBrowser.tsx](src/components/knowledge/PublishedKnowledgeBrowser.tsx), [publishedKnowledge.ts](src/services/publishedKnowledge.ts), [OriginalPdfPage.tsx](src/components/rag/OriginalPdfPage.tsx) | Independent enrolled-student catalog and page search, current-access PDF page view and extracted-text fallback while Ask is paused or finds no match. |
 | Study session state | [src/store/](src/store/), [studySlice.ts](src/store/slices/studySlice.ts) | Current cards/index, server-confirmed answer results, and session completion; no durable browser outbox. |
 | Copy/style | [src/i18n/en.ts](src/i18n/en.ts), [src/index.css](src/index.css), [src/components/ui/](src/components/ui/) | English v1 catalog, Tailwind theme, focus/reduced-motion rules, and shared accessible controls. |
 
@@ -76,11 +93,25 @@ succeed before the client clears the active session.
 **Generation:** SubjectDetails reads limits, reserves a job with
 `POST /flashcards/generation-jobs` and one logical `Idempotency-Key`, then uploads
 raw PDF bytes with `PUT /flashcards/generation-jobs/{job_id}/source`.
-`useGenerationJobs` lists jobs, polls active statuses, backs off status failures,
-and refreshes sets on completion. GenerationJobCard renders server telemetry
+`useGenerationJobs` lists jobs, polls active and pending-choice statuses, backs off status failures,
+and refreshes sets on completion. After upload, a same-Subject PDF match can
+return a durable `awaiting_choice` job. GenerationJobCard opens an accessible
+dialog to reuse a compatible ready Knowledge revision, create a separate private
+copy, or cancel the whole job. The choice is idempotent and recoverable after
+reload; Knowledge-only uploads use the same job list. An unchanged explicit
+revision reports `No changes detected`. The card also renders server telemetry
 and the server's `can_cancel`/`can_retry` controls. Provider calls happen in the
 generation worker. Follow [AI generation](../docs/architecture/AI-GENERATION-FLOW.md)
 and the backend [generation router](../backend/app/routers/generation.py).
+
+If a bounded run verifies fewer cards than requested, a separate
+`awaiting_card_choice` state survives reload with an observed validated count.
+The owner can confirm an exact smaller count within that range; the API commits
+one unpublished draft set without another provider call. Retry toward the
+original target is a distinct action: the dialog states additional estimated
+cost or unavailable cost and unknown prior cost, and the browser sends the
+server-required acknowledgement. The card labels latest-attempt validation,
+cumulative rejection and persisted result counts separately.
 
 **Review and publication:** SetView loads set metadata through subjectService
 and cards through flashcardService. Editing validates the four options and
@@ -100,18 +131,42 @@ and [email delivery](../docs/EMAIL_DELIVERY.md).
 flashcard generation separate from Knowledge upload/revision and explicit
 review/publication. Both instructor and student Subject pages lazy-load one
 private Ask AI panel. It reloads server-owned threads/history/jobs, polls one
-active job at a time with abort cleanup, reuses the same idempotency key only
-for one logical failed submission, renders model output as text, and opens
-current server-derived page/section evidence in an accessible dialog. Read the
+ active job at a time with abort cleanup, and reuses the same idempotency key
+ only for one logical failed submission. The source-only result shows up to
+ three currently authorized exact related passages with page labels, clearly
+ states they are not verified answers, and opens the original lecture PDF page
+ in an accessible dialog. The dormant v7 disclosure names the query embedding
+ and source judge, including bounded published page text and rendered full-page
+ PNG transfer, before Ask can enqueue. Only an unresolved follow-up may add
+ a unique literal subject of at most 160 characters/twelve words from the
+ strictly preceding user question, under the explicit visual-v3 capability.
+ Original PDF bytes, the full prior question/history and assistant text are
+ excluded. Clarification, no match, provider
+ failure and withdrawn references
+ have separate safe text. No new answer-model output is rendered. Read the
 [Knowledge flow](../docs/architecture/SUBJECT-KNOWLEDGE-FLOW.md).
+
+The lazy [OriginalPdfPage](src/components/rag/OriginalPdfPage.tsx) loads PDF.js
+only on source open, uses authenticated bounded ranges and rechecks current
+page access before navigation. The quote remains adjacent to the rendered page;
+text offsets do not imply a visual PDF highlight. A lexical fallback label
+separates reduced search from normal hybrid results.
+The built edge serves its `.mjs` worker with a JavaScript MIME type and the
+viewer versions the worker URL once to recover browsers that cached an older
+wrong-MIME response under immutable asset caching.
+The student [PublishedKnowledgeBrowser](src/components/knowledge/PublishedKnowledgeBrowser.tsx)
+uses a separate enrolled-student API for catalog, local page search and PDF
+navigation even while Ask admission is disabled. It clears stale search links
+and restores safe focus when publication or enrollment access changes.
 
 **Study/progress:** StudentSubjectDetails loads visible sets and server progress.
 StudyMode gets answer-free cards from `GET /study/sets/{set_id}/session`.
 StudyCardView creates one key/payload per logical answer and sends
 `POST /study/progress`; click, timeout, and retry share that submission. Feedback
 and Next remain blocked until success. The response supplies correctness and
-the correct option; Redux records that acknowledged result. Progress uses the
-server's separate completion/mastery percentages. Review Again requests
+the correct option; Redux records that acknowledged result. The card view
+shuffles a display-only copy of options once and sends canonical option text.
+Progress, Accuracy, Attempted and Mastery use separate server fields; Review Again requests
 `review_all` instead of due-only cards. Read
 [Study/progress](../docs/architecture/STUDY-PROGRESS-FLOW.md),
 [data model](../docs/architecture/DATA-MODEL.md), and the
@@ -122,7 +177,7 @@ server's separate completion/mastery percentages. Review Again requests
 | Change | Read/change together |
 | --- | --- |
 | API/session contract | `src/services/api.ts`, `auth.ts`, `types.ts`, `src/context/AuthContext.tsx`, route guards, backend auth schemas/router/service; `tests/components/auth.test.tsx` and auth browser specs. |
-| Upload/job state or telemetry | Instructor SubjectDetails, `src/hooks/useGenerationJobs.ts`, GenerationJobCard, `src/services/flashcards.ts`/`types.ts`, generation router/schemas/service/worker; `e2e/generation-telemetry.spec.ts`. |
+| Upload/job state or telemetry | Instructor SubjectDetails, KnowledgeArea, `src/hooks/useGenerationJobs.ts`, GenerationJobCard, `src/services/flashcards.ts`/`types.ts`, generation router/schemas/service/worker; `e2e/generation-telemetry.spec.ts` and `e2e/knowledge-duplicate.spec.ts`. |
 | Knowledge/Ask AI state | SubjectDetails/StudentSubjectDetails, `src/components/knowledge/`, `src/components/rag/`, `src/services/knowledge.ts`/`rag.ts`/`types.ts`, backend Knowledge/RAG routers and workers; `e2e/rag-knowledge.spec.ts` and the deterministic real journey. |
 | Card review/publication | Instructor SetView, EditSetDialog/PreviewDialog, subject/flashcard services and types, backend card/set contracts; editing component and browser specs. |
 | Study correctness/retry/progress | StudyMode, StudentSubjectDetails, studySlice, `src/services/study.ts`/`types.ts`, backend study router/schemas and progress persistence; study component, reliability/recovery/progress browser specs. |

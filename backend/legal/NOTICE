@@ -7,3 +7,13 @@ BRANDING.md. Third-party components retain their respective licenses.
 
 Cardchemy is a standalone project. No Instructor Toolkits affiliation or
 third-party endorsement is implied.
+
+Historical local answer-verifier research bundles have separate upstream
+licenses documented in backend/legal/LOCAL-SUPPORT-MODELS.md. They are not
+required by or mounted into the source-only Ask AI runtime.
+
+The optional original-lecture viewer includes Mozilla PDF.js (pdfjs-dist
+6.3.289), Copyright Mozilla Foundation, licensed under Apache License 2.0.
+The PDF text-layer geometry is adapted from Mozilla PDF.js. Its license is
+redistributed with the frontend at frontend/public/legal/PDFJS-LICENSE.
+Upstream source: https://github.com/mozilla/pdf.js

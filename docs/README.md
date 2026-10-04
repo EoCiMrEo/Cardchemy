@@ -26,6 +26,7 @@ them for operational detail rather than copying their setting tables/commands.
 | [Configuration](CONFIGURATION.md) | Root settings, ranges, precedence, service consumers and applying changes |
 | [Runtimes](RUNTIMES.md) | Supported runtime/platform versions |
 | [Deployment](DEPLOYMENT.md) | Compose variants, TLS/edge, draining, volumes, image/recovery procedures |
+| [Ask AI shutdown](ASK_AI_SHUTDOWN.md) | Admission pause, old-job resolution, retained history and restart checks |
 | [Production rehearsal](PRODUCTION_REHEARSAL.md) | Clean-machine production installation, TLS and separate-volume backup/restore checks |
 | [Database operations](DATABASE_OPERATIONS.md) | Migration chain, backup/restore and safe rollback |
 | [Observability](OBSERVABILITY.md) | Safe logs/errors/correlation, retained metrics, worker health, privileged audits and optional numeric reporting |

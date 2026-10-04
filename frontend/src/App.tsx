@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppErrorBoundary } from './components/feedback/AppErrorBoundary';
-import { copy } from './i18n/en';
+import { coreCopy } from './i18n/enCore';
 import { ProtectedRoute, RoleRoute } from './components/auth/RouteGuards';
 
 const Login = lazy(() => import('./pages/Login'));
@@ -30,7 +30,7 @@ function App() {
     <Router>
       <AuthProvider>
         <AppErrorBoundary>
-          <Suspense fallback={<div className="flex min-h-dvh items-center justify-center" role="status">{copy.routing.loadingAccount}</div>}>
+          <Suspense fallback={<div className="flex min-h-dvh items-center justify-center" role="status">{coreCopy.routing.loadingAccount}</div>}>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiErrorMessage } from '@/services/errors'
 import { flashcardService } from '@/services/flashcards'
-import type { GenerationJob, GenerationLimits } from '@/services/types'
+import type { GenerationJob, GenerationLimits, KnowledgeDuplicateChoice } from '@/services/types'
 import { copy } from '@/i18n/en'
 
-const ACTIVE_STATUSES = new Set(['awaiting_upload', 'queued', 'running'])
+const ACTIVE_STATUSES = new Set(['awaiting_upload', 'awaiting_choice', 'awaiting_card_choice', 'queued', 'running'])
 
 function retryDelay(error: unknown, failures: number): number {
   if (error && typeof error === 'object' && 'response' in error) {
@@ -102,12 +102,16 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
 
   const trackJob = useCallback((job: GenerationJob) => {
     if (subjectScope.current !== job.subject_id) return
+    const previous = previousStatuses.current.get(job.id)
     setJobs((current) => {
       const withoutJob = current.filter((item) => item.subject_id === job.subject_id && item.id !== job.id)
       return [job, ...withoutJob]
     })
     setLoadedSubjectId(job.subject_id)
     previousStatuses.current.set(job.id, job.status)
+    if (job.status === 'completed' && job.flashcard_set_id && previous && previous !== 'completed') {
+      onCompletedRef.current()
+    }
     setWakeVersion((version) => version + 1)
   }, [])
 
@@ -116,8 +120,26 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
     trackJob(job)
   }, [trackJob])
 
-  const retryJob = useCallback(async (jobId: string, idempotencyKey: string) => {
-    const job = await flashcardService.retryGenerationJob(jobId, idempotencyKey)
+  const retryJob = useCallback(async (jobId: string, idempotencyKey: string, acknowledgeAdditionalCost: boolean) => {
+    const job = await flashcardService.retryGenerationJob(jobId, idempotencyKey, acknowledgeAdditionalCost)
+    trackJob(job)
+  }, [trackJob])
+
+  const chooseKnowledgeDuplicate = useCallback(async (
+    jobId: string,
+    choice: KnowledgeDuplicateChoice,
+    idempotencyKey: string,
+  ) => {
+    const job = await flashcardService.chooseKnowledgeDuplicate(jobId, choice, idempotencyKey)
+    trackJob(job)
+  }, [trackJob])
+
+  const chooseValidatedCardCount = useCallback(async (
+    jobId: string,
+    cardCount: number,
+    idempotencyKey: string,
+  ) => {
+    const job = await flashcardService.chooseValidatedCardCount(jobId, cardCount, idempotencyKey)
     trackJob(job)
   }, [trackJob])
 
@@ -133,6 +155,8 @@ export function useGenerationJobs(subjectId: string | null, onCompleted: () => v
     trackJob,
     cancelJob,
     retryJob,
+    chooseKnowledgeDuplicate,
+    chooseValidatedCardCount,
     refreshJobs,
   }
 }

@@ -567,13 +567,24 @@ class FlashcardService:
                 "review": 0,
                 "mastered": 0,
                 "studied": 0,
+                "attempted_count": 0,
+                "attempted_percentage": 0.0,
                 "correct_count": 0,
+                "ever_correct_count": 0,
+                "progress_percentage": 0.0,
+                "accuracy_percentage": 0.0,
                 "completion_percentage": 0.0,
                 "mastery_percentage": 0.0,
             }
 
         rows = await db.execute(
-            select(StudyProgress.status, func.count(StudyProgress.id), func.sum(StudyProgress.correct_count))
+            select(
+                StudyProgress.status,
+                func.count(StudyProgress.id),
+                func.sum(StudyProgress.correct_count),
+                func.sum(StudyProgress.incorrect_count),
+                func.sum(case((StudyProgress.correct_count > 0, 1), else_=0)),
+            )
             .join(Flashcard, Flashcard.id == StudyProgress.flashcard_id)
             .where(
                 StudyProgress.student_id == student_id,
@@ -586,13 +597,18 @@ class FlashcardService:
         counts = {status_value: 0 for status_value in CardStatus}
         studied = 0
         correct_count = 0
-        for status_value, count_value, correct_value in rows:
+        incorrect_count = 0
+        ever_correct_count = 0
+        for status_value, count_value, correct_value, incorrect_value, ever_correct_value in rows:
             counts[CardStatus(status_value)] = int(count_value)
             studied += int(count_value)
             correct_count += int(correct_value or 0)
+            incorrect_count += int(incorrect_value or 0)
+            ever_correct_count += int(ever_correct_value or 0)
 
         new_count = total_cards - studied
         mastery_count = counts[CardStatus.REVIEW] + counts[CardStatus.MASTERED]
+        attempts = correct_count + incorrect_count
         return {
             "total": total_cards,
             "new": new_count,
@@ -600,7 +616,12 @@ class FlashcardService:
             "review": counts[CardStatus.REVIEW],
             "mastered": counts[CardStatus.MASTERED],
             "studied": studied,
+            "attempted_count": studied,
+            "attempted_percentage": round(studied / total_cards * 100, 1),
             "correct_count": correct_count,
+            "ever_correct_count": ever_correct_count,
+            "progress_percentage": round(ever_correct_count / total_cards * 100, 1),
+            "accuracy_percentage": round(correct_count / attempts * 100, 1) if attempts else 0.0,
             "completion_percentage": round(studied / total_cards * 100, 1),
             "mastery_percentage": round(mastery_count / total_cards * 100, 1),
         }

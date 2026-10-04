@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted. Current implementation verified on 2026-09-16.
+Accepted durable-job/fencing decision. Current implementation verified on
+2026-09-16. Atomic finalization is extended by
+[ADR-020](ADR-020-validated-card-choice.md) for a private, bounded
+validated-candidate choice before the exact-count result set is committed.
 
 ## Context
 
@@ -55,3 +58,4 @@ admission changes require a new decision and measured operational need.
   [governor](../../backend/app/ai/rate_limit.py)
 - [PostgreSQL result tests](../../backend/tests/postgres/test_generation_job_persistence.py),
   [ADR index](ADR-000-INDEX.md)
+- [ADR-020: private validated-card choice](ADR-020-validated-card-choice.md)

@@ -1,5 +1,14 @@
 # Deployment and self-hosting
 
+## Current local Lane 6 closure — 2026-10-04
+
+The local source-only v8/visual-v5/admission-v2 installation on head `0033`
+is enabled after its measured quality, PDF/display and release gates. Fresh
+installations remain default-off. See the
+[closure and activation evidence](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
+checkpoints below remain historical snapshots; the linked closure supersedes
+their off/pending status, while default-off and upgrade safeguards still apply.
+
 The base Compose stack is a production-shaped local installation: it builds the
 frontend and backend, migrates PostgreSQL before starting the API, runs separate
 generation, Knowledge-index, Subject-answer and email workers, captures local mail in Mailpit, and exposes only
@@ -29,8 +38,9 @@ generate cards; set `FLASHCARD_AI_PROVIDER_ENABLED=true` only after configuring 
 The API receives this non-secret switch while the credential remains isolated
 to the generation worker. The API never receives the embedding credential;
 `index-worker` receives only `RAG_EMBEDDING_API_KEY`; `answer-worker` receives
-only `RAG_AI_API_KEY` plus `RAG_EMBEDDING_API_KEY`, while the generation worker
-receives the non-secret RAG capture profile. Keep both RAG flags false
+only the query `RAG_EMBEDDING_API_KEY`, while the generation worker receives
+the non-secret RAG capture profile. The source-only Ask worker uses the normal
+backend image and does not mount a local answer-verifier bundle. Keep both RAG flags false
 until retention/provider terms and current prices have been reviewed. Stop the
 stack with `docker compose down`; do not add
 `--volumes` unless destroying all local application data is intentional.
@@ -135,8 +145,9 @@ docker compose stop -t 45 worker index-worker answer-worker email-worker
 ## Volumes, backup, upgrades, and disaster recovery
 
 `postgres_data` contains all durable application records, outbox state, job
-state, private Subject Knowledge pages/chunks/vectors, and any
-short-lived encrypted source PDFs. `mailpit_data` is local/test
+state, private Subject Knowledge pages/chunks/vectors, encrypted original-PDF
+archives, any pending encrypted validated-card choices, and short-lived
+encrypted generation source PDFs. `mailpit_data` is local/test
 capture only and must not be used or restored in production. The frontend, API,
 and workers are replaceable images and have no durable filesystem state.
 
@@ -159,22 +170,169 @@ explains legacy authentication defaults and session continuity.
 2. Stop the API and gracefully drain/stop all four workers so the dump is consistent.
 3. Create, checksum, encrypt, and copy a PostgreSQL custom-format backup off host.
 4. Preserve `.env` or equivalent deployment secrets separately in a secret
-   manager. The source encryption key is required to recover retained PDFs.
+   manager. Both the temporary-source key and the independent
+   `KNOWLEDGE_PDF_ENCRYPTION_KEY` are required to recover their respective PDF
+   ciphertext; restoring only the database cannot decrypt the original archive.
 5. Build/pull the intended immutable release, run `migrate`, verify every
    Alembic head, then start workers, API, and frontend.
 6. Check readiness, login, an instructor/student read path, and queues before
    restoring public traffic.
 
+For historical Lane 6 upgrades to Alembic `20260925_0019`, include pending card choices
+in the pre-upgrade job inventory and keep the original source-storage key
+available. Drain generation and Ask claims before migrating. Recreate the API,
+generation/answer workers and frontend together so they share the new response
+types and statuses. Verify an authorized pending choice after reload, exact
+card-count confirmation without a provider request, expiry/cancel cleanup and
+Knowledge publication survival. Separately confirm safe Ask outcome copy,
+stage diagnostics and the one-embedding/one-answer cap. Revert new Ask
+admission with `RAG_ASK_ENABLED=false` if the measured quality gate fails;
+leave stored Knowledge and private history intact. A schema rollback with
+retained Lane 6 rows is refused; restore a validated pre-upgrade backup into a
+separate target after an explicit product rollback decision.
+
 Detailed commands and destructive-operation warnings are in
 [Database operations](DATABASE_OPERATIONS.md). Prefer restoring the pre-upgrade
 archive into a fresh database over downgrading a data-destructive migration.
 
+For the `20260925_0021` related-Knowledge upgrade, drain answer claims,
+restore-verify a pre-upgrade backup and migrate before recreating the API,
+answer worker and frontend together. Verify failed and abstained job responses
+show at most two exact, page-labeled current excerpts; supported answers show
+none. Revoke publication or enrollment in a controlled check and confirm the
+entire related bundle disappears on the next authorized read. The excerpt aid
+does not make a failed Ask answer valid or authorize a new answer policy. An
+operational rollback must account for retained excerpt rows; the schema refuses
+to downgrade while they exist.
+
+For the source-only `20260926_0022` upgrade, keep Ask admission off, drain
+old answer-policy claims, verify a backup and apply the new migration with
+writers stopped. Recreate matching backend/Ask-worker/frontend images only
+after code and schema preflight. Verify the job result discriminant, at most
+three exact current excerpts, open-page authorization and whole-bundle hiding
+on publication/access/revision loss. The author approved a clean development
+volume reset, but that operator choice is separate from migration/rollback
+instructions for installations with data. Do not treat the current source
+checkout as a completed release.
+
+For the original-PDF/navigation `20260927_0026`, `20260927_0027` and
+`20260927_0028` upgrade,
+keep Ask admission off and all writers stopped while verifying the backup and
+applying all three revisions. Preserve and restore-test the independent PDF archive
+key. Revision `0026` introduces immutable encrypted blocks and per-document,
+Subject, user and deployment quotas; revision `0027` admits the historical
+v2/v8 navigation pair, and `0028` admits the corrected historical v3/v9 pair
+while retaining valid old snapshots. Recreate matching API,
+workers and frontend images, verify current Alembic heads/drift and that
+older Ask jobs retain their recorded policy. An instructor may attach an
+original PDF to an active legacy Knowledge revision only after the server
+matches its exact source SHA-256 and page count; this attachment creates no
+revision and triggers no provider call. Test authorized PDF metadata and
+bounded byte ranges, then verify revoking enrollment or publication hides
+the entire reference bundle and PDF. A missing original remains an explicit
+extracted-text fallback. Downgrading `0028` with a retained v3 job, `0027`
+with a retained v2 job, or `0026` with an archived PDF is refused; restore a
+validated backup into a separate
+target for a product rollback. Neither migration nor a successful image build
+opens Ask admission by itself.
+
+The **current source head and retained installation are `20261002_0033`**.
+A restore-verified backup preceded the additive v8 forward migration; retained
+heads/model drift passed and matching service recreation is a separate required
+cutover check. Ask/source judging remain off. The current new-job pair is
+`related_knowledge_navigation_v8` / `visual_source_id_v5`, bound to immutable
+`literal_subject_admission_v2` context. Historical v7 jobs remain readable but
+cannot execute or retry as v8. The one current-question embedding/one ID-judgment
+caps, HIGH thinking, 32,768 input/4,096 thinking-inclusive output, 120-second
+judge deadline and zero automatic retries are unchanged. A narrow lexical
+clarity repair does not provide semantic instruction classification; a weak
+page with a conflicting positive cue is discarded, never promoted.
+
+The [complete independent public gate](../.agent/logs/2026-10-03/2026-10-03-public-heldout-v11-terminal-result.md)
+passed with 94/99 useful displayed cards, while preserving all physical failures.
+Private original-PDF displayed-source/access, matching-service, accessibility
+and release gates still govern activation. No private source transfer is implied
+by this upgrade or by the public result. Follow the current
+[database procedure](DATABASE_OPERATIONS.md) and
+[ADR-024](decisions/ADR-024-gemini-source-id-judge.md).
+
+### Historical v7 cutover — 2026-10-02
+
+At this earlier checkpoint, source and retained head were `20261002_0032`.
+The restore-verified [v7 cutover](../.agent/logs/2026-10-02/2026-10-02-v7-retained-cutover-and-release-recheck.md)
+preserved the populated volume, root `.env`, separate original-PDF archive
+key, three attached exact originals and historical jobs. It added the dormant
+`related_knowledge_navigation_v7` / `visual_source_id_v3` contract without
+enabling Ask. A matching backend image needs the bounded Poppler renderer
+even when OCR is disabled. Only the answer worker receives the source-judge
+key; the independent original-PDF archive key is scoped to the API,
+generation worker and answer worker that create or read the archive, not the
+index worker, email worker or browser. A v7 worker authenticates the complete current PDF
+archive before rendering bounded selected pages in isolated children, then
+can send current-question/page text and rendered PNGs for one source-ID
+judgment. For an unresolved follow-up it may additionally project only a
+uniquely bound literal subject from the strictly preceding user question;
+immutable context is rechecked after quota waiting and before persistence.
+It never sends original PDF bytes, full history, assistant text or a generated answer.
+Before any further populated upgrade, keep Ask off, drain writers, verify a
+backup by restoring it separately, apply the current Alembic head, check
+heads and model drift, recreate matching API/workers/frontend, then verify
+health, historical reads and authorized original-PDF pages. That v7
+application output cap is 4,096 thinking-inclusive tokens, with a 120-second
+source-judge deadline; adaptive full-page
+rendering preserves bounded image provenance. Public calibration passed,
+but Ask remains disabled. A migration or healthy image does not
+satisfy the public, private, accessibility or release gates.
+
+The following `0029` procedure records the **earlier v4 cutover**, not the
+current target. Source head `20260928_0029` added the prospective v4/v9 source-ID-judgment
+snapshot, v4-only stage and exact-reference guards. The retained installation
+was upgraded to `0029` after a restore-verified backup; matching services,
+schema head/drift and the Ask-off fence were verified on 2026-09-29 in the
+[cutover record](../.agent/logs/2026-09-29/2026-09-29-source-judge-retained-cutover.md).
+For another approved populated upgrade, keep Ask off, stop writers and
+drain answer claims, restore-verify a backup, preserve the existing root
+`.env` and original-PDF key, apply `0029`, then verify heads and model drift.
+Recreate matching API, answer worker and frontend images. Check historical v3
+history and independent enrolled-student published-Knowledge browse/search,
+PDF ranges and revocation before restoring ordinary traffic. V4 allows at
+most one current-question embedding and one bounded Gemini source-ID request
+with zero automatic retries; the server derives each exact reference locally.
+The migration performs no provider call. Downgrade refuses every retained v4
+job, including source-free terminal results. Preserve history and use a
+forward repair or a verified pre-upgrade backup in a separate target instead
+of deleting rows to force rollback.
+
 ## Controlled RAG rollout and reversal
+
+Ask AI is separately default-off from Knowledge. The current target is the
+fenced visual v8 policy on source head `20261002_0033`; use the current
+backup/migration procedure above and retain all independent release gates.
+The historical v4/0029 details above remain for old-job interpretation.
+Follow the
+[Ask maintenance procedure](ASK_AI_SHUTDOWN.md) to terminally resolve old
+answer-policy jobs and prepare any separately approved installation upgrade to
+the current head `20261002_0033`. Verify current nonzero query-embedding and source-judge
+prices, worker-only credentials/quota labels and an exact Subject active-space
+match. The multi-PDF public pilot, later separately approved and disclosed
+real published-Knowledge transfer, independent original-PDF displayed-card,
+page-open, access and accessibility gates must pass before an approved release
+enables Ask under a separately validated, immutable source-only policy. The
+first approved public calibration produced no score after one attempted
+provider request; a later 48-case Flash-Lite calibration returned 47 accepted
+responses but failed the zero-false-no-useful-display gate. Neither approval
+can be reused, and failed-attempt cost remains uncertain. Any new paid pilot needs a
+fresh exact endpoint/model/price/call/token/time/cost envelope. The prospective
+Ask worker makes at most one current-question query-embedding and one
+source-ID judgment request, zero answer/verifier calls and zero automatic
+retries. Any failed release gate keeps
+Ask off. Knowledge capture/indexing continues under its independent RAG and
+embedding flags.
 
 Release defaults keep `RAG_ENABLED=false`. First validate configuration and
 backup recovery, drain all four worker lanes, apply every Alembic head and
 restore normal flashcard admission with RAG still off. In a controlled
-environment, enable capture and the two RAG provider profiles only after the
+environment, enable capture and the RAG embedding profile only after the
 privacy notice, provider terms, current prices and divided quota buckets are
 approved. Use several authorized Subjects to verify private capture, explicit
 Knowledge publication, enrolled-user retrieval, own-thread access, capacity and
@@ -183,16 +341,18 @@ quota fairness. Paid external evaluation remains a separately authorized gate.
 To reverse the feature without deleting durable data, stop new admission, set
 `RAG_ENABLED=false`, gracefully drain or explicitly cancel index/answer work,
 restart API/workers and verify the RAG lanes report disabled while normal
-flashcard generation remains healthy. This preserves pages, chunks, vectors and
-private history for a later reviewed restart. Schema downgrade or data/volume
+flashcard generation remains healthy. This preserves pages, chunks, vectors,
+original-PDF archives and private history for a later reviewed restart. Schema
+downgrade or data/volume
 deletion is a separate destructive decision requiring a verified recovery path.
 
 Each operator must choose an RPO/RTO appropriate to their users. At minimum,
 schedule encrypted off-host database backups, retain more than one generation,
 monitor backup failures and free space, and rehearse a restore after schema
 changes and at least quarterly. A recovery bundle needs the database archive,
-application release identifier, Compose/environment configuration, signing and
-source-encryption keys, SMTP/provider configuration, DNS/TLS ownership, archive
+application release identifier, Compose/environment configuration, signing,
+temporary-source and original-PDF encryption keys, SMTP/provider configuration,
+DNS/TLS ownership, archive
 checksum, and a written recovery order. A backup that has not passed a separate
 restore and representative application check is not considered recoverable.
 
@@ -206,6 +366,8 @@ on a successful cross-build.
 
 The backend uses a dependency-builder stage and excludes compilers and headers
 from its non-root runtime. OCR binaries are runtime-only and opt-in. The
+source-only Ask worker uses the same non-root backend image and has no ONNX
+answer-verifier dependency or model mount. The
 frontend copies static build output into an unprivileged server image; Node,
 npm, source, tests, and build caches are absent from runtime.
 
@@ -231,8 +393,10 @@ docker history cardchemy-backend:0.1.0
 docker run --rm cardchemy-backend:0.1.0 sh -c "! command -v gcc && ! command -v node"
 ```
 
-The release image check should confirm that neither runtime contains build
-toolchains or test material, and record the optional OCR image size separately.
+The source-only Compose layout uses backend, optional OCR backend and frontend
+application images; the Ask service reuses backend. Reconcile release-image
+checks and signatures against the exact source-only build before claiming its
+release gate. Confirm no forbidden build/test material and record every size.
 
 The [clean-machine production rehearsal](PRODUCTION_REHEARSAL.md) verifies
 this production profile with a trusted local HTTPS edge and a current-head

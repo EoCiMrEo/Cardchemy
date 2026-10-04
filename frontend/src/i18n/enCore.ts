@@ -1,0 +1,30 @@
+/** Copy needed before any route has loaded; the complete catalog stays route-lazy. */
+export const coreCopy = {
+  common: {
+    appName: 'Cardchemy',
+    tagline: 'Turn documents into memory.',
+    loading: 'Loading…',
+    retry: 'Retry',
+    cancel: 'Cancel',
+    saveChanges: 'Save Changes',
+    saving: 'Saving…',
+    delete: 'Delete',
+    edit: 'Edit',
+    close: 'Close',
+    noDescription: 'No description',
+    logout: 'Logout',
+    backToDashboard: 'Back to Dashboard',
+    requestCancelled: 'The request was cancelled.',
+    unexpectedError: 'Something went wrong. Please try again.',
+  },
+  routing: {
+    loadingAccount: 'Loading your account…',
+    notFoundTitle: 'Page not found',
+    notFoundDescription: 'The page you requested does not exist or is no longer available.',
+    returnToDashboard: 'Return to dashboard',
+    errorTitle: 'Something went wrong',
+    errorDescription: 'The application could not display this page.',
+    tryAgain: 'Try again',
+    unknownRole: (role: string) => `Unknown role: ${role}.`,
+  },
+} as const

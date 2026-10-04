@@ -1,7 +1,7 @@
 import { Component, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { copy } from '@/i18n/en'
+import { coreCopy } from '@/i18n/enCore'
 
 interface AppErrorBoundaryProps {
   children: ReactNode
@@ -27,10 +27,10 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       return (
         <main className="flex min-h-dvh items-center justify-center bg-gray-50 px-4">
           <div className="max-w-md rounded-lg border bg-white p-8 text-center shadow-sm" role="alert">
-            <h1 className="text-2xl font-bold">{copy.routing.errorTitle}</h1>
-            <p className="mt-2 text-muted-foreground">{copy.routing.errorDescription}</p>
+            <h1 className="text-2xl font-bold">{coreCopy.routing.errorTitle}</h1>
+            <p className="mt-2 text-muted-foreground">{coreCopy.routing.errorDescription}</p>
             <Button type="button" className="mt-6" onClick={this.recover}>
-              {copy.routing.tryAgain}
+              {coreCopy.routing.tryAgain}
             </Button>
           </div>
         </main>

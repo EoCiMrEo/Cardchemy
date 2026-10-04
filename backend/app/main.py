@@ -25,6 +25,7 @@ try:
         flashcards_router,
         generation_router,
         knowledge_router,
+        published_knowledge_router,
         rag_router,
         study_router,
         subjects_router,
@@ -34,8 +35,8 @@ except Exception:
     raise SystemExit("Application startup failed; validate root configuration and runtime dependencies") from None
 
 
-CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-CORS_ALLOWED_HEADERS = ["Accept", "Authorization", "Content-Type", "Idempotency-Key"]
+CORS_ALLOWED_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]
+CORS_ALLOWED_HEADERS = ["Accept", "Authorization", "Content-Type", "Idempotency-Key", "Range"]
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +95,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=CORS_ALLOWED_METHODS,
         allow_headers=CORS_ALLOWED_HEADERS,
-        expose_headers=["X-Request-ID"],
+        expose_headers=["X-Request-ID", "Content-Length", "Content-Range", "Accept-Ranges", "X-PDF-Page-Count"],
     )
     application.add_middleware(RequestDiagnosticsMiddleware, settings=configured)
     application.add_exception_handler(HTTPException, http_exception_handler)
@@ -107,6 +108,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     # FastAPI will try to parse static route names as UUIDs.
     application.include_router(generation_router)
     application.include_router(knowledge_router)
+    application.include_router(published_knowledge_router)
     application.include_router(rag_router)
     application.include_router(flashcards_router)
     application.include_router(study_router)

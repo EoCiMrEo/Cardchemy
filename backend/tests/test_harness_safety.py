@@ -42,6 +42,7 @@ def test_journey_rag_off_scenario_starts_no_rag_workers_or_credentials(monkeypat
     disabled = namespace["rag_environment"](False)
     assert disabled == {
         "RAG_ENABLED": "false",
+        "RAG_ASK_ENABLED": "false",
         "RAG_AI_PROVIDER_ENABLED": "false",
         "RAG_EMBEDDING_PROVIDER_ENABLED": "false",
     }
@@ -52,8 +53,10 @@ def test_journey_rag_off_scenario_starts_no_rag_workers_or_credentials(monkeypat
 
     enabled = namespace["rag_environment"](True)
     assert enabled["RAG_ENABLED"] == "true"
+    assert enabled["RAG_ASK_ENABLED"] == "true"
+    assert enabled["RAG_AI_PROVIDER_ENABLED"] == "false"
+    assert "RAG_AI_API_KEY" not in enabled
     assert enabled["RAG_EMBEDDING_MODEL"] == "gemini-embedding-001"
-    assert enabled["RAG_AI_PROVIDER_MAX_RETRIES"] == "0"
     assert enabled["RAG_EMBEDDING_PROVIDER_MAX_RETRIES"] == "0"
     assert namespace["journey_worker_actions"](True) == (
         "worker",
@@ -176,45 +179,8 @@ async def test_private_journey_worker_refuses_an_ordinary_application_database(m
         await namespace["require_disposable_database"]()
 
 
-async def test_journey_rag_providers_satisfy_grounding_and_support_contracts():
-    from uuid import uuid4
+async def test_journey_rag_provider_satisfies_knowledge_embedding_contract_only():
+    from tests.support.journey_runtime import JourneyEmbeddingProvider
 
-    from app.ai.answering import (
-        ClaimSupportOutput,
-        GroundedAnswerOutput,
-        render_answer_prompts,
-        render_support_prompts,
-        validate_grounded_answer,
-        validate_support_output,
-    )
-    from app.services.knowledge_retrieval import RetrievedKnowledgeChunk
-    from tests.support.journey_runtime import JourneyAnswerProvider, JourneyEmbeddingProvider
-
-    chunk = RetrievedKnowledgeChunk(
-        chunk_id=uuid4(), document_id=uuid4(), document_title="Journey Leaf Facts",
-        content_revision_id=uuid4(), index_revision_id=uuid4(), page_number=1,
-        section=None,
-        content="Chlorophyll gives leaves their Green color. Photosynthesis converts light into chemical energy.",
-        token_count=16, embedding_space_hash="a" * 64, corpus_revision=1,
-        vector_similarity=1.0, lexical_score=1.0, vector_rank=1, lexical_rank=1,
-        fusion_score=1.0,
-    )
-    provider = JourneyAnswerProvider()
-    system, user = render_answer_prompts(
-        question="What color does chlorophyll give leaves?", history=(), chunks=(chunk,)
-    )
-    answer = await provider.generate_structured(
-        response_model=GroundedAnswerOutput, system_prompt=system, user_prompt=user,
-        max_output_tokens=512, operation="rag_answer",
-    )
-    claims = validate_grounded_answer(answer.data, (chunk,))
-    support_system, support_user = render_support_prompts(
-        question="What color does chlorophyll give leaves?", claims=claims, chunks=(chunk,)
-    )
-    support = await provider.generate_structured(
-        response_model=ClaimSupportOutput, system_prompt=support_system,
-        user_prompt=support_user, max_output_tokens=256, operation="rag_support",
-    )
-    assert validate_support_output(support.data, len(claims))
     embedding = await JourneyEmbeddingProvider().embed_query("chlorophyll color")
     assert len(embedding.vectors[0]) == 1536

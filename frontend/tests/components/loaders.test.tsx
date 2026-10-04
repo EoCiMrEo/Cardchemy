@@ -21,9 +21,13 @@ const set: FlashcardSet = { id: 'set-1', subject_id: subject.id, title: 'Old set
 const job: GenerationJob = {
   id: 'job-1', subject_id: subject.id, job_kind: 'flashcards', document_id: null,
   knowledge_content_revision_id: null, knowledge_capture_status: 'not_requested',
+  knowledge_upload_outcome: null, duplicate_candidate: null, choice_expires_at: null,
   knowledge_capture_error_code: null, knowledge_capture_error_message: null,
   flashcard_set_id: set.id, status: 'completed', progress: 100, stage: 'completed',
-  requested_card_count: 2, generated_card_count: 2, ai_provider: 'test', ai_model: 'test',
+  requested_card_count: 2, generated_card_count: 2, valid_candidate_count: 0, card_choice_expires_at: null,
+  selected_card_count: null, can_accept_smaller_target: false, latest_attempt_rejected_card_count: 0,
+  latest_attempt_quality_diagnostics: null, retry_estimated_additional_cost_microusd: null,
+  previous_attempt_cost_unknown: false, ai_provider: 'test', ai_model: 'test',
   estimated_input_tokens: 0, estimated_output_tokens: 0, estimated_request_count: 0,
   provider_request_count: 0, provider_retry_count: 0, provider_rate_limit_wait_milliseconds: 0,
   cached_input_tokens: 0, provider_request_counts_by_stage: {}, actual_input_tokens: null, actual_output_tokens: null,
@@ -84,7 +88,7 @@ it('keeps previous Subject jobs hidden after the next poll fails and ignores an 
   const view = renderHook(({ id }) => useGenerationJobs(id, completed), { initialProps: { id: subject.id } })
   await waitFor(() => expect(view.result.current.jobs).toEqual([job]))
   let retry!: Promise<void>
-  act(() => { retry = view.result.current.retryJob(job.id, 'same-logical-key') })
+  act(() => { retry = view.result.current.retryJob(job.id, 'same-logical-key', false) })
   view.rerender({ id: 'subject-2' })
   expect(view.result.current.jobs).toEqual([])
   await waitFor(() => expect(view.result.current.loading).toBe(false))

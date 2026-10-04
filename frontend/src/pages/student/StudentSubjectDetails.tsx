@@ -11,6 +11,7 @@ import { PageError } from "@/components/feedback/PageError"
 import { apiErrorMessage } from "@/services/errors"
 import { copy } from "@/i18n/en"
 import { AskAiPanel } from "@/components/rag/AskAiPanel"
+import { PublishedKnowledgeBrowser } from "@/components/knowledge/PublishedKnowledgeBrowser"
 
 export default function StudentSubjectDetails() {
   const { id } = useParams<{ id: string }>()
@@ -94,15 +95,19 @@ function StudentSubjectContent() {
       ) : null}
 
       {id ? <AskAiPanel subjectId={id} /> : null}
+      {id ? <PublishedKnowledgeBrowser subjectId={id} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {sets.map((set) => {
           const progress = progressMap[set.id]
           const totalCards = progress?.total ?? set.flashcard_count ?? 0
-          const studiedCount = progress?.studied ?? 0
-          const progressPercent = Math.round(progress?.completion_percentage ?? 0)
-          const masteryPercent = Math.round(progress?.mastery_percentage ?? 0)
-          const isComplete = progressPercent === 100 && totalCards > 0
+          const correctCards = progress?.ever_correct_count ?? 0
+          const progressPercent = progress?.progress_percentage ?? 0
+          const accuracyPercent = progress?.accuracy_percentage ?? 0
+          const attemptedCount = progress?.attempted_count ?? 0
+          const attemptedPercent = progress?.attempted_percentage ?? 0
+          const masteryPercent = progress?.mastery_percentage ?? 0
+          const isComplete = totalCards > 0 && correctCards === totalCards
           
           return (
             <Card key={set.id} className={isComplete ? "border-green-300 bg-green-50/50" : ""}>
@@ -111,7 +116,7 @@ function StudentSubjectContent() {
                   <FileText className="h-4 w-4 text-blue-500" aria-hidden="true" />
                   {set.title}
                   {isComplete && (
-                    <span className="ml-auto">
+                    <span className="ml-auto" aria-label={copy.studentSubject.progressComplete}>
                       <Trophy className="h-5 w-5 text-yellow-500" aria-hidden="true" />
                     </span>
                   )}
@@ -127,7 +132,7 @@ function StudentSubjectContent() {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{copy.studentSubject.progress}</span>
                         <span className={`font-semibold ${isComplete ? 'text-green-600' : 'text-slate-700'}`}>
-                          {studiedCount}/{totalCards}
+                          {correctCards}/{totalCards}
                           {isComplete && (
                             <CheckCircle2 className="inline-block ml-1 h-4 w-4 text-green-500" aria-hidden="true" />
                           )}
@@ -137,15 +142,16 @@ function StudentSubjectContent() {
                         value={progressPercent} 
                         className={`h-2 ${isComplete ? '[&>div]:bg-green-500' : ''}`}
                         aria-label={copy.studentSubject.progressFor(set.title)}
-                        aria-valuetext={copy.studentSubject.progressValue(progressPercent, masteryPercent)}
+                        aria-valuetext={copy.studentSubject.progressValue(correctCards, totalCards, progressPercent)}
                       />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{copy.studentSubject.complete(progressPercent)}</span>
+                      <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                        <span>{copy.studentSubject.accuracy(accuracyPercent)}</span>
+                        <span>{copy.studentSubject.attempted(attemptedCount, totalCards, attemptedPercent)}</span>
                         <span>{copy.studentSubject.mastery(masteryPercent)}</span>
-                        {!isComplete && progress.new > 0 && (
-                          <span className="text-blue-700">{copy.studentSubject.newCards(progress.new)}</span>
-                        )}
                       </div>
+                      {!isComplete && progress.new > 0 && (
+                        <span className="block text-xs text-blue-700">{copy.studentSubject.newCards(progress.new)}</span>
+                      )}
                     </div>
                   )}
                   

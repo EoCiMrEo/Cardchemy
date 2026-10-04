@@ -370,14 +370,14 @@ async def test_worker_completion_is_atomic_and_stale_claim_cannot_repeat(session
         await worker._finish_success(job_id, token, cards)
 
 
-async def test_queued_job_runs_with_persisted_flashcard_provider_model_snapshot(session_factory, monkeypatch):
+async def test_queued_job_rejects_changed_model_policy_without_silent_substitution(session_factory, monkeypatch):
     from app.ai.contracts import ExtractedDocument, ExtractedPage
     from app.ai.pipeline import PipelineError
 
     async with session_factory() as db:
         owner, subject = await seed_owner_subject(db)
         queued_settings = make_settings(
-            flashcard_ai_provider="gemini", flashcard_ai_model="queued-model",
+            flashcard_ai_provider="gemini", flashcard_ai_model="gemini-3.5-flash",
         )
         service = GenerationJobService(queued_settings)
         async with db.begin():
@@ -391,14 +391,13 @@ async def test_queued_job_runs_with_persisted_flashcard_provider_model_snapshot(
                 content=b"%PDF-1.7\nsnapshot",
             )
         assert job.ai_provider == "gemini"
-        assert job.ai_model == "queued-model"
+        assert job.ai_model == "gemini-3.5-flash"
         job_id = job.id
 
     worker = GenerationWorker(
         settings=make_settings(
-            flashcard_ai_provider="openai_compatible",
-            flashcard_ai_model="current-model",
-            flashcard_ai_base_url="http://model.internal/v1",
+            flashcard_ai_provider="gemini",
+            flashcard_ai_model="gemini-3.8-flash",
         ),
         session_factory=session_factory, worker_id="snapshot-worker",
     )
@@ -417,12 +416,15 @@ async def test_queued_job_runs_with_persisted_flashcard_provider_model_snapshot(
 
     monkeypatch.setattr("app.workers.generation.PDFProcessor.extract_text_in_subprocess", lambda *_args, **_kwargs: ExtractedDocument(pages=[ExtractedPage(page_number=1, text="Fact.")]))
     monkeypatch.setattr("app.workers.generation.create_flashcard_graph", graph_factory)
-    with pytest.raises(PipelineError, match="Snapshot inspected"):
+    with pytest.raises(PipelineError, match="model policy changed"):
         await worker._pipeline(*claim)
-    assert captured == {"provider": "gemini", "model": "queued-model"}
+    assert captured == {}
+    await worker.process_claim(*claim)
     async with session_factory() as db:
         persisted = await db.get(GenerationJob, job_id)
-        assert (persisted.ai_provider, persisted.ai_model) == ("gemini", "queued-model")
+        assert (persisted.ai_provider, persisted.ai_model) == ("gemini", "gemini-3.5-flash")
+        assert (persisted.status, persisted.error_code) == ("failed", "ai_model_policy_changed")
+        assert await db.get(GenerationJobSource, job_id) is None
 
 
 async def test_worker_permanent_failure_is_terminal_and_deletes_source(

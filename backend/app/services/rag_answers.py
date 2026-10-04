@@ -6,14 +6,15 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING
 import hashlib
 import json
-from uuid import UUID
+import re
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import bindparam, delete, func, select, text
+from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.chunking import estimate_tokens
-from app.config import Settings, get_settings
+from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION, ASK_SOURCE_ONLY_READ_POLICIES, Settings, get_settings
 from app.models.knowledge import (
     SubjectDocument,
     SubjectDocumentChunk,
@@ -26,6 +27,7 @@ from app.models.rag import (
     RagAnswerQuotaEvent,
     RagMessage,
     RagMessageSource,
+    RagRelatedEvidence,
     RagThread,
 )
 from app.models.subject import Subject
@@ -36,13 +38,24 @@ from app.schemas.rag import (
     RagHistoryResponse,
     RagMessageResponse,
     RagQuestionCreate,
+    RagRelatedExcerptResponse,
+    RagRelatedPageResponse,
     RagSourceResponse,
     RagThreadResponse,
 )
 from app.services.generation import hash_operation_key
-from app.services.knowledge_retrieval import EXACT_V1_POLICY, KnowledgeRetriever, KnowledgeScopeUnavailable
+from app.services.knowledge_retrieval import (
+    SOURCE_NAVIGATION_RETRIEVAL_POLICY, KnowledgeRetriever, KnowledgeScopeUnavailable,
+    read_eligible_source_batch,
+)
 from app.services.subject import SubjectService
+from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.observability import current_request_id
+from app.ai.source_navigation import navigation_query_v4
+from app.services.rag_question_context_v2 import (
+    QuestionContextUnavailable, capture_question_context,
+    persist_question_context, rehydrate_question_context,
+)
 from app.time_utils import utcnow
 
 
@@ -74,12 +87,101 @@ def question_fingerprint(thread_id: UUID, data: RagQuestionCreate) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _cost_microusd(settings: Settings, input_tokens: int, output_tokens: int) -> int:
-    total = (
-        Decimal(input_tokens) * settings.rag_ai_input_cost_per_million_usd
-        + Decimal(output_tokens) * settings.rag_ai_output_cost_per_million_usd
+def _attempt_estimate_microusd(settings: Settings) -> int:
+    """Ceiling for both possible physical requests, rounded per stage."""
+
+    embedding_cost = int((
+        Decimal(settings.rag_embedding_max_input_tokens)
+        * settings.rag_embedding_input_cost_per_million_usd
+    ).to_integral_value(rounding=ROUND_CEILING))
+    return embedding_cost + _judge_estimate_microusd(settings)
+
+
+def _judge_estimate_microusd(settings: Settings) -> int:
+    # Match the worker's immutable integer price snapshots and per-stage
+    # ceiling, including fractional micro-USD operator prices.
+    estimate = (
+        Decimal(settings.rag_source_judge_max_input_tokens)
+        * _judge_price_snapshot(settings.rag_source_judge_input_cost_per_million_usd)
+        + Decimal(settings.rag_source_judge_max_output_tokens)
+        * _judge_price_snapshot(settings.rag_source_judge_output_cost_per_million_usd)
+    ) / Decimal(1_000_000)
+    return int(estimate.to_integral_value(rounding=ROUND_CEILING))
+
+
+def _judge_price_snapshot(price: Decimal) -> int:
+    """Store nonzero micro-USD per million tokens without rounding down."""
+
+    return int((price * Decimal(1_000_000)).to_integral_value(rounding=ROUND_CEILING))
+
+
+def locate_page_reference(page_content: str, quote: str) -> tuple[int, int] | None:
+    """Locate only an exact or whitespace-equivalent source span on its page."""
+
+    if not quote or len(quote) > 480:
+        return None
+    start = page_content.find(quote)
+    if start >= 0:
+        return start, start + len(quote)
+    words = quote.split()
+    if not words:
+        return None
+    match = re.search(r"\s+".join(re.escape(word) for word in words), page_content)
+    return (match.start(), match.end()) if match is not None else None
+
+
+_RELATED_PAGES_SQL = text("""
+    WITH authorized_subject AS (
+        SELECT subject.id, subject.corpus_revision, subject.active_embedding_space_hash
+        FROM subjects AS subject
+        JOIN users AS principal ON principal.id = :principal_id
+        WHERE subject.id = :subject_id
+          AND subject.corpus_revision = :corpus_revision
+          AND subject.active_embedding_space_hash = :embedding_space_hash
+          AND ((principal.role = 'INSTRUCTOR' AND subject.instructor_id = principal.id)
+               OR (principal.role = 'STUDENT' AND EXISTS (
+                   SELECT 1 FROM enrollments AS enrollment
+                   WHERE enrollment.student_id = principal.id
+                     AND enrollment.subject_id = subject.id)))
     )
-    return int(total.to_integral_value(rounding=ROUND_CEILING))
+    SELECT eligible.id AS chunk_id, page.content
+    FROM eligible_subject_knowledge_chunks AS eligible
+    JOIN authorized_subject AS scope
+      ON scope.id = eligible.subject_id
+     AND scope.corpus_revision = eligible.corpus_revision
+     AND scope.active_embedding_space_hash = eligible.embedding_space_hash
+    JOIN subject_document_pages AS page
+      ON page.content_revision_id = eligible.content_revision_id
+     AND page.document_id = eligible.document_id
+     AND page.subject_id = eligible.subject_id
+     AND page.uploader_id = eligible.uploader_id
+     AND page.page_number = eligible.page_number
+    WHERE eligible.id = ANY(:chunk_ids)
+      AND eligible.subject_id = :subject_id
+      AND eligible.corpus_revision = :corpus_revision
+      AND eligible.embedding_space_hash = :embedding_space_hash
+""").bindparams(
+    bindparam("principal_id", type_=PGUUID(as_uuid=True)),
+    bindparam("subject_id", type_=PGUUID(as_uuid=True)),
+    bindparam("chunk_ids", type_=ARRAY(PGUUID(as_uuid=True))),
+)
+
+
+async def _read_related_pages(
+    db: AsyncSession, *, principal_id: UUID, subject_id: UUID,
+    corpus_revision: int, embedding_space_hash: str, chunk_ids: list[UUID],
+) -> dict[UUID, str]:
+    """Read current pages only for authorized eligible anchors and job scope."""
+
+    if not chunk_ids:
+        return {}
+    result = await db.execute(_RELATED_PAGES_SQL, {
+        "principal_id": principal_id, "subject_id": subject_id,
+        "corpus_revision": corpus_revision,
+        "embedding_space_hash": embedding_space_hash,
+        "chunk_ids": chunk_ids,
+    })
+    return {row["chunk_id"]: row["content"] for row in result.mappings().all()}
 
 
 class RagAnswerService:
@@ -124,6 +226,8 @@ class RagAnswerService:
         await SubjectService.check_subject_access(db, subject_id, user)
         if not self.settings.rag_enabled:
             raise rag_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "rag_disabled", "Ask AI is not enabled.")
+        if not self.settings.rag_source_only_available:
+            raise rag_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "rag_ask_disabled", "Ask AI is temporarily unavailable.")
         await self._lock_admission(db)
         user_count = int(await db.scalar(select(func.count(RagThread.id)).where(
             RagThread.user_id == user.id,
@@ -164,7 +268,7 @@ class RagAnswerService:
         await db.flush()
 
     async def _check_job_capacity(self, db: AsyncSession, user_id: UUID) -> None:
-        if not self.settings.rag_answer_available:
+        if not self.settings.rag_source_only_available:
             raise rag_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "rag_answer_unavailable", "Ask AI is temporarily unavailable.")
         user_active = int(await db.scalar(select(func.count(RagAnswerJob.id)).where(
             RagAnswerJob.user_id == user_id,
@@ -203,12 +307,11 @@ class RagAnswerService:
         thread_id: UUID,
         new_messages: int,
     ) -> None:
-        """Reserve future assistant rows represented by active answer jobs.
+        """Reserve future assistant rows only for historical active answer jobs.
 
         The admission advisory lock serializes these counts with enqueue/retry.
-        Each queued/running job already owns its question row and reserves one
-        not-yet-written assistant row. This prevents concurrent admissions from
-        exceeding durable thread, user, or deployment storage limits at commit.
+        Source-only jobs never create an assistant row. Historical active jobs
+        still reserve one until they are fenced at cutover.
         """
 
         thread_messages = int(await db.scalar(select(func.count(RagMessage.id)).where(
@@ -221,13 +324,16 @@ class RagAnswerService:
         thread_reservations = int(await db.scalar(select(func.count(RagAnswerJob.id)).where(
             RagAnswerJob.thread_id == thread_id,
             RagAnswerJob.status.in_(ACTIVE_ANSWER_STATUSES),
+            RagAnswerJob.answer_policy_version.not_in(ASK_SOURCE_ONLY_READ_POLICIES),
         )) or 0)
         user_reservations = int(await db.scalar(select(func.count(RagAnswerJob.id)).where(
             RagAnswerJob.user_id == user_id,
             RagAnswerJob.status.in_(ACTIVE_ANSWER_STATUSES),
+            RagAnswerJob.answer_policy_version.not_in(ASK_SOURCE_ONLY_READ_POLICIES),
         )) or 0)
         deployment_reservations = int(await db.scalar(select(func.count(RagAnswerJob.id)).where(
             RagAnswerJob.status.in_(ACTIVE_ANSWER_STATUSES),
+            RagAnswerJob.answer_policy_version.not_in(ASK_SOURCE_ONLY_READ_POLICIES),
         )) or 0)
         if (
             thread_messages + thread_reservations + new_messages
@@ -277,6 +383,8 @@ class RagAnswerService:
                 "The Ask AI question exceeds the configured length limit.",
             )
         await SubjectService.check_subject_access(db, subject_id, user)
+        if not self.settings.rag_source_only_available:
+            raise rag_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "rag_ask_disabled", "Ask AI is temporarily unavailable.")
         await self._lock_admission(db)
         existing = await db.scalar(select(RagAnswerJob).where(
             RagAnswerJob.user_id == user.id,
@@ -295,7 +403,7 @@ class RagAnswerService:
             db,
             user_id=user.id,
             thread_id=thread.id,
-            new_messages=2,
+            new_messages=1,
         )
 
         try:
@@ -305,10 +413,19 @@ class RagAnswerService:
                 subject_id=subject_id,
                 query=data.question,
                 document_ids=data.document_ids,
-                limit=EXACT_V1_POLICY.max_results,
+                limit=SOURCE_NAVIGATION_RETRIEVAL_POLICY.max_results,
+                policy=SOURCE_NAVIGATION_RETRIEVAL_POLICY,
             )
         except KnowledgeScopeUnavailable:
             raise rag_http_error(status.HTTP_409_CONFLICT, "rag_knowledge_unavailable", "Current course materials are unavailable for this request.") from None
+
+        configured_space = embedding_space_hash(self.settings.rag_embedding_space_identity)
+        if retriever.scope.embedding_space_hash != configured_space:
+            raise rag_http_error(
+                status.HTTP_409_CONFLICT,
+                "rag_embedding_space_mismatch",
+                "Current course materials are not indexed for the active Ask AI profile.",
+            )
 
         now = utcnow()
         auth_session_id = getattr(user, "_auth_session_id", None)
@@ -316,6 +433,7 @@ class RagAnswerService:
             raise rag_http_error(status.HTTP_401_UNAUTHORIZED, "authentication_required", "Could not validate credentials")
         expires_at = now + timedelta(days=self.settings.rag_chat_retention_days)
         question = RagMessage(
+            id=uuid4(),
             thread_id=thread.id,
             user_id=user.id,
             subject_id=subject_id,
@@ -326,25 +444,36 @@ class RagAnswerService:
             created_at=now,
             expires_at=expires_at,
         )
+        try:
+            captured_context = await capture_question_context(
+                db, current=question, thread=thread,
+                corpus_revision=retriever.scope.corpus_revision,
+                embedding_space_hash=configured_space, captured_at=now,
+                raw_navigation_query=navigation_query_v4(data.question, ()),
+            )
+        except QuestionContextUnavailable:
+            raise rag_http_error(
+                status.HTTP_409_CONFLICT, "rag_question_context_changed",
+                "The question context changed or expired. Start a new search.",
+            ) from None
         db.add(question)
         await db.flush()
-        configured_space = embedding_space_hash(self.settings.rag_embedding_space_identity)
-        space_hash = retriever.scope.embedding_space_hash or configured_space
-        estimated_input = min(
-            self.settings.rag_ai_max_job_input_tokens,
-            estimate_tokens(data.question)
-            + self.settings.rag_answer_history_token_limit
-            + EXACT_V1_POLICY.context_token_limit
-            + 1_024,
-        )
-        estimated_output = min(
-            self.settings.rag_ai_max_job_output_tokens,
-            self.settings.rag_ai_max_output_tokens * 2,
-        )
-        estimated_cost = _cost_microusd(self.settings, estimated_input, estimated_output)
-        if estimated_cost > int(self.settings.rag_ai_max_estimated_cost_usd * Decimal(1_000_000)):
-            raise rag_http_error(status.HTTP_409_CONFLICT, "rag_answer_cost_limit", "The Ask AI request exceeds the configured cost limit.")
+        space_hash = configured_space
+        embedding_input = self.settings.rag_embedding_max_input_tokens
+        estimated_input = embedding_input + self.settings.rag_source_judge_max_input_tokens
+        estimated_output = self.settings.rag_source_judge_max_output_tokens
+        estimated_cost = _attempt_estimate_microusd(self.settings)
+        embedding_cost = int((Decimal(embedding_input) *
+                              self.settings.rag_embedding_input_cost_per_million_usd
+                              ).to_integral_value(rounding=ROUND_CEILING))
+        if embedding_cost > int(self.settings.rag_embedding_max_estimated_cost_usd * Decimal(1_000_000)):
+            raise rag_http_error(status.HTTP_409_CONFLICT, "rag_embedding_cost_limit", "The Ask AI request exceeds the configured cost limit.")
+        if _judge_estimate_microusd(self.settings) > int(
+            self.settings.rag_source_judge_max_estimated_cost_usd * Decimal(1_000_000)
+        ):
+            raise rag_http_error(status.HTTP_409_CONFLICT, "rag_source_judge_cost_limit", "The Ask AI request exceeds the configured cost limit.")
         job = RagAnswerJob(
+            id=uuid4(),
             thread_id=thread.id,
             question_message_id=question.id,
             auth_session_id=auth_session_id,
@@ -356,11 +485,30 @@ class RagAnswerService:
             request_fingerprint=fingerprint,
             document_ids=[str(value) for value in sorted(data.document_ids, key=str)],
             corpus_revision=retriever.scope.corpus_revision,
-            retrieval_policy=EXACT_V1_POLICY.policy_id,
+            retrieval_policy=SOURCE_NAVIGATION_RETRIEVAL_POLICY.policy_id,
             embedding_space_hash=space_hash,
-            ai_provider=self.settings.rag_ai_provider,
-            ai_base_url=self.settings.rag_ai_endpoint_identity,
-            ai_model=self.settings.rag_ai_model,
+            embedding_provider=self.settings.rag_embedding_provider,
+            embedding_base_url=self.settings.rag_embedding_endpoint_identity,
+            embedding_model=self.settings.rag_embedding_model,
+            source_judge_provider=self.settings.rag_source_judge_provider,
+            source_judge_base_url=self.settings.rag_source_judge_endpoint_identity,
+            source_judge_model=self.settings.rag_source_judge_model,
+            source_judge_contract_version=self.settings.rag_source_judge_contract_version,
+            source_judge_input_price_microusd_per_million=_judge_price_snapshot(
+                self.settings.rag_source_judge_input_cost_per_million_usd),
+            source_judge_output_price_microusd_per_million=_judge_price_snapshot(
+                self.settings.rag_source_judge_output_cost_per_million_usd),
+            source_judge_max_input_tokens=self.settings.rag_source_judge_max_input_tokens,
+            source_judge_max_output_tokens=self.settings.rag_source_judge_max_output_tokens,
+            source_judge_thinking_level=self.settings.rag_source_judge_thinking_level,
+            source_judge_timeout_seconds=self.settings.rag_source_judge_provider_timeout_seconds,
+            ai_provider=None,
+            ai_base_url=None,
+            ai_model=None,
+            ai_catalog_version=None,
+            ai_schema_policy_version=None,
+            answer_policy_version=ASK_REQUIRED_RELEASE_POLICY_VERSION,
+            support_policy_version=None,
             max_attempts=self.settings.rag_answer_max_attempts,
             available_at=now,
             deadline_at=now + timedelta(seconds=self.settings.rag_answer_job_timeout_seconds),
@@ -371,6 +519,11 @@ class RagAnswerService:
             updated_at=now,
         )
         db.add(job)
+        await persist_question_context(db, job=job, captured=captured_context)
+        # Flush the parent before the metadata-only binding's scoped FK. Both
+        # remain in the caller-owned transaction; its deferred admission guard
+        # requires the binding at commit.
+        await db.flush([job])
         await db.flush()
         db.add(RagAnswerQuotaEvent(
             user_id=user.id,
@@ -433,9 +586,214 @@ class RagAnswerService:
                 )
             ).all()
         )
-        return RagAnswerJobListResponse(
-            jobs=[self.job_response(job) for job in jobs]
+        related = await self._related_excerpts_for_jobs(
+            db, jobs=jobs, user=user, subject_id=subject_id,
         )
+        return RagAnswerJobListResponse(
+            jobs=[self.job_response(job, related_excerpts=related.get(job.id, [])) for job in jobs]
+        )
+
+    async def job_response_with_related(
+        self,
+        db: AsyncSession,
+        *,
+        job: RagAnswerJob,
+        user: User,
+    ) -> RagAnswerJobResponse:
+        related = await self._related_excerpts_for_jobs(
+            db, jobs=[job], user=user, subject_id=job.subject_id,
+        )
+        return self.job_response(job, related_excerpts=related.get(job.id, []))
+
+    async def related_page(
+        self, db: AsyncSession, *, subject_id: UUID, thread_id: UUID,
+        job_id: UUID, excerpt_order: int, user: User,
+    ) -> RagRelatedPageResponse:
+        """Open one current canonical page after reauthorizing the whole bundle."""
+
+        await acquire_knowledge_write_lock(db)
+        job = await self.owned_job(
+            db, subject_id=subject_id, thread_id=thread_id, job_id=job_id, user=user,
+        )
+        if (
+            job.status != "completed" or job.result_kind != "related_knowledge"
+            or job.answer_policy_version not in ASK_SOURCE_ONLY_READ_POLICIES
+        ):
+            raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        bundles = await self._related_excerpts_for_jobs(
+            db, jobs=[job], user=user, subject_id=subject_id,
+        )
+        excerpts = bundles.get(job.id)
+        if excerpts is None or not 1 <= excerpt_order <= len(excerpts):
+            raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        excerpt = excerpts[excerpt_order - 1]
+        row = await db.get(RagRelatedEvidence, (job.id, excerpt_order))
+        if row is None:
+            raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        page_content = (await _read_related_pages(
+            db, principal_id=user.id, subject_id=subject_id,
+            corpus_revision=job.corpus_revision,
+            embedding_space_hash=job.embedding_space_hash,
+            chunk_ids=[row.chunk_id],
+        )).get(row.chunk_id)
+        if page_content is None:
+            raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        if row.source_kind == "canonical_page":
+            span = (row.start_offset, row.end_offset)
+            if page_content[span[0]:span[1]] != excerpt.source_quote:
+                raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        elif row.source_kind == "chunk":
+            span = locate_page_reference(page_content, excerpt.source_quote)
+        else:
+            raise rag_http_error(status.HTTP_404_NOT_FOUND, "rag_related_page_unavailable", "Current Knowledge page is unavailable.")
+        return RagRelatedPageResponse(
+            document_title=excerpt.document_title,
+            page_number=excerpt.page_number,
+            section=excerpt.section,
+            source_quote=excerpt.source_quote,
+            page_content=page_content,
+            reference_start=span[0] if span is not None else None,
+            reference_end=span[1] if span is not None else None,
+        )
+
+    async def _related_excerpts_for_jobs(
+        self,
+        db: AsyncSession,
+        *,
+        jobs: list[RagAnswerJob],
+        user: User,
+        subject_id: UUID,
+    ) -> dict[UUID, list[RagRelatedExcerptResponse]]:
+        """Batch-read current exact source slices; any drift hides the bundle."""
+
+        now = utcnow()
+        completed_ids = [
+            job.answer_message_id for job in jobs
+            if job.status == "completed" and job.answer_message_id is not None
+        ]
+        abstained_ids: set[UUID] = set()
+        if completed_ids:
+            abstained_ids = set((await db.scalars(select(RagMessage.id).where(
+                RagMessage.id.in_(completed_ids),
+                RagMessage.user_id == user.id,
+                RagMessage.subject_id == subject_id,
+                RagMessage.role == "assistant",
+                RagMessage.outcome == "abstained",
+                RagMessage.expires_at > now,
+            ))).all())
+        eligible_jobs = {
+            job.id: job for job in jobs
+            if job.user_id == user.id and job.subject_id == subject_id
+            and (
+                (job.status == "completed" and getattr(job, "answer_policy_version", None) in ASK_SOURCE_ONLY_READ_POLICIES
+                 and getattr(job, "result_kind", None) == "related_knowledge" and job.answer_message_id is None)
+                or
+                (job.status == "failed" and job.error_code == "rag_answer_failed")
+                or (job.status == "completed" and job.answer_message_id in abstained_ids)
+            )
+        }
+        if not eligible_jobs:
+            return {}
+        rows = list((await db.scalars(select(RagRelatedEvidence).where(
+            RagRelatedEvidence.job_id.in_(eligible_jobs),
+            RagRelatedEvidence.user_id == user.id,
+            RagRelatedEvidence.subject_id == subject_id,
+            RagRelatedEvidence.expires_at > now,
+        ).order_by(
+            RagRelatedEvidence.job_id, RagRelatedEvidence.excerpt_order,
+        ))).all())
+        if not rows:
+            return {}
+        chunk_ids = list({row.chunk_id for row in rows})
+        current_sources = {}
+        for start in range(0, len(chunk_ids), 100):
+            current_sources.update(await read_eligible_source_batch(
+                db, principal_id=user.id, subject_id=subject_id,
+                chunk_ids=chunk_ids[start:start + 100],
+            ))
+        by_job: dict[UUID, list[RagRelatedEvidence]] = {}
+        for row in rows:
+            by_job.setdefault(row.job_id, []).append(row)
+        valid_jobs: dict[UUID, list[RagRelatedEvidence]] = {}
+        page_groups: dict[tuple[int, str], set[UUID]] = {}
+        for job_id, refs in by_job.items():
+            job = eligible_jobs[job_id]
+            size = refs[0].bundle_size
+            if (
+                size not in (1, 2, 3) or len(refs) != size
+                or [row.excerpt_order for row in refs] != list(range(1, size + 1))
+                or any(row.bundle_size != size for row in refs)
+                or any(row.manual_retry_number != job.manual_retry_count for row in refs)
+            ):
+                continue
+            valid_jobs[job_id] = refs
+            page_groups.setdefault(
+                (job.corpus_revision, job.embedding_space_hash), set(),
+            ).update(
+                row.chunk_id for row in refs
+                if row.source_kind == "canonical_page" and row.chunk_id in current_sources
+            )
+        current_pages: dict[tuple[int, str], dict[UUID, str]] = {}
+        for (corpus_revision, space_hash), ids in page_groups.items():
+            pages: dict[UUID, str] = {}
+            ordered_ids = sorted(ids, key=str)
+            for start in range(0, len(ordered_ids), 100):
+                pages.update(await _read_related_pages(
+                    db, principal_id=user.id, subject_id=subject_id,
+                    corpus_revision=corpus_revision,
+                    embedding_space_hash=space_hash,
+                    chunk_ids=ordered_ids[start:start + 100],
+                ))
+            current_pages[(corpus_revision, space_hash)] = pages
+        response: dict[UUID, list[RagRelatedExcerptResponse]] = {}
+        for job_id, refs in valid_jobs.items():
+            job = eligible_jobs[job_id]
+            size = refs[0].bundle_size
+            job_pages = current_pages.get((job.corpus_revision, job.embedding_space_hash), {})
+            document_scope = set(job.document_ids)
+            excerpts: list[RagRelatedExcerptResponse] = []
+            for row in refs:
+                source = current_sources.get(row.chunk_id)
+                source_kind = row.source_kind
+                page_content = job_pages.get(row.chunk_id)
+                source_content = (
+                    page_content if source_kind == "canonical_page"
+                    else source.content if source_kind == "chunk" and source is not None
+                    else None
+                )
+                if (
+                    source is None
+                    or (source_kind == "canonical_page" and page_content is None)
+                    or source_content is None
+                    or row.expires_at <= now
+                    or row.thread_id != job.thread_id
+                    or row.subject_id != job.subject_id
+                    or row.user_id != job.user_id
+                    or source.document_id != row.document_id
+                    or source.content_revision_id != row.content_revision_id
+                    or source.index_revision_id != row.index_revision_id
+                    or source.corpus_revision != job.corpus_revision
+                    or source.embedding_space_hash != job.embedding_space_hash
+                    or document_scope and str(source.document_id) not in document_scope
+                    or not 0 <= row.start_offset < row.end_offset <= len(source_content)
+                    or row.end_offset - row.start_offset > 480
+                ):
+                    excerpts = []
+                    break
+                quote = source_content[row.start_offset:row.end_offset]
+                if not quote.strip():
+                    excerpts = []
+                    break
+                excerpts.append(RagRelatedExcerptResponse(
+                    excerpt_order=row.excerpt_order,
+                    document_title=source.document_title,
+                    page_number=source.page_number,
+                    section=source.section,
+                    source_quote=quote,
+                ))
+            if len(excerpts) == size:
+                response[job_id] = excerpts
+        return response
 
     async def cancel(
         self, db: AsyncSession, *, subject_id: UUID, thread_id: UUID, job_id: UUID, user: User
@@ -446,6 +804,9 @@ class RagAnswerService:
         )
         now = utcnow()
         if job.status == "queued":
+            await db.execute(delete(RagRelatedEvidence).where(
+                RagRelatedEvidence.job_id == job.id,
+            ))
             job.status = "cancelled"
             job.cancellation_requested_at = now
             job.completed_at = now
@@ -469,6 +830,9 @@ class RagAnswerService:
         idempotency_key: str,
     ) -> RagAnswerJob:
         retry_key_hash = hash_operation_key(idempotency_key)
+        await SubjectService.check_subject_access(db, subject_id, user)
+        if not self.settings.rag_source_only_available:
+            raise rag_http_error(status.HTTP_503_SERVICE_UNAVAILABLE, "rag_ask_disabled", "Ask AI is temporarily unavailable.")
         await self._lock_admission(db)
         existing = await db.scalar(select(RagAnswerQuotaEvent).where(
             RagAnswerQuotaEvent.user_id == user.id,
@@ -483,7 +847,7 @@ class RagAnswerService:
         job = await self.owned_job(
             db, subject_id=subject_id, thread_id=thread_id, job_id=job_id, user=user, for_update=True
         )
-        if job.status != "failed" or not job.error_retryable:
+        if job.status != "failed" or not job.error_retryable or job.answer_policy_version != ASK_REQUIRED_RELEASE_POLICY_VERSION:
             raise rag_http_error(status.HTTP_409_CONFLICT, "rag_answer_not_retryable", "This Ask AI job can no longer be retried.")
         if job.manual_retry_count >= self.settings.rag_answer_max_manual_retries:
             raise rag_http_error(status.HTTP_409_CONFLICT, "rag_answer_retry_limit", "This Ask AI job reached its manual retry limit.")
@@ -496,11 +860,25 @@ class RagAnswerService:
         if (
             subject is None
             or subject.corpus_revision != job.corpus_revision
-            or (current_space is not None and current_space != job.embedding_space_hash)
+            or current_space != job.embedding_space_hash
             or configured_space != job.embedding_space_hash
-            or self.settings.rag_ai_provider != job.ai_provider
-            or self.settings.rag_ai_endpoint_identity != job.ai_base_url
-            or self.settings.rag_ai_model != job.ai_model
+            or self.settings.rag_embedding_provider != job.embedding_provider
+            or self.settings.rag_embedding_endpoint_identity != job.embedding_base_url
+            or self.settings.rag_embedding_model != job.embedding_model
+            or job.answer_policy_version != ASK_REQUIRED_RELEASE_POLICY_VERSION
+            or job.retrieval_policy != SOURCE_NAVIGATION_RETRIEVAL_POLICY.policy_id
+            or self.settings.rag_source_judge_provider != job.source_judge_provider
+            or self.settings.rag_source_judge_endpoint_identity != job.source_judge_base_url
+            or self.settings.rag_source_judge_model != job.source_judge_model
+            or self.settings.rag_source_judge_contract_version != job.source_judge_contract_version
+            or _judge_price_snapshot(self.settings.rag_source_judge_input_cost_per_million_usd)
+            != job.source_judge_input_price_microusd_per_million
+            or _judge_price_snapshot(self.settings.rag_source_judge_output_cost_per_million_usd)
+            != job.source_judge_output_price_microusd_per_million
+            or self.settings.rag_source_judge_max_input_tokens != job.source_judge_max_input_tokens
+            or self.settings.rag_source_judge_max_output_tokens != job.source_judge_max_output_tokens
+            or self.settings.rag_source_judge_thinking_level != job.source_judge_thinking_level
+            or self.settings.rag_source_judge_provider_timeout_seconds != job.source_judge_timeout_seconds
         ):
             raise rag_http_error(status.HTTP_409_CONFLICT, "rag_answer_snapshot_changed", "Ask AI configuration or course materials changed; submit a new question.")
         await self._check_job_capacity(db, user.id)
@@ -508,15 +886,25 @@ class RagAnswerService:
             db,
             user_id=user.id,
             thread_id=thread_id,
-            new_messages=1,
+            new_messages=0,
         )
         now = utcnow()
+        try:
+            await rehydrate_question_context(db, job=job, checked_at=now)
+        except QuestionContextUnavailable:
+            raise rag_http_error(
+                status.HTTP_409_CONFLICT, "rag_question_context_changed",
+                "The question context changed or expired. Start a new search.",
+            ) from None
         db.add(RagAnswerQuotaEvent(
             user_id=user.id,
             job_id=job.id,
             operation_key_hash=retry_key_hash,
             job_units=1,
             created_at=now,
+        ))
+        await db.execute(delete(RagRelatedEvidence).where(
+            RagRelatedEvidence.job_id == job.id,
         ))
         job.status = "queued"
         job.auth_session_id = auth_session_id
@@ -530,10 +918,17 @@ class RagAnswerService:
         job.lease_expires_at = None
         job.cancellation_requested_at = None
         job.provider_call_started_at = None
+        job.retrieval_completed_at = None
+        job.attempt_cost_microusd = 0
+        job.attempt_cost_unknown = False
+        job.execution_uncertain = False
         job.completed_at = None
         job.error_code = None
         job.error_message = None
         job.error_retryable = False
+        job.failed_stage = None
+        job.provider_error_category = None
+        job.failure_reason = None
         job.updated_at = now
         await db.flush()
         return job
@@ -615,6 +1010,7 @@ class RagAnswerService:
                 id=message.id,
                 role=message.role,
                 outcome=message.outcome,
+                abstention_kind=message.abstention_kind,
                 content=None if hidden else message.content,
                 hidden=hidden,
                 sources=[] if hidden else current_sources,
@@ -657,7 +1053,42 @@ class RagAnswerService:
             updated_at=thread.updated_at,
         )
 
-    def job_response(self, job: RagAnswerJob) -> RagAnswerJobResponse:
+    def job_response(
+        self,
+        job: RagAnswerJob,
+        *,
+        related_excerpts: list[RagRelatedExcerptResponse] | None = None,
+    ) -> RagAnswerJobResponse:
+        failure_kind = None
+        if job.status == "failed" and job.error_code == "rag_answer_failed":
+            category = job.provider_error_category
+            reason = job.failure_reason
+            if category == "invalid_ai_output" or category == "invalid_embedding_output":
+                failure_kind = "invalid_output"
+            elif category == "local_support_unavailable":
+                failure_kind = "support_unavailable"
+            elif category in {
+                "ai_provider_timeout", "embedding_provider_timeout",
+                "ai_provider_rate_limited", "embedding_provider_rate_limited",
+                "ai_provider_unavailable", "embedding_provider_unavailable",
+            } or reason in {
+                "transport_timeout", "transport_protocol", "transport_network",
+                "http_rate_limited", "http_server_error", "http_transient",
+            }:
+                failure_kind = "provider_temporarily_unavailable"
+            elif category in {
+                "ai_provider_invalid_request", "ai_provider_authentication_failed",
+                "ai_provider_access_denied", "ai_model_unavailable",
+                "ai_provider_rejected_request", "ai_provider_request_token_limit",
+                "ai_model_output_incompatible", "ai_model_schema_incompatible",
+                "embedding_provider_invalid_request",
+                "embedding_provider_authentication_failed", "embedding_provider_access_denied",
+                "embedding_model_unavailable", "embedding_provider_rejected_request",
+                "embedding_provider_request_token_limit",
+            }:
+                failure_kind = "provider_rejected"
+            else:
+                failure_kind = "internal_failure"
         return RagAnswerJobResponse(
             id=job.id,
             thread_id=job.thread_id,
@@ -665,6 +1096,26 @@ class RagAnswerService:
             question_message_id=job.question_message_id,
             answer_message_id=job.answer_message_id,
             status=job.status,
+            ask_policy=job.answer_policy_version,
+            result_kind=job.result_kind,
+            search_mode=(
+                "lexical_fallback"
+                if job.status == "completed" and job.retrieval_completed_at is not None
+                and job.answer_policy_version in (
+                    "related_knowledge_navigation_v3", "related_knowledge_navigation_v4",
+                    "related_knowledge_navigation_v5", "related_knowledge_navigation_v6",
+                    "related_knowledge_navigation_v7", ASK_REQUIRED_RELEASE_POLICY_VERSION)
+                and job.failed_stage == "query_embedding" and job.provider_error_category in {
+                    "embedding_provider_timeout", "embedding_provider_unavailable", "embedding_provider_rate_limited",
+                }
+                else "hybrid" if job.status == "completed" and job.retrieval_completed_at is not None
+                and job.answer_policy_version in ASK_SOURCE_ONLY_READ_POLICIES
+                else "not_searched"
+            ),
+            embedding_provider=job.embedding_provider,
+            embedding_model=job.embedding_model,
+            source_judge_provider=job.source_judge_provider,
+            source_judge_model=job.source_judge_model,
             ai_provider=job.ai_provider,
             ai_model=job.ai_model,
             retrieval_policy=job.retrieval_policy,
@@ -679,21 +1130,54 @@ class RagAnswerService:
             provider_retry_count=job.provider_retry_count,
             provider_rate_limit_wait_milliseconds=job.provider_rate_limit_wait_milliseconds,
             estimated_cost_microusd=job.estimated_cost_microusd,
-            actual_cost_microusd=job.actual_cost_microusd,
+            actual_cost_microusd=(
+                None if job.attempt_cost_unknown
+                or (job.answer_policy_version in ASK_SOURCE_ONLY_READ_POLICIES
+                    and job.usage_estimated)
+                else job.actual_cost_microusd
+            ),
+            estimated_additional_cost_microusd=(
+                job.estimated_cost_microusd
+                if job.answer_policy_version == ASK_REQUIRED_RELEASE_POLICY_VERSION
+                and self.settings.rag_related_pricing_configured
+                else None
+            ),
+            previous_attempt_cost_microusd=(
+                job.attempt_cost_microusd
+                if job.status == "failed"
+                and job.answer_policy_version == ASK_REQUIRED_RELEASE_POLICY_VERSION
+                and not job.attempt_cost_unknown
+                and self.settings.rag_related_pricing_configured
+                else None
+            ),
             usage_estimated=job.usage_estimated,
             support_rejection_count=job.support_rejection_count,
             error_code=job.error_code,
-            error_message=job.error_message,
+            error_message=(
+                "Knowledge search failed. Please try again."
+                if job.answer_policy_version in ASK_SOURCE_ONLY_READ_POLICIES
+                and job.status == "failed" and job.error_code == "rag_answer_failed"
+                else "Knowledge search was cancelled."
+                if job.answer_policy_version in ASK_SOURCE_ONLY_READ_POLICIES
+                and job.status == "cancelled"
+                else job.error_message
+            ),
+            failure_kind=failure_kind,
             cancellation_requested_at=job.cancellation_requested_at,
             created_at=job.created_at,
             completed_at=job.completed_at,
             updated_at=job.updated_at,
             can_cancel=job.status in ACTIVE_ANSWER_STATUSES and job.cancellation_requested_at is None,
             can_retry=(
+                self.settings.rag_source_only_available
+                and
                 job.status == "failed"
                 and job.error_retryable
+                and job.answer_policy_version == ASK_REQUIRED_RELEASE_POLICY_VERSION
+                and job.retrieval_policy == SOURCE_NAVIGATION_RETRIEVAL_POLICY.policy_id
                 and job.manual_retry_count < self.settings.rag_answer_max_manual_retries
             ),
+            related_excerpts=related_excerpts or [],
         )
 
 

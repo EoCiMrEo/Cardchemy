@@ -14,6 +14,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 
 LIVE_MODEL = "gemini-3.5-flash-lite"
@@ -195,6 +196,14 @@ def test_live_evaluation_refuses_unsupported_billing_before_provider_constructio
         pytest.fail("Provider construction must not precede hard budget admission")
 
     monkeypatch.setattr("app.ai.providers.get_ai_provider", forbidden_factory)
+    if configuration.get("flashcard_ai_provider") == "openai_compatible" or configuration.get(
+        "flashcard_ai_model"
+    ) == "gemini-3.5-flash-lite-preview":
+        with pytest.raises(ValidationError):
+            budget_settings(**configuration)
+        return
+    if configuration.get("flashcard_ai_model") == "gemini-3.8-flash":
+        configuration = configuration | {"flashcard_ai_thinking_level": "low"}
     with pytest.raises(RuntimeError, match="hard budget|FLASHCARD_AI_QUOTA_BUCKET"):
         build_budgeted_live_provider(budget_settings(**configuration))
 

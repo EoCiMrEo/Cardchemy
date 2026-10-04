@@ -14,6 +14,12 @@ RELEASE_PERMISSIONS = {
     "contents": "write", "packages": "write", "id-token": "write",
     "actions": "read", "checks": "read",
 }
+RUNTIME_VARIANTS = ("backend", "backend-ocr", "frontend")
+
+
+def shell_variant_loops(command: str) -> list[tuple[str, ...]]:
+    return [tuple(match.group(1).split()) for match in
+            re.finditer(r"\bfor variant in ([a-z0-9 -]+); do", command)]
 
 
 def validate_runtime_artifacts() -> None:
@@ -25,6 +31,17 @@ def validate_runtime_artifacts() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.validate(ROOT)
+
+
+def validate_release_inventory() -> None:
+    path = ROOT / "scripts" / "check_release.py"
+    spec = importlib.util.spec_from_file_location("check_release", path)
+    require(spec is not None and spec.loader is not None,
+            "Cannot load the signed release inventory checker")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    require(module.VARIANTS == RUNTIME_VARIANTS,
+            "Signed release artifact inventory must match every mandatory runtime")
 
 
 def require(condition: bool, message: str) -> None:
@@ -68,6 +85,16 @@ def validate_workflow(document: dict, filename: str) -> None:
         require(inventory is not None and inventory.get("env", {}).get("TRIVY_CACHE_DIR")
                 == "${{ runner.temp }}/cardchemy-trivy-cache",
                 "Direct Trivy scans must reuse the runner-temporary database cache")
+        build = next((step for step in steps if step.get("name") == "Build and verify every final Linux runtime"), None)
+        require(build is not None
+                and shell_variant_loops(build.get("run", "")) == [RUNTIME_VARIANTS]
+                and 'Dockerfile.answer-worker' not in build.get("run", "")
+                and '--file "$context/$dockerfile"' in build.get("run", "")
+                and 'scripts/check_images.py "$variant"' in build.get("run", ""),
+                "Signed release must build and probe every approved runtime")
+        require(shell_variant_loops(inventory.get("run", ""))
+                == [RUNTIME_VARIANTS[1:], RUNTIME_VARIANTS],
+                "Signed release must audit and inventory every approved runtime")
         ordered = (
             "Publish unique release tags and verify keyless image signatures",
             "Prepare source, notes and provenance",
@@ -82,6 +109,9 @@ def validate_workflow(document: dict, filename: str) -> None:
                 and positions == sorted(positions),
                 "Signed release must publish unique images, sign and draft in order")
         publish = steps[positions[0]].get("run", "")
+        require(shell_variant_loops(publish) == [RUNTIME_VARIANTS, RUNTIME_VARIANTS]
+                and shell_variant_loops(steps[positions[3]].get("run", "")) == [RUNTIME_VARIANTS],
+                "Signed release must publish, sign and recheck every approved runtime")
         pushes = [(index, match.group()) for index, step in enumerate(steps)
                   for match in re.finditer(r"\bdocker\s+push\b", step.get("run", ""))]
         require(pushes == [(positions[0], 'docker push')]
@@ -150,6 +180,19 @@ def main() -> None:
                 for step in jobs["mailpit"]["steps"]),
             "Mandatory email CI must verify actual authenticated TLS delivery and recovery")
     require(mandatory <= set(jobs), "A mandatory CI gate is missing")
+    container_matrix = jobs["containers"].get("strategy", {}).get("matrix", {}).get("include", [])
+    require(tuple(item.get("image") for item in container_matrix) == RUNTIME_VARIANTS
+            and all(item.get("dockerfile") == "Dockerfile"
+                    for item in container_matrix)
+            and all(item.get("context") == ("frontend" if item.get("image") == "frontend" else "backend")
+                    for item in container_matrix),
+            "Mandatory container matrix must build every runtime from its reviewed Dockerfile")
+    container_steps = jobs["containers"]["steps"]
+    require(any('--file "$CONTEXT/$DOCKERFILE"' in step.get("run", "") for step in container_steps)
+            and any('scripts/check_images.py "$IMAGE"' in step.get("run", "") for step in container_steps)
+            and any(step.get("name") == "Fail on high or critical runtime and OS vulnerabilities" for step in container_steps)
+            and any(step.get("name") == "Generate CycloneDX SBOM from the actual final image" for step in container_steps),
+            "Every container matrix member needs a smoke probe, vulnerability scan and SBOM")
     database_steps = jobs["database-artifact"]["steps"]
     require(any(step.get("run") == "python scripts/check_runtime_artifacts.py"
                 for step in database_steps), "Database CI must validate the artifact inventory")
@@ -174,6 +217,7 @@ def main() -> None:
              "artifacts/database-volume-upgrade/*/metadata.json"} <= retained,
             "Database CI must retain exact image/config/archive/recipe audit/SBOM/recovery provenance")
     validate_runtime_artifacts()
+    validate_release_inventory()
     require(set(jobs["ci-required"]["needs"]) == set(jobs) - {"ci-required"},
             "ci-required must depend on every mandatory job")
     require(jobs["ci-required"].get("if") == "always()", "ci-required must report earlier failures")
@@ -183,6 +227,8 @@ def main() -> None:
             "Mandatory dependency review fallback must audit every npm scope")
     require(any("pip_audit --require-hashes" in command and "--strict" in command
                 for command in audit_commands), "Python dependency review must audit the full hashed graph")
+    require(not any("requirements-answer.txt" in command for command in audit_commands),
+            "Retired answer-model dependencies must not enter the runtime audit inventory")
     protection = json.loads((ROOT / ".github" / "branch-protection.json").read_text())
     require(not protection["required_status_checks"].get("contexts")
             and protection["required_status_checks"]["checks"] == [{"context": "ci-required", "app_id": 15368}],

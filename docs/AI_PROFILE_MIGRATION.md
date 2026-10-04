@@ -7,6 +7,11 @@ configuration before recreating application processes. The exact 29-key mapping
 is retained in the [archived approved plan](<archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md#mandatory-key-mapping>).
 The application does not rename values or write an existing `.env` automatically.
 
+The two-request Ask enablement section below is **historical**. New Ask work
+follows source-only [ADR-022](decisions/ADR-022-related-knowledge-primary-ask.md)
+and the [Ask maintenance runbook](ASK_AI_SHUTDOWN.md). Do not enable an answer
+model or local verifier for new Ask jobs.
+
 ## Safe sequence for an existing installation
 
 1. Preserve the installation's Compose project/database identity and take a
@@ -29,9 +34,11 @@ The application does not rename values or write an existing `.env` automatically
 4. Choose explicit quota buckets and divide the provider account/project's
    actual RPM/input-TPM capacity across all enabled flashcard, indexing and
    answer worker roles and replicas. Separate keys do not create additional
-   account quota. Keep `RAG_ENABLED=false` until the relevant later execution
-   phases are installed and deliberately enabled. Set current model prices and
-   confirm endpoint/model availability before any paid execution.
+   account quota. Keep `RAG_ASK_ENABLED=false` through this upgrade. Old
+   three-call policy snapshots remain terminal under the current worker.
+   Preserve the existing `RAG_ENABLED` choice for Knowledge capture/indexing.
+   Set current model prices and confirm endpoint/model availability before any
+   paid execution.
 5. Run `python scripts/check_config_migration.py` from the repository root
    before `docker compose config --quiet` or native process startup. The
    preflight reports only removed key **names**, never values. Check private
@@ -54,11 +61,11 @@ The application does not rename values or write an existing `.env` automatically
    compatibility and the isolated no-quota deterministic journey before
    restoring new generation admission.
 
-`RAG_AI_*` and `RAG_EMBEDDING_*` are independent profiles. The initial answer
-profile is `gemini-3.5-flash`; the initial vector space is
+Historically, `RAG_AI_*` and `RAG_EMBEDDING_*` were independent profiles. The
+former answer profile was `gemini-3.5-flash`; the initial vector space is
 `gemini-embedding-001`, 1,536-dimensional float32 cosine, with document and
-query formatting `raw_text_v1`. An answer worker needs its answer and query
-embedding credentials; an indexing worker needs only its embedding credential.
+query formatting `raw_text_v1`. The new source-only Ask worker needs only the
+query-embedding credential; an indexing worker needs only its embedding credential.
 The existing generation worker needs only the flashcard credential. The API,
 email worker and browser never receive provider keys. Dedicated index/answer
 execution is implemented, but defining or enabling these settings alone does
@@ -70,3 +77,96 @@ Changing a URL, key account or model can make a pending snapshot incompatible
 even when the renamed values validate. Use the existing cancellation/draining
 workflow to resolve that condition explicitly. Do not regenerate installation
 secrets or delete a populated volume to fix configuration.
+
+## Gemini-only Lane 1 upgrade
+
+The 2026-09-22 provider decision accepted native `gemini` for Flashcard,
+historical Ask-answer and embedding work. New Ask has no text-model role.
+This is separate from the earlier `AI_*` key
+rename. Run the name-only `python scripts/check_config_migration.py` preflight
+against both root `.env` and private process injection before recreating any
+service. It reports configured legacy provider/custom-endpoint **names** only;
+never print credentials or provider URLs. In a private editor, set
+`FLASHCARD_AI_PROVIDER` and `RAG_EMBEDDING_PROVIDER` to `gemini`, leave
+historical `RAG_AI_PROVIDER_ENABLED=false`, and remove retired `*_BASE_URL`
+fields. Also remove the retired
+embedding document/query task-mode fields. Choose each text model from
+the [verified catalog](AI_PROVIDERS.md) for Flashcards; keep the 3.8 Flashcard
+and embedding-001 defaults unless changing them is deliberate. The
+closed catalog rejects 3.7/3.8 with `minimal` thinking before a provider call.
+
+Before this change, stop new admissions, drain compatible queued/retryable
+Flashcard and index work, and use the
+[Ask shutdown runbook](ASK_AI_SHUTDOWN.md) to terminally resolve old answer
+jobs. Do not silently execute an old provider/model or old catalog-policy
+snapshot on a new worker. A generation job whose snapshot is incompatible
+fails before PDF extraction and removes its retained encrypted source; its
+  manual retry returns a policy conflict. Record the terminal result and submit
+  a new, explicitly authorized job if the source is still available. Keep Ask
+  disabled until the two-request/local-support preflight below passes.
+
+Keep historical `openai_compatible` rows and embedding-space identities for
+restore and readback. If an active Subject uses a historical space, rebuild
+from its canonical stored pages into a staged native Gemini space, validate
+readiness and evaluation, then make an explicit atomic Subject cutover. Matching
+vector dimensions do not permit relabeling. Preserve backup and old space until
+the cutover and rollback evidence is complete. Follow
+[database operations](DATABASE_OPERATIONS.md) for a populated installation;
+neither the real `.env` nor named volumes need deletion for this upgrade.
+
+## Embedding 2 staging and Subject cutover
+
+`gemini-embedding-001` remains the default. To evaluate
+`gemini-embedding-2`, preserve the active 001 settings and backup first, then
+use a separate controlled staging process configured with all of:
+
+- `RAG_EMBEDDING_MODEL=gemini-embedding-2`;
+- `RAG_EMBEDDING_FORMAT_VERSION=gemini2_qa_section_v1`;
+- a new `RAG_EMBEDDING_SPACE_REVISION`;
+- `RAG_EMBEDDING_MAX_INPUT_TOKENS` no greater than 8192; and
+- the freshly reviewed input price, availability and quota limits.
+
+Stop new Ask admission and drain or terminally resolve queued old-profile index
+and answer jobs before changing a deployment-wide worker profile. Reindex from
+canonical pages into the staged space, run the model-2 query/retrieval corpus,
+verify every target content revision is ready, then use the guarded Subject
+cutover. After all target Subjects move, align the index and answer worker
+configuration and verify the authorized profile endpoint reports the matching
+active/configured identities. Ask stays unavailable for a mismatched Subject.
+
+On partial failure, atomically restore every already switched Subject to its 001
+space and restore the old process configuration, or keep Ask disabled while
+repairing the staged state. Retain old spaces and the backup. Do not relabel
+vectors merely because both profiles use 1,536 dimensions. Migration
+`20260922_0016` refuses schema downgrade while an Embedding 2 space exists.
+
+## Historical two-request Ask enablement (retired)
+
+The former sequence is retained for migration evidence only. **Do not execute
+it to enable new Ask work:**
+
+1. Apply Alembic through `20260922_0017` with writers drained and verify every
+   configured head and drift check. Old policy jobs must be terminally resolved;
+   never rewrite their snapshots.
+2. Install and verify the pinned local bundle with
+   `scripts/install_local_support_models.py`, then run
+   `scripts/evaluate_local_support.py --model-dir <verified-directory>`. Review
+   the NLI Apache-2.0 and QA CC-BY-4.0 licenses for the deployment.
+3. Confirm every Ask-enabled Subject's active space exactly matches the
+   configured query-embedding profile. A new Subject may still create its first
+   Knowledge index while Ask remains unavailable.
+4. In the root `.env`, configure current nonzero answer input/output and
+   embedding input prices, worker-only Gemini keys and quota labels, set
+   `RAG_LOCAL_SUPPORT_MODEL_DIR` to the verified host directory, and then set
+   `RAG_LOCAL_SUPPORT_ENABLED=true` and `RAG_ASK_ENABLED=true`. These settings
+   still do not authorize a paid test by themselves.
+5. Recreate the API and dedicated answer-worker image, verify the model directory
+   is mounted read-only, both artifacts load before claims, the worker is ready,
+   and the profile endpoint discloses the expected active/configured models.
+6. Run offline, disposable PostgreSQL, browser, security/privacy and the
+   explicitly authorized bounded two-request live gate. If any gate fails, set
+   `RAG_ASK_ENABLED=false`, recreate API/answer worker and preserve history.
+
+A manual Retry remains an explicit new attempt with a fresh idempotency identity
+and quota receipt. Never resolve an uncertain old attempt by replaying it
+automatically.

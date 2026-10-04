@@ -161,7 +161,13 @@ function SubjectDetailsContent() {
       )
       if (controller.signal.aborted) return
       generation.trackJob(queued)
-      setUploadMessage(copy.subject.uploadComplete)
+      setUploadMessage(
+        queued.status === 'awaiting_choice'
+          ? copy.subject.duplicatePending
+          : queued.knowledge_upload_outcome === 'no_changes'
+            ? copy.subject.noKnowledgeChanges
+            : copy.subject.uploadComplete,
+      )
       setSubmissionKey(null)
       setFile(null)
       setSetTitle('')
@@ -390,13 +396,15 @@ function SubjectDetailsContent() {
                 job={job}
                 onCancel={generation.cancelJob}
                 onRetry={generation.retryJob}
+                onChooseKnowledge={generation.chooseKnowledgeDuplicate}
+                onChooseCardCount={generation.chooseValidatedCardCount}
               />
             ))}
           </div>
         </section>
       ) : null}
 
-      {id ? <KnowledgeArea subjectId={id} /> : null}
+      {id ? <KnowledgeArea subjectId={id} onJobUpdated={generation.trackJob} /> : null}
 
       {id ? <AskAiPanel subjectId={id} /> : null}
 

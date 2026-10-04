@@ -174,7 +174,12 @@ export interface SetProgress {
   review: number
   mastered: number
   studied: number
+  attempted_count: number
+  attempted_percentage: number
   correct_count: number
+  ever_correct_count: number
+  progress_percentage: number
+  accuracy_percentage: number
   completion_percentage: number
   mastery_percentage: number
 }
@@ -189,11 +194,46 @@ export interface FlashcardUpdate {
 
 export type GenerationJobStatus =
   | 'awaiting_upload'
+  | 'awaiting_choice'
+  | 'awaiting_card_choice'
   | 'queued'
   | 'running'
   | 'completed'
   | 'failed'
   | 'cancelled'
+
+export type GenerationRejectionReason =
+  | 'unknown_source'
+  | 'chunk_quota'
+  | 'quote_not_contiguous'
+  | 'answer_not_in_quote'
+  | 'unclear_question'
+  | 'option_matches_question'
+  | 'near_duplicate'
+
+export interface GenerationQualityDiagnostics {
+  manual_retry_number: number
+  attempt_number: number
+  raw_count: number
+  grounded_count: number
+  valid_count: number
+  distinct_count: number
+  accepted_count: number
+  missing_count: number
+  rejected_count: number
+  refill_rounds_used: number
+  uncertain_request_count: number
+  rounds: Array<{
+    round: number
+    raw_count: number
+    grounded_count: number
+    valid_count: number
+    distinct_count: number
+    accepted_count: number
+    missing_count: number
+  }>
+  rejections: Record<GenerationRejectionReason, number>
+}
 
 export interface GenerationJob {
   id: string
@@ -201,7 +241,14 @@ export interface GenerationJob {
   job_kind: 'flashcards' | 'knowledge_only'
   document_id: string | null
   knowledge_content_revision_id: string | null
-  knowledge_capture_status: 'not_requested' | 'pending' | 'captured' | 'failed' | 'removed'
+  knowledge_capture_status: 'not_requested' | 'pending' | 'captured' | 'reused' | 'unchanged' | 'failed' | 'removed'
+  knowledge_upload_outcome: 'no_changes' | 'reused' | 'separate_copy' | null
+  duplicate_candidate: {
+    document_id: string
+    title: string
+    can_reuse: boolean
+  } | null
+  choice_expires_at: IsoDateTime | null
   knowledge_capture_error_code: string | null
   knowledge_capture_error_message: string | null
   flashcard_set_id: string | null
@@ -210,6 +257,14 @@ export interface GenerationJob {
   stage: string
   requested_card_count: number
   generated_card_count: number | null
+  valid_candidate_count: number
+  card_choice_expires_at: IsoDateTime | null
+  selected_card_count: number | null
+  can_accept_smaller_target: boolean
+  latest_attempt_rejected_card_count: number
+  latest_attempt_quality_diagnostics: GenerationQualityDiagnostics | null
+  retry_estimated_additional_cost_microusd: number | null
+  previous_attempt_cost_unknown: boolean
   ai_provider: string
   ai_model: string
   estimated_input_tokens: number
@@ -244,8 +299,11 @@ export interface GenerationJob {
   can_retry: boolean
 }
 
+export type KnowledgeDuplicateChoice = 'reuse' | 'separate_copy'
+
 export interface GenerationJobCreate {
   subject_id: string
+  document_id?: string | null
   set_title: string
   set_description?: string | null
   source_pdf_name: string
@@ -351,12 +409,26 @@ export interface RagThread {
 
 export interface RagProfile {
   rag_enabled: boolean
+  ask_enabled: boolean
+  ask_policy: 'related_knowledge_navigation_v8' | 'related_knowledge_navigation_v7' | 'related_knowledge_navigation_v6' | 'related_knowledge_navigation_v5' | 'related_knowledge_navigation_v4' | 'related_knowledge_navigation_v3' | 'related_knowledge_navigation_v2' | 'related_knowledge_v1' | null
+  ask_available: boolean
   answer_available: boolean
-  answer_provider: string
-  answer_model: string
+  answer_provider: string | null
+  answer_model: string | null
   embedding_available: boolean
   embedding_provider: string
   embedding_model: string
+  active_embedding_provider: string | null
+  active_embedding_model: string | null
+  active_embedding_space_matches: boolean
+  source_judge_available: boolean
+  source_judge_provider: string | null
+  source_judge_model: string | null
+  source_judge_transfers_published_content: boolean
+  source_judge_thinking_level: 'LOW' | 'HIGH' | null
+  source_judge_transfers_page_images: boolean
+  source_judge_transfers_literal_subject_context: boolean
+  source_judge_contract_version: string | null
   chat_retention_days: number
 }
 
@@ -377,6 +449,7 @@ export interface RagMessage {
   id: string
   role: 'user' | 'assistant'
   outcome: 'answer' | 'abstained' | null
+  abstention_kind: 'retrieval_insufficient' | 'model_abstained' | 'support_rejected' | null
   content: string | null
   hidden: boolean
   sources: RagSource[]
@@ -389,15 +462,65 @@ export interface RagHistory {
   messages: RagMessage[]
 }
 
+export interface RagRelatedExcerpt {
+  excerpt_order: number
+  document_title: string
+  page_number: number
+  section: string | null
+  source_quote: string
+}
+
+export interface RagRelatedPage {
+  document_title: string
+  page_number: number
+  section: string | null
+  source_quote: string
+  page_content: string
+  reference_start: number | null
+  reference_end: number | null
+}
+
+export interface RagOriginalPdfMetadata {
+  byte_length: number
+  page_count: number
+}
+
+export interface PublishedKnowledgeDocument {
+  id: string
+  title: string
+  page_count: number
+  has_original_pdf: boolean
+}
+
+export interface PublishedKnowledgeSearchHit {
+  document_id: string
+  document_title: string
+  page_number: number
+}
+
+export interface PublishedKnowledgePage {
+  document_title: string
+  page_number: number
+  page_content: string
+  truncated: boolean
+}
+
 export interface RagAnswerJob {
   id: string
   thread_id: string
   subject_id: string
   question_message_id: string
   answer_message_id: string | null
+  ask_policy: 'related_knowledge_navigation_v8' | 'related_knowledge_navigation_v7' | 'related_knowledge_navigation_v6' | 'related_knowledge_navigation_v5' | 'related_knowledge_navigation_v4' | 'related_knowledge_navigation_v3' | 'related_knowledge_navigation_v2' | 'related_knowledge_v1' | 'two_request_local_support_v1' | 'legacy_three_call_v1' | null
+  search_mode: 'hybrid' | 'lexical_fallback' | 'not_searched'
+  result_kind: 'related_knowledge' | 'no_match' | 'clarification_needed' | null
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  ai_provider: string
-  ai_model: string
+  embedding_provider: string | null
+  embedding_model: string | null
+  source_judge_provider: string | null
+  source_judge_model: string | null
+  ai_provider: string | null
+  ai_model: string | null
   retrieval_policy: string
   attempt_count: number
   manual_retry_count: number
@@ -411,10 +534,14 @@ export interface RagAnswerJob {
   provider_rate_limit_wait_milliseconds: number
   estimated_cost_microusd: number | null
   actual_cost_microusd: number | null
+  estimated_additional_cost_microusd: number | null
+  previous_attempt_cost_microusd: number | null
   usage_estimated: boolean
   support_rejection_count: number
+  related_excerpts: RagRelatedExcerpt[]
   error_code: string | null
   error_message: string | null
+  failure_kind: 'provider_temporarily_unavailable' | 'provider_rejected' | 'invalid_output' | 'support_unavailable' | 'internal_failure' | null
   cancellation_requested_at: IsoDateTime | null
   created_at: IsoDateTime
   completed_at: IsoDateTime | null

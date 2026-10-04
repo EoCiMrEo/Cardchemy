@@ -12,3 +12,56 @@ condition = "AND"
 paths = ['''(?:^|/)backend/tests/test_generation_jobs\.py$''']
 regexTarget = "line"
 regexes = ['''^\s*idempotency_key\s*=\s*"(?:reservation-key-[12]|quota-reservation-[12])"\s*,?\s*$''']
+
+
+[[rules.allowlists]]
+description = "Exact public SHA256 finding at .agent/logs/2026-09-30/2026-09-30-approved-augmented-public-pilot-preflight.md; verified noncredential"
+condition = "AND"
+paths = ['''(?:^|/)\.agent/logs/2026-09-30/2026-09-30-approved-augmented-public-pilot-preflight\.md$''']
+regexTarget = "match"
+regexes = ['''^Single-credential launcher: `6278a3d798e2d7ddfc574f5f671cae06bd1790085c54d696371b97310dea49ec`$''']
+
+[[rules.allowlists]]
+description = "Exact public SHA256 finding at .agent/logs/2026-10-01/2026-10-01-visual-page-source-input-result.md; verified noncredential"
+condition = "AND"
+paths = ['''(?:^|/)\.agent/logs/2026-10-01/2026-10-01-visual-page-source-input-result\.md$''']
+regexTarget = "match"
+regexes = ['''^Access mapping SHA:\r?\n`b437660b9344fb00c8d346112dbf9dc08ef2d8f089d78996fba7225e2136224c`$''']
+
+[[rules.allowlists]]
+description = "Exact public SHA256 finding at backend/tests/test_visual_source_feasibility_review.py; verified noncredential"
+condition = "AND"
+paths = ['''(?:^|/)backend/tests/test_visual_source_feasibility_review\.py$''']
+regexTarget = "match"
+regexes = ['''^access_mapping_sha256": "b437660b9344fb00c8d346112dbf9dc08ef2d8f089d78996fba7225e2136224c"$''']
+
+[[rules.allowlists]]
+description = "Exact frozen public roster SHA in the transport successor record; verified noncredential"
+condition = "AND"
+paths = ['''(?:^|/)\.agent/logs/2026-10-02/2026-10-02-public-heldout-transport-successor-proposal\.md$''']
+regexTarget = "match"
+regexes = ['''^access\. Roster SHA:\r?\n`de624cb08aaa3c59f8f7adf815a19f0c9f5e2dc180e26cf2b4bdf9e505109e9d`$''']
+
+[[rules.allowlists]]
+description = "Exact invented consumed-v2 authorization in the v3 caller negative test; not a provider credential"
+condition = "AND"
+paths = ['''(?:^|/)backend/tests/test_visual_public_heldout_v3_caller\.py$''']
+regexTarget = "line"
+regexes = ['''^\s*auth = "invented_consumed_v2"\s*$''']
+
+[[rules.allowlists]]
+description = "Exact invented consumed-v3 authorization in the v4 caller negative test; not a provider credential"
+condition = "AND"
+paths = ['''(?:^|/)backend/tests/test_visual_public_heldout_v4_caller\.py$''']
+regexTarget = "line"
+regexes = ['''^\s*auth = "invented_consumed_v3"\s*$''']
+
+[[rules.allowlists]]
+description = "Exact SHA256 fingerprint of the public Ed25519 review key in private trial planners; not key material"
+condition = "AND"
+paths = [
+  '''(?:^|/)scripts/prepare_private_visual_trial_v7\.py$''',
+  '''(?:^|/)scripts/prepare_private_visual_trial_v8\.py$''',
+]
+regexTarget = "match"
+regexes = ['''^trusted_review_key": "2fc3a8810822f2dcd915872df4310955fba398efab4d79bd232e00a9ec7df3e3"$''']

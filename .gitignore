@@ -59,6 +59,9 @@ sites_data/
 **/test-results.xml
 /frontend/bundle-report.json
 /artifacts/
+# Exact public PNG copies still bound to the active visual review packet.
+/tmp/pdfs/visual-semantic-access-*/
+/runtime-data/local-support/
 
 !backend/.coveragerc
 /.agent/.verification/

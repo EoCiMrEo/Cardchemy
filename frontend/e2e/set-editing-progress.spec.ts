@@ -90,9 +90,11 @@ test('validates multiple-choice edits, preserves approval, and keeps other card 
 test('keeps per-card actions and the newer editor stable while another save is pending', async ({
   page,
 }) => {
+  let finishSave: () => void = () => {}
+  const saveHeld = new Promise<void>((resolve) => { finishSave = resolve })
   const api = await installMockApi(page, {
     auth: 'instructor',
-    resolver: (call) => {
+    resolver: async (call) => {
       if (call.method === 'GET' && call.path === '/subjects/sets/set-1') {
         return { json: fixtures.set }
       }
@@ -100,7 +102,8 @@ test('keeps per-card actions and the newer editor stable while another save is p
         return { json: fixtures.cards }
       }
       if (call.method === 'PUT' && call.path === '/flashcards/card-1') {
-        return { delayMs: 300, json: { ...fixtures.cards[0], ...(call.body as object) } }
+        await saveHeld
+        return { json: { ...fixtures.cards[0], ...(call.body as object) } }
       }
       return undefined
     },
@@ -126,7 +129,8 @@ test('keeps per-card actions and the newer editor stable while another save is p
     fixtures.cards[1].front_content,
   )
 
-  await page.waitForTimeout(350)
+  finishSave()
+  await expect.poll(() => page.getByRole('button', { name: `Delete ${fixtures.cards[0].front_content}`, exact: true }).isEnabled()).toBe(true)
   await expect(page.getByRole('textbox', { name: 'Front' })).toHaveValue(
     fixtures.cards[1].front_content,
   )
@@ -153,7 +157,8 @@ test('renders completion and mastery from the server-authoritative progress resp
 
   await page.goto('/subjects/subject-1')
 
-  await expect(page.getByText('2/4')).toBeVisible()
-  await expect(page.getByText('37% complete')).toBeVisible()
+  await expect(page.getByText('1/4')).toBeVisible()
+  await expect(page.getByText('Accuracy 50%')).toBeVisible()
+  await expect(page.getByText('Attempted 2/4 (50%)')).toBeVisible()
   await expect(page.getByText('63% mastery')).toBeVisible()
 })

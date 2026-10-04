@@ -10,7 +10,7 @@ from typing import Any
 
 from app.ai.chunking import (
     PreparedDocument,
-    allocate_card_targets,
+    allocate_adaptive_card_targets,
     chunk_document,
     estimate_tokens,
     pack_chunks_for_requests,
@@ -97,6 +97,7 @@ class PipelineError(RuntimeError):
         cached_input_tokens: int = 0,
         provider_request_counts_by_stage: dict[str, int] | None = None,
         quality_diagnostics: dict[str, Any] | None = None,
+        validated_cards: tuple[ValidatedCard, ...] = (),
     ) -> None:
         super().__init__(safe_message)
         self.code = code
@@ -121,6 +122,9 @@ class PipelineError(RuntimeError):
             provider_request_counts_by_stage or {}
         )
         self.quality_diagnostics = quality_diagnostics or {}
+        # Private worker-only handoff after bounded exhaustion. Never serialize
+        # these cards into safe telemetry or exception messages.
+        self.validated_cards = validated_cards
 
 
 def cost_microusd(settings: Settings, input_tokens: int, output_tokens: int) -> int | None:
@@ -378,28 +382,28 @@ class FlashcardGenerationPipeline:
         map_calls = len(summary_packs) if uses_planning else 0
         reduce_calls = self._reduce_call_count(map_calls)
         summary_calls = map_calls + reduce_calls
-        allocation = allocate_card_targets(chunks, target_count)
+        projected_requested: dict[str, int] = {}
         summary_placeholder = (
             "summary " * self.settings.flashcard_ai_summary_output_tokens
             if uses_planning
             else None
         )
-        generation_batches = self._generation_batches(
-            chunks,
-            allocation,
-            summary_placeholder,
-            context_chunks=summary_packs[0] if not uses_planning else (),
-        )
-        # Reserve the entire bounded exclusion envelope for every refill batch.
-        # This also includes the field/list/key overhead and any changed packing.
-        refill_batches = self._generation_batches(
-            chunks, allocation, summary_placeholder,
-            context_chunks=summary_packs[0] if not uses_planning else (),
-            reserved_exclusion_tokens=REFILL_PROMPT_TOKEN_RESERVE,
-        ) if self.settings.flashcard_ai_refill_rounds else []
-        self.estimated_request_count = summary_calls + len(generation_batches) + (
-            len(refill_batches) * self.settings.flashcard_ai_refill_rounds
-        )
+        # Simulate the no-yield coverage path. Runtime _call still enforces the
+        # exact remaining token/cost envelope for every adaptive request.
+        all_round_batches: list[list[CardRequestBatch]] = []
+        for _ in range(self.settings.flashcard_ai_refill_rounds + 1):
+            allocation = allocate_adaptive_card_targets(
+                chunks, target_count, requested_by_chunk_id=projected_requested,
+                accepted_by_chunk_id={},
+            )
+            all_round_batches.append(self._generation_batches(
+                chunks, allocation, summary_placeholder,
+                context_chunks=summary_packs[0] if not uses_planning else (),
+                reserved_exclusion_tokens=REFILL_PROMPT_TOKEN_RESERVE,
+            ))
+            for chunk_id, count in allocation.items():
+                projected_requested[chunk_id] = projected_requested.get(chunk_id, 0) + count
+        self.estimated_request_count = summary_calls + sum(len(batches) for batches in all_round_batches)
         map_input_tokens = sum(
             self._prompt_tokens(self._summary_map_prompt(pack))
             for pack in summary_packs
@@ -407,29 +411,19 @@ class FlashcardGenerationPipeline:
         reduce_input_tokens = reduce_calls * self._prompt_tokens(
             summary_reduce_prompt([summary_placeholder or ""] * 8)
         )
-        generation_input_per_round = sum(
+        generation_input = sum(
             self._prompt_tokens(self._generation_prompt(batch, summary_placeholder))
-            for batch in generation_batches
+            + REFILL_PROMPT_TOKEN_RESERVE
+            for batches in all_round_batches for batch in batches
         )
-        refill_input_per_round = sum(
-            self._prompt_tokens(self._generation_prompt(batch, summary_placeholder)) + REFILL_PROMPT_TOKEN_RESERVE
-            for batch in refill_batches
-        )
-        self.estimated_input_tokens = map_input_tokens + reduce_input_tokens + generation_input_per_round + (
-            refill_input_per_round * self.settings.flashcard_ai_refill_rounds
-        )
-        generation_output_per_round = sum(
-            min(
-                self.settings.flashcard_ai_max_output_tokens,
-                batch.requested_count * 512 + 256,
-            )
-            for batch in generation_batches
+        self.estimated_input_tokens = map_input_tokens + reduce_input_tokens + generation_input
+        generation_output = sum(
+            min(self.settings.flashcard_ai_max_output_tokens, batch.requested_count * 512 + 256)
+            for batches in all_round_batches for batch in batches
         )
         self.estimated_output_tokens = (
             summary_calls * self.settings.flashcard_ai_summary_output_tokens
-            + generation_output_per_round
-            + sum(min(self.settings.flashcard_ai_max_output_tokens, batch.requested_count * 512 + 256)
-                  for batch in refill_batches) * self.settings.flashcard_ai_refill_rounds
+            + generation_output
         )
         self.estimated_cost_microusd = cost_microusd(
             self.settings, self.estimated_input_tokens, self.estimated_output_tokens
@@ -716,16 +710,22 @@ class FlashcardGenerationPipeline:
             )
             global_summary = (await self._reduce_summaries(list(summaries))).summary
         accepted: list[ValidatedCard] = []
+        requested_by_chunk_id: dict[str, int] = {}
+        accepted_by_chunk_id: dict[str, int] = {}
 
         for round_index in range(self.settings.flashcard_ai_refill_rounds + 1):
             missing = target_count - len(accepted)
             if missing <= 0:
                 break
-            allocations = allocate_card_targets(chunks, missing)
+            allocations = allocate_adaptive_card_targets(
+                chunks, missing, requested_by_chunk_id=requested_by_chunk_id,
+                accepted_by_chunk_id=accepted_by_chunk_id,
+            )
             exclusions = accepted_exclusions(accepted) if round_index > 0 else None
             round_counts = {
                 "round": round_index, "raw_count": 0, "grounded_count": 0,
-                "distinct_count": 0, "accepted_count": len(accepted), "missing_count": missing,
+                "valid_count": 0, "distinct_count": 0,
+                "accepted_count": len(accepted), "missing_count": missing,
             }
             self._quality_rounds.append(round_counts)
 
@@ -735,75 +735,82 @@ class FlashcardGenerationPipeline:
                 global_summary,
                 context_chunks=summary_packs[0] if len(summary_packs) == 1 else (),
                 exclusions=exclusions,
+                reserved_exclusion_tokens=REFILL_PROMPT_TOKEN_RESERVE,
             )
 
-            async def bounded_generation(batch: CardRequestBatch):
-                candidates = await self._generate(
-                    batch, global_summary, round_index, exclusions
-                )
-                round_counts["raw_count"] += len(candidates)
-                return batch, candidates
+            # Batches that share a chunk run in different waves. The first
+            # batch is validated before more work on that same evidence can be
+            # requested; unrelated chunks can still run concurrently.
+            waves: list[list[CardRequestBatch]] = []
+            for batch in request_batches:
+                batch_ids = set(batch.requested_by_chunk_id)
+                if waves and any(batch_ids & set(item.requested_by_chunk_id) for item in waves[-1]):
+                    waves.append([])
+                if not waves:
+                    waves.append([])
+                waves[-1].append(batch)
+            for wave_index, wave in enumerate(waves):
+                if len(accepted) >= target_count:
+                    break
+                wave_exclusions = accepted_exclusions(accepted) if accepted else None
+                async def call_batch(batch: CardRequestBatch):
+                    candidates = await self._generate(batch, global_summary, round_index, wave_exclusions)
+                    round_counts["raw_count"] += len(candidates)
+                    return batch, candidates
 
-            batches = []
-            if request_batches:
-                # Card generation has a different schema from summaries, so it
-                # receives its own single-call compatibility probe.
-                batches.append(await bounded_generation(request_batches[0]))
-                batches.extend(
-                    await self._gather_fail_fast(
-                        *(
-                            bounded_generation(batch)
-                            for batch in request_batches[1:]
+                # Keep the original one-call compatibility probe before any
+                # generation fan-out. Later waves use validated exclusions.
+                if round_index == 0 and wave_index == 0 and len(wave) > 1:
+                    batches = [await call_batch(wave[0])]
+                    batches.extend(await self._gather_fail_fast(*(call_batch(batch) for batch in wave[1:])))
+                else:
+                    batches = await self._gather_fail_fast(*(call_batch(batch) for batch in wave))
+                for request_batch, candidates in batches:
+                    batch_accepted: dict[str, int] = {}
+                    for chunk_id, count in request_batch.requested_by_chunk_id.items():
+                        requested_by_chunk_id[chunk_id] = requested_by_chunk_id.get(chunk_id, 0) + count
+                    batch_chunks_by_id = {chunk.chunk_id: chunk for chunk in request_batch.chunks}
+                    for candidate in candidates:
+                        allowed_count = request_batch.requested_by_chunk_id.get(candidate.source_chunk_id)
+                        if allowed_count is None:
+                            self._reject("unknown_source")
+                            continue
+                        if batch_accepted.get(candidate.source_chunk_id, 0) >= allowed_count:
+                            self._reject("chunk_quota")
+                            continue
+                        validated, reason = inspect_grounded_candidate(candidate, batch_chunks_by_id)
+                        if reason not in {"unknown_source", "quote_not_contiguous", "answer_not_in_quote"}:
+                            round_counts["grounded_count"] += 1
+                        if validated is None:
+                            self._reject(reason or "unknown_source")
+                            continue
+                        round_counts["valid_count"] += 1
+                        if not append_if_distinct(
+                            accepted, validated,
+                            threshold=self.settings.flashcard_ai_duplicate_similarity_threshold,
+                        ):
+                            self._reject("near_duplicate")
+                            continue
+                        batch_accepted[candidate.source_chunk_id] = (
+                            batch_accepted.get(candidate.source_chunk_id, 0) + 1
                         )
-                    )
-                )
-            for request_batch, candidates in batches:
-                accepted_by_chunk_id: dict[str, int] = {}
-                batch_chunks_by_id = {
-                    chunk.chunk_id: chunk for chunk in request_batch.chunks
-                }
-                for candidate in candidates:
-                    allowed_count = request_batch.requested_by_chunk_id.get(
-                        candidate.source_chunk_id
-                    )
-                    if allowed_count is None:
-                        self._reject("unknown_source")
-                        continue
-                    if (
-                        accepted_by_chunk_id.get(candidate.source_chunk_id, 0)
-                        >= allowed_count
-                    ):
-                        self._reject("chunk_quota")
-                        continue
-                    validated, reason = inspect_grounded_candidate(
-                        candidate, batch_chunks_by_id
-                    )
-                    if validated is None:
-                        self._reject(reason or "unknown_source")
-                        continue
-                    round_counts["grounded_count"] += 1
-                    if not append_if_distinct(
-                        accepted,
-                        validated,
-                        threshold=self.settings.flashcard_ai_duplicate_similarity_threshold,
-                    ):
-                        self._reject("near_duplicate")
-                        continue
-                    accepted_by_chunk_id[candidate.source_chunk_id] = (
-                        accepted_by_chunk_id.get(candidate.source_chunk_id, 0) + 1
-                    )
-                    round_counts["distinct_count"] += 1
-                    round_counts["accepted_count"] = len(accepted)
-                    round_counts["missing_count"] = target_count - len(accepted)
-                    if len(accepted) >= target_count:
-                        break
+                        accepted_by_chunk_id[candidate.source_chunk_id] = (
+                            accepted_by_chunk_id.get(candidate.source_chunk_id, 0) + 1
+                        )
+                        round_counts["distinct_count"] += 1
+                        round_counts["accepted_count"] = len(accepted)
+                        round_counts["missing_count"] = target_count - len(accepted)
+                        if len(accepted) >= target_count:
+                            break
 
         if len(accepted) != target_count:
-            raise self._error(
+            error = self._error(
                 "insufficient_grounded_cards",
                 "The provider could not produce enough distinct, source-grounded cards.",
                 retryable=True,
             )
+            error.validated_cards = tuple(accepted)
+            raise error
         actual_cost = cost_microusd(
             self.settings, self.usage.input_tokens, self.usage.output_tokens
         )

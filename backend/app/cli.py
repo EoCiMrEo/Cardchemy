@@ -224,6 +224,51 @@ async def cutover_rag_space(
     write_result({"event": "rag_space_cutover", "subject_id": str(subject_id), "revision_count": revision_count})
 
 
+async def resolve_ask_shutdown(*, apply: bool, writers_stopped: bool) -> None:
+    """Preview or terminally resolve old queued/running Ask jobs after admission stops."""
+
+    from app.models.rag import RagAnswerJob
+
+    settings = get_settings()
+    if settings.rag_ask_enabled:
+        raise SystemExit("Disable RAG_ASK_ENABLED before resolving old Ask jobs")
+    if apply and not writers_stopped:
+        raise SystemExit("--writers-stopped is required before terminally resolving Ask jobs")
+    async with async_session_maker() as db:
+        async with db.begin():
+            query = select(RagAnswerJob).where(RagAnswerJob.status.in_(("queued", "running"))).order_by(
+                RagAnswerJob.created_at, RagAnswerJob.id
+            )
+            if apply and db.get_bind().dialect.name == "postgresql":
+                query = query.with_for_update()
+            jobs = list((await db.scalars(query)).all())
+            counts = {
+                "queued": sum(job.status == "queued" for job in jobs),
+                "running": sum(job.status == "running" for job in jobs),
+                "possible_remote_execution": sum(
+                    job.status == "running" and job.provider_call_started_at is not None for job in jobs
+                ),
+            }
+            if apply:
+                now = utcnow()
+                for job in jobs:
+                    uncertain = job.status == "running" and job.provider_call_started_at is not None
+                    job.status = "failed"
+                    job.completed_at = now
+                    job.error_code = "rag_ask_shutdown"
+                    job.error_message = "Ask AI was paused before this answer completed."
+                    job.error_retryable = False
+                    job.failed_stage = job.failed_stage or "shutdown"
+                    job.provider_error_category = job.provider_error_category or "shutdown"
+                    job.execution_uncertain = job.execution_uncertain or uncertain
+                    job.worker_id = None
+                    job.claim_token = None
+                    job.heartbeat_at = None
+                    job.lease_expires_at = None
+                    job.updated_at = now
+    write_result({"event": "ask_shutdown_resolution", "applied": apply, **counts})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Cardchemy operator commands")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -254,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     retention.add_argument("--apply", action="store_true")
     metrics = subparsers.add_parser("operations-status", help="Show private aggregate diagnostics")
     metrics.add_argument("--job-id", type=UUID, help="Include content-free diagnostics for one generation job")
+    metrics.add_argument("--answer-job-id", type=UUID, help="Include bounded content-free diagnostics for one Ask job")
     audit = subparsers.add_parser("audit-status", help="Show bounded content-free privileged-action history")
     audit.add_argument("--target-id", type=UUID)
     audit.add_argument("--limit", type=int, choices=range(1, 101), default=20)
@@ -267,6 +313,10 @@ def build_parser() -> argparse.ArgumentParser:
     cutover.add_argument("--owner-id", required=True, type=UUID)
     cutover.add_argument("--space-hash", required=True)
     cutover.add_argument("--apply", action="store_true")
+    ask_shutdown = subparsers.add_parser("resolve-ask-shutdown", help="Preview or terminally resolve old Ask jobs after Ask admission is disabled")
+    ask_shutdown.add_argument("--apply", action="store_true")
+    ask_shutdown.add_argument("--writers-stopped", action="store_true")
+    subparsers.add_parser("provider-migration-inventory", help="Show content-free provider/job/space migration inventory")
     return parser
 
 
@@ -295,6 +345,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 await cutover_rag_space(
                     args.subject_id, args.owner_id, args.space_hash, apply=args.apply
                 )
+            elif args.command == "resolve-ask-shutdown":
+                await resolve_ask_shutdown(apply=args.apply, writers_stopped=args.writers_stopped)
+            elif args.command == "provider-migration-inventory":
+                from app.services.operations import provider_migration_inventory
+                async with async_session_maker() as db:
+                    write_result(await provider_migration_inventory(db, get_settings()))
             elif args.command == "audit-status":
                 from app.models.audit import AuditEvent
                 async with async_session_maker() as db:
@@ -306,10 +362,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                                               for column in AuditEvent.__table__.columns}
                                              for event in events]})
             elif args.command in {"operations-status", "report-telemetry"}:
-                from app.services.operations import operations_status, report_telemetry
+                from app.services.operations import answer_job_diagnostics, operations_status, report_telemetry
                 async with async_session_maker() as db:
                     if args.command == "operations-status":
-                        write_result(await operations_status(db, get_settings(), job_id=args.job_id))
+                        report = await operations_status(db, get_settings(), job_id=args.job_id)
+                        if args.answer_job_id is not None:
+                            report["answer_job"] = await answer_job_diagnostics(db, args.answer_job_id)
+                        write_result(report)
                     else:
                         write_result(await report_telemetry(db, get_settings()))
         finally:

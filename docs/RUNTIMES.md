@@ -90,6 +90,34 @@ Alpine 3.24, runs as a non-root application user, and omits the compiler/header
 toolchain used in its dependency-builder stage. Exact reference sizes and release inspection
 commands are in [Deployment and self-hosting](DEPLOYMENT.md).
 
+The frontend runtime upgrades Alpine packages during its build and requires
+`pcre2>=10.49-r0` from the Alpine 3.24 repository. The explicit floor makes
+the build fail if a mirror cannot provide the fix for
+[CVE-2026-103111](https://github.com/PCRE2Project/pcre2/security/advisories/GHSA-r9hj-j2rw-4q3m).
+Check the installed package and scan the exact rebuilt image before reuse.
+
+The approved source-only Ask path in this checkout reuses the normal backend
+image and requires no ONNX Runtime or local answer model. The former dedicated
+answer-worker description below is a **historical Lane 5 runtime**; do not use
+its artifact or resource claims as a source-only release gate. The new image
+contract still needs its own build/security verification.
+
+The dedicated historical answer-worker copied Python 3.11.16 and its hash-locked dependencies
+from a pinned Debian trixie builder into a pinned distroless Debian 13 runtime
+because ONNX Runtime 1.30.0 ships glibc manylinux wheels. It runs as
+nonroot UID/GID 10001, removes package installers, sets Hugging Face offline
+mode and mounts the operator-installed local-support bundle read-only. Its
+hash-locked dependency superset adds NumPy 2.4.1, ONNX Runtime 1.30.0 and
+tokenizers 0.22.1 while retaining every shared backend pin. Both NLI and QA
+model/tokenizer digests are verified before the worker claims jobs.
+
+The measured 2026-09-23 local bundle was 181,734,633 bytes; startup took
+3,248.539 ms and increased working set by 330.555 MiB on the reference Windows
+host. These measurements fit the 200 MiB artifact, 10-second startup and 512 MiB
+RSS ceilings but do not establish another host or architecture. Linux/amd64 is
+the supported answer-worker target; operators must repeat the local corpus and
+resource check on their deployment hardware.
+
 Reference build/runtime bases are pinned to immutable OCI index digests in the
 Dockerfiles. Dependency PR #3's Python 3.14 and Node 26 suggestions are reconciled
 to current patches of the supported majors; a dependency merge does not expand

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted; existing behavior verified 2026-09-16.
+Superseded for student display and success decisions by [ADR-016](ADR-016-study-progress-and-option-order.md).
+The attempted completion and mastery API meanings remain supported.
 
 ## Context
 

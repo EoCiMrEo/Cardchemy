@@ -36,6 +36,7 @@ from app.models.rag import (
     RagAnswerQuotaEvent,
     RagMessage,
     RagMessageSource,
+    RagRelatedEvidence,
     RagThread,
 )
 from app.models.email import EmailOutboxMessage
@@ -130,6 +131,7 @@ async def export_account(db: AsyncSession, user_id: UUID) -> dict:
         "jobs": await rows(GenerationJob, GenerationJob.user_id == user_id,
                            ("id", "subject_id", "job_kind", "document_id",
                             "knowledge_content_revision_id", "knowledge_capture_status",
+                            "knowledge_upload_outcome", "knowledge_choice", "knowledge_choice_expires_at",
                             "knowledge_capture_error_code", "status", "stage", "requested_card_count",
                             "generated_card_count", "ai_provider", "ai_model", "error_code",
                             "provider_request_count", "provider_retry_count", "estimated_input_tokens",
@@ -189,7 +191,7 @@ async def export_account(db: AsyncSession, user_id: UUID) -> dict:
         "rag_messages": await rows(
             RagMessage,
             RagMessage.user_id == user_id,
-            ("id", "thread_id", "subject_id", "role", "outcome", "content",
+            ("id", "thread_id", "subject_id", "role", "outcome", "abstention_kind", "content",
              "source_count", "corpus_revision", "created_at",
              "expires_at"),
         ),
@@ -211,8 +213,23 @@ async def export_account(db: AsyncSession, user_id: UUID) -> dict:
              "provider_request_count", "provider_retry_count",
              "provider_rate_limit_wait_milliseconds", "estimated_cost_microusd",
              "actual_cost_microusd", "usage_estimated", "support_rejection_count",
-             "error_code", "created_at", "completed_at"),
+             "error_code", "failure_reason", "created_at", "completed_at"),
         ),
+        # Exact related passages are reconstructed only from currently eligible
+        # Knowledge on a private read; the job retains bounded offsets, not a
+        # second copy of the lecture text.
+        "rag_related_evidence": [
+            _fields(row, (
+                "job_id", "excerpt_order", "thread_id", "subject_id", "chunk_id",
+                "document_id", "content_revision_id", "index_revision_id",
+                "source_kind", "start_offset", "end_offset", "manual_retry_number",
+                "bundle_size", "created_at", "expires_at",
+            ))
+            for row in (await db.scalars(
+                select(RagRelatedEvidence).where(RagRelatedEvidence.user_id == user_id)
+                .order_by(RagRelatedEvidence.job_id, RagRelatedEvidence.excerpt_order)
+            )).all()
+        ],
     }
 
 

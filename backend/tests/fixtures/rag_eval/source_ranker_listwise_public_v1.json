@@ -1,0 +1,2503 @@
+{
+  "schema": "source_ranker_listwise_public_v1",
+  "provenance": "Independent invented public relation examples; no private or application content.",
+  "scope": "Window-level relative ranking only; not SQL recall, PDF fidelity, or release evidence.",
+  "groups": [
+    {
+      "group_id": "C-acronym_expansion-1",
+      "split": "calibration",
+      "relation": "acronym_expansion",
+      "question": "What does RVM stand for in the workshop checklist?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-acronym_expansion-1-1",
+          "document_id": "calibration-fictional-acronym_expansion-1-1",
+          "page_number": 1,
+          "page_text": "Workshop checklist: RVM means Return Valve Marker, the tag placed on the return pipe.",
+          "start_offset": 0,
+          "end_offset": 85,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-1-2",
+          "document_id": "calibration-fictional-acronym_expansion-1-2",
+          "page_number": 2,
+          "page_text": "Workshop checklist: RVM tags are blue and are inspected before a pressure test.",
+          "start_offset": 0,
+          "end_offset": 79,
+          "useful": false,
+          "rationale": "Names the requested code without pairing it with its complete phrase."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-1-3",
+          "document_id": "calibration-fictional-acronym_expansion-1-3",
+          "page_number": 3,
+          "page_text": "Workshop checklist: Return valves must be closed before a pressure test.",
+          "start_offset": 0,
+          "end_offset": 72,
+          "useful": false,
+          "rationale": "Describes nearby operations but gives no expansion for the requested code."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-1-4",
+          "document_id": "calibration-fictional-acronym_expansion-1-4",
+          "page_number": 4,
+          "page_text": "Workshop checklist: RPM means Rotation Per Minute on the motor readout.",
+          "start_offset": 0,
+          "end_offset": 71,
+          "useful": false,
+          "rationale": "Expands a different code, which cannot define the requested one."
+        }
+      ]
+    },
+    {
+      "group_id": "C-acronym_expansion-2",
+      "split": "calibration",
+      "relation": "acronym_expansion",
+      "question": "What is KPC expanded to on the kiln log?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-acronym_expansion-2-1",
+          "document_id": "calibration-fictional-acronym_expansion-2-1",
+          "page_number": 1,
+          "page_text": "Kiln log: KPC is recorded on the line below the burner temperature.",
+          "start_offset": 0,
+          "end_offset": 67,
+          "useful": false,
+          "rationale": "Names the requested code without pairing it with its complete phrase."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-2-2",
+          "document_id": "calibration-fictional-acronym_expansion-2-2",
+          "page_number": 2,
+          "page_text": "Kiln log: pressure checks are required at the start of every shift.",
+          "start_offset": 0,
+          "end_offset": 67,
+          "useful": false,
+          "rationale": "Describes nearby operations but gives no expansion for the requested code."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-2-3",
+          "document_id": "calibration-fictional-acronym_expansion-2-3",
+          "page_number": 3,
+          "page_text": "Kiln log abbreviations: KTC means Kiln Temperature Check.",
+          "start_offset": 0,
+          "end_offset": 57,
+          "useful": false,
+          "rationale": "Expands a different code, which cannot define the requested one."
+        },
+        {
+          "candidate_id": "C-acronym_expansion-2-4",
+          "document_id": "calibration-fictional-acronym_expansion-2-4",
+          "page_number": 4,
+          "page_text": "Kiln log abbreviations: KPC is Kiln Pressure Check; record it before lighting the burner.",
+          "start_offset": 0,
+          "end_offset": 89,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "C-definition-1",
+      "split": "calibration",
+      "relation": "definition",
+      "question": "What is pot life for the two-part sealant?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-definition-1-1",
+          "document_id": "calibration-fictional-definition-1-1",
+          "page_number": 1,
+          "page_text": "The two-part sealant is supplied in separate resin and hardener containers.",
+          "start_offset": 0,
+          "end_offset": 75,
+          "useful": false,
+          "rationale": "Uses the requested term without explaining its meaning."
+        },
+        {
+          "candidate_id": "C-definition-1-2",
+          "document_id": "calibration-fictional-definition-1-2",
+          "page_number": 2,
+          "page_text": "The mixed sealant should be applied with a clean, dry spatula.",
+          "start_offset": 0,
+          "end_offset": 62,
+          "useful": false,
+          "rationale": "Gives surrounding workflow or location rather than a definition."
+        },
+        {
+          "candidate_id": "C-definition-1-3",
+          "document_id": "calibration-fictional-definition-1-3",
+          "page_number": 3,
+          "page_text": "Cure time is the period after application until the sealant reaches its specified hardness.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "Defines a neighboring term rather than the requested term."
+        },
+        {
+          "candidate_id": "C-definition-1-4",
+          "document_id": "calibration-fictional-definition-1-4",
+          "page_number": 4,
+          "page_text": "Sealant terms: pot life is the interval after mixing during which the two-part sealant remains usable.",
+          "start_offset": 0,
+          "end_offset": 102,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "C-definition-2",
+      "split": "calibration",
+      "relation": "definition",
+      "question": "What is a catch basin in the greenhouse drain plan?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-definition-2-1",
+          "document_id": "calibration-fictional-definition-2-1",
+          "page_number": 1,
+          "page_text": "Runoff from the greenhouse roof flows toward the western outlet pipe.",
+          "start_offset": 0,
+          "end_offset": 69,
+          "useful": false,
+          "rationale": "Gives surrounding workflow or location rather than a definition."
+        },
+        {
+          "candidate_id": "C-definition-2-2",
+          "document_id": "calibration-fictional-definition-2-2",
+          "page_number": 2,
+          "page_text": "A soakaway is a gravel-filled pit that disperses water into surrounding soil.",
+          "start_offset": 0,
+          "end_offset": 77,
+          "useful": false,
+          "rationale": "Defines a neighboring term rather than the requested term."
+        },
+        {
+          "candidate_id": "C-definition-2-3",
+          "document_id": "calibration-fictional-definition-2-3",
+          "page_number": 3,
+          "page_text": "Greenhouse drainage: a catch basin is a recessed chamber that collects runoff before it enters the outlet pipe.",
+          "start_offset": 0,
+          "end_offset": 111,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-definition-2-4",
+          "document_id": "calibration-fictional-definition-2-4",
+          "page_number": 4,
+          "page_text": "Greenhouse drainage: inspect the catch basin grate for leaves each Friday.",
+          "start_offset": 0,
+          "end_offset": 74,
+          "useful": false,
+          "rationale": "Uses the requested term without explaining its meaning."
+        }
+      ]
+    },
+    {
+      "group_id": "C-mechanism-1",
+      "split": "calibration",
+      "relation": "mechanism",
+      "question": "How does the bypass valve prevent pressure spikes in the wash line?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-mechanism-1-1",
+          "document_id": "calibration-fictional-mechanism-1-1",
+          "page_number": 1,
+          "page_text": "Wash line: pressure spikes are visible as sudden jumps on the inlet gauge.",
+          "start_offset": 0,
+          "end_offset": 74,
+          "useful": false,
+          "rationale": "Names a trigger or outcome without tracing how the requested component acts."
+        },
+        {
+          "candidate_id": "C-mechanism-1-2",
+          "document_id": "calibration-fictional-mechanism-1-2",
+          "page_number": 2,
+          "page_text": "Wash line: the return tank stores water for the next cleaning cycle.",
+          "start_offset": 0,
+          "end_offset": 68,
+          "useful": false,
+          "rationale": "Describes a neighboring component or maintenance action instead."
+        },
+        {
+          "candidate_id": "C-mechanism-1-3",
+          "document_id": "calibration-fictional-mechanism-1-3",
+          "page_number": 3,
+          "page_text": "Wash line: when inlet pressure rises, a spring-loaded bypass valve opens and diverts flow to the return tank.",
+          "start_offset": 0,
+          "end_offset": 109,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-mechanism-1-4",
+          "document_id": "calibration-fictional-mechanism-1-4",
+          "page_number": 4,
+          "page_text": "Wash line: the bypass valve is mounted after the pump and has a red service cap.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "Locates the component but omits the causal action asked about."
+        }
+      ]
+    },
+    {
+      "group_id": "C-mechanism-2",
+      "split": "calibration",
+      "relation": "mechanism",
+      "question": "How does the compost aerator move air through the pile?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-mechanism-2-1",
+          "document_id": "calibration-fictional-mechanism-2-1",
+          "page_number": 1,
+          "page_text": "The perforated pipes should be checked for blocked holes after each batch.",
+          "start_offset": 0,
+          "end_offset": 74,
+          "useful": false,
+          "rationale": "Describes a neighboring component or maintenance action instead."
+        },
+        {
+          "candidate_id": "C-mechanism-2-2",
+          "document_id": "calibration-fictional-mechanism-2-2",
+          "page_number": 2,
+          "page_text": "Compost aerator: its fan pushes air into perforated pipes beneath the pile, and air rises through the material.",
+          "start_offset": 0,
+          "end_offset": 111,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-mechanism-2-3",
+          "document_id": "calibration-fictional-mechanism-2-3",
+          "page_number": 3,
+          "page_text": "The compost aerator fan sits beside the covered pile.",
+          "start_offset": 0,
+          "end_offset": 53,
+          "useful": false,
+          "rationale": "Locates the component but omits the causal action asked about."
+        },
+        {
+          "candidate_id": "C-mechanism-2-4",
+          "document_id": "calibration-fictional-mechanism-2-4",
+          "page_number": 4,
+          "page_text": "Turning the pile weekly helps prevent compacted layers.",
+          "start_offset": 0,
+          "end_offset": 55,
+          "useful": false,
+          "rationale": "Names a trigger or outcome without tracing how the requested component acts."
+        }
+      ]
+    },
+    {
+      "group_id": "C-measurement-1",
+      "split": "calibration",
+      "relation": "measurement",
+      "question": "What does the clamp gauge measure on the press?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-measurement-1-1",
+          "document_id": "calibration-fictional-measurement-1-1",
+          "page_number": 1,
+          "page_text": "The dial thermometer measures oil temperature in the hydraulic reservoir.",
+          "start_offset": 0,
+          "end_offset": 73,
+          "useful": false,
+          "rationale": "States a quantity for a different instrument or indicator."
+        },
+        {
+          "candidate_id": "C-measurement-1-2",
+          "document_id": "calibration-fictional-measurement-1-2",
+          "page_number": 2,
+          "page_text": "Press instruments: the clamp gauge measures force applied by the press jaws to the workpiece.",
+          "start_offset": 0,
+          "end_offset": 93,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-measurement-1-3",
+          "document_id": "calibration-fictional-measurement-1-3",
+          "page_number": 3,
+          "page_text": "Press instruments: the clamp gauge is mounted above the lower jaw.",
+          "start_offset": 0,
+          "end_offset": 66,
+          "useful": false,
+          "rationale": "Names or locates the instrument without stating its measured quantity."
+        },
+        {
+          "candidate_id": "C-measurement-1-4",
+          "document_id": "calibration-fictional-measurement-1-4",
+          "page_number": 4,
+          "page_text": "The press jaws must be cleaned before a new workpiece is placed.",
+          "start_offset": 0,
+          "end_offset": 64,
+          "useful": false,
+          "rationale": "Describes sampling or timing without the requested readout meaning."
+        }
+      ]
+    },
+    {
+      "group_id": "C-measurement-2",
+      "split": "calibration",
+      "relation": "measurement",
+      "question": "What does the green color strip indicate in the water test?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-measurement-2-1",
+          "document_id": "calibration-fictional-measurement-2-1",
+          "page_number": 1,
+          "page_text": "Water test: a green strip indicates that dissolved chlorine is within the specified operating band.",
+          "start_offset": 0,
+          "end_offset": 99,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-measurement-2-2",
+          "document_id": "calibration-fictional-measurement-2-2",
+          "page_number": 2,
+          "page_text": "Water test: place a strip in the sample for exactly three seconds.",
+          "start_offset": 0,
+          "end_offset": 66,
+          "useful": false,
+          "rationale": "Names or locates the instrument without stating its measured quantity."
+        },
+        {
+          "candidate_id": "C-measurement-2-3",
+          "document_id": "calibration-fictional-measurement-2-3",
+          "page_number": 3,
+          "page_text": "The water sample is taken from the lower tap.",
+          "start_offset": 0,
+          "end_offset": 45,
+          "useful": false,
+          "rationale": "Describes sampling or timing without the requested readout meaning."
+        },
+        {
+          "candidate_id": "C-measurement-2-4",
+          "document_id": "calibration-fictional-measurement-2-4",
+          "page_number": 4,
+          "page_text": "A blue strip indicates that the sample temperature is below the normal band.",
+          "start_offset": 0,
+          "end_offset": 76,
+          "useful": false,
+          "rationale": "States a quantity for a different instrument or indicator."
+        }
+      ]
+    },
+    {
+      "group_id": "C-reason-1",
+      "split": "calibration",
+      "relation": "reason",
+      "question": "Why is the stage riser vented during paint drying?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-reason-1-1",
+          "document_id": "calibration-fictional-reason-1-1",
+          "page_number": 1,
+          "page_text": "Paint drying: the riser is vented so solvent vapor can escape instead of accumulating beneath the deck.",
+          "start_offset": 0,
+          "end_offset": 103,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-reason-1-2",
+          "document_id": "calibration-fictional-reason-1-2",
+          "page_number": 2,
+          "page_text": "The stage riser has two removable ventilation grilles.",
+          "start_offset": 0,
+          "end_offset": 54,
+          "useful": false,
+          "rationale": "Repeats the action or equipment without explaining why it is done."
+        },
+        {
+          "candidate_id": "C-reason-1-3",
+          "document_id": "calibration-fictional-reason-1-3",
+          "page_number": 3,
+          "page_text": "The riser is painted after the rehearsal furniture has been removed.",
+          "start_offset": 0,
+          "end_offset": 68,
+          "useful": false,
+          "rationale": "Provides a schedule or context without the reason for the action."
+        },
+        {
+          "candidate_id": "C-reason-1-4",
+          "document_id": "calibration-fictional-reason-1-4",
+          "page_number": 4,
+          "page_text": "Keep the stage door closed to prevent dust from settling on fresh paint.",
+          "start_offset": 0,
+          "end_offset": 72,
+          "useful": false,
+          "rationale": "Explains a separate precaution or maintenance task."
+        }
+      ]
+    },
+    {
+      "group_id": "C-reason-2",
+      "split": "calibration",
+      "relation": "reason",
+      "question": "Why are seed trays shaded at midday?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-reason-2-1",
+          "document_id": "calibration-fictional-reason-2-1",
+          "page_number": 1,
+          "page_text": "Seed trays are placed on the east bench after watering.",
+          "start_offset": 0,
+          "end_offset": 55,
+          "useful": false,
+          "rationale": "Repeats the action or equipment without explaining why it is done."
+        },
+        {
+          "candidate_id": "C-reason-2-2",
+          "document_id": "calibration-fictional-reason-2-2",
+          "page_number": 2,
+          "page_text": "Midday is the scheduled time to check the greenhouse thermometer.",
+          "start_offset": 0,
+          "end_offset": 65,
+          "useful": false,
+          "rationale": "Provides a schedule or context without the reason for the action."
+        },
+        {
+          "candidate_id": "C-reason-2-3",
+          "document_id": "calibration-fictional-reason-2-3",
+          "page_number": 3,
+          "page_text": "Shade cloth is stored beside the seed-tray bench.",
+          "start_offset": 0,
+          "end_offset": 49,
+          "useful": false,
+          "rationale": "Explains a separate precaution or maintenance task."
+        },
+        {
+          "candidate_id": "C-reason-2-4",
+          "document_id": "calibration-fictional-reason-2-4",
+          "page_number": 4,
+          "page_text": "Seedling care: shade the trays at midday because direct sun can overheat the shallow soil and damage new roots.",
+          "start_offset": 0,
+          "end_offset": 111,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "C-process-1",
+      "split": "calibration",
+      "relation": "process",
+      "question": "What are the steps for replacing the lab air filter?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-process-1-1",
+          "document_id": "calibration-fictional-process-1-1",
+          "page_number": 1,
+          "page_text": "The lab air filter is inspected every Monday.",
+          "start_offset": 0,
+          "end_offset": 45,
+          "useful": false,
+          "rationale": "Mentions the equipment without giving the requested ordered steps."
+        },
+        {
+          "candidate_id": "C-process-1-2",
+          "document_id": "calibration-fictional-process-1-2",
+          "page_number": 2,
+          "page_text": "The replacement filter has an arrow showing airflow direction.",
+          "start_offset": 0,
+          "end_offset": 62,
+          "useful": false,
+          "rationale": "Offers one contextual detail, not the full procedure."
+        },
+        {
+          "candidate_id": "C-process-1-3",
+          "document_id": "calibration-fictional-process-1-3",
+          "page_number": 3,
+          "page_text": "A dirty filter can increase blower noise and reduce airflow.",
+          "start_offset": 0,
+          "end_offset": 60,
+          "useful": false,
+          "rationale": "Gives a safety or maintenance note rather than the requested sequence."
+        },
+        {
+          "candidate_id": "C-process-1-4",
+          "document_id": "calibration-fictional-process-1-4",
+          "page_number": 4,
+          "page_text": "Filter replacement: switch off the blower, release the two latches, remove the used filter, fit the new one, then close the latches.",
+          "start_offset": 0,
+          "end_offset": 132,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "C-process-2",
+      "split": "calibration",
+      "relation": "process",
+      "question": "How should the workshop wind vane be calibrated?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-process-2-1",
+          "document_id": "calibration-fictional-process-2-1",
+          "page_number": 1,
+          "page_text": "Wind vane readings are recorded after the rain gauge is emptied.",
+          "start_offset": 0,
+          "end_offset": 64,
+          "useful": false,
+          "rationale": "Offers one contextual detail, not the full procedure."
+        },
+        {
+          "candidate_id": "C-process-2-2",
+          "document_id": "calibration-fictional-process-2-2",
+          "page_number": 2,
+          "page_text": "Avoid climbing onto the roof during high winds.",
+          "start_offset": 0,
+          "end_offset": 47,
+          "useful": false,
+          "rationale": "Gives a safety or maintenance note rather than the requested sequence."
+        },
+        {
+          "candidate_id": "C-process-2-3",
+          "document_id": "calibration-fictional-process-2-3",
+          "page_number": 3,
+          "page_text": "Wind vane calibration: align the pointer with true north, loosen the base collar, rotate the zero mark to the pointer, then tighten the collar.",
+          "start_offset": 0,
+          "end_offset": 143,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-process-2-4",
+          "document_id": "calibration-fictional-process-2-4",
+          "page_number": 4,
+          "page_text": "The workshop wind vane is fixed to a short roof mast.",
+          "start_offset": 0,
+          "end_offset": 53,
+          "useful": false,
+          "rationale": "Mentions the equipment without giving the requested ordered steps."
+        }
+      ]
+    },
+    {
+      "group_id": "C-property_limitation-1",
+      "split": "calibration",
+      "relation": "property_limitation",
+      "question": "What limitation does woven hose have when routed around tight corners?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-property_limitation-1-1",
+          "document_id": "calibration-fictional-property_limitation-1-1",
+          "page_number": 1,
+          "page_text": "Route the hose away from hot motor housings.",
+          "start_offset": 0,
+          "end_offset": 44,
+          "useful": false,
+          "rationale": "Gives an adjacent usage or maintenance note, not that property."
+        },
+        {
+          "candidate_id": "C-property_limitation-1-2",
+          "document_id": "calibration-fictional-property_limitation-1-2",
+          "page_number": 2,
+          "page_text": "Rigid pipe is harder to install around corners than flexible hose.",
+          "start_offset": 0,
+          "end_offset": 66,
+          "useful": false,
+          "rationale": "Attributes a property to a different material."
+        },
+        {
+          "candidate_id": "C-property_limitation-1-3",
+          "document_id": "calibration-fictional-property_limitation-1-3",
+          "page_number": 3,
+          "page_text": "Woven hose: tight bends can kink the inner tube and restrict flow despite the outer braid remaining intact.",
+          "start_offset": 0,
+          "end_offset": 107,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-property_limitation-1-4",
+          "document_id": "calibration-fictional-property_limitation-1-4",
+          "page_number": 4,
+          "page_text": "Woven hose has a braided outer layer and a replaceable metal coupling.",
+          "start_offset": 0,
+          "end_offset": 70,
+          "useful": false,
+          "rationale": "Identifies the material without the property or limitation asked about."
+        }
+      ]
+    },
+    {
+      "group_id": "C-property_limitation-2",
+      "split": "calibration",
+      "relation": "property_limitation",
+      "question": "What property makes the ceramic sleeve suitable near the burner?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-property_limitation-2-1",
+          "document_id": "calibration-fictional-property_limitation-2-1",
+          "page_number": 1,
+          "page_text": "The steel guard protects the burner from accidental impact.",
+          "start_offset": 0,
+          "end_offset": 59,
+          "useful": false,
+          "rationale": "Attributes a property to a different material."
+        },
+        {
+          "candidate_id": "C-property_limitation-2-2",
+          "document_id": "calibration-fictional-property_limitation-2-2",
+          "page_number": 2,
+          "page_text": "Burner assembly: the ceramic sleeve tolerates high heat without softening, protecting the nearby cable.",
+          "start_offset": 0,
+          "end_offset": 103,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-property_limitation-2-3",
+          "document_id": "calibration-fictional-property_limitation-2-3",
+          "page_number": 3,
+          "page_text": "The ceramic sleeve surrounds the cable beside the burner.",
+          "start_offset": 0,
+          "end_offset": 57,
+          "useful": false,
+          "rationale": "Identifies the material without the property or limitation asked about."
+        },
+        {
+          "candidate_id": "C-property_limitation-2-4",
+          "document_id": "calibration-fictional-property_limitation-2-4",
+          "page_number": 4,
+          "page_text": "Replace a sleeve if its outer surface has a visible crack.",
+          "start_offset": 0,
+          "end_offset": 58,
+          "useful": false,
+          "rationale": "Gives an adjacent usage or maintenance note, not that property."
+        }
+      ]
+    },
+    {
+      "group_id": "C-application_example-1",
+      "split": "calibration",
+      "relation": "application_example",
+      "question": "When would the narrow nozzle be used in the cleaning kit?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-application_example-1-1",
+          "document_id": "calibration-fictional-application_example-1-1",
+          "page_number": 1,
+          "page_text": "The broad nozzle is used on large flat floors.",
+          "start_offset": 0,
+          "end_offset": 46,
+          "useful": false,
+          "rationale": "Gives an application for a different item."
+        },
+        {
+          "candidate_id": "C-application_example-1-2",
+          "document_id": "calibration-fictional-application_example-1-2",
+          "page_number": 2,
+          "page_text": "Cleaning kit: use the narrow nozzle to remove dust from grooves between closely spaced machine fins.",
+          "start_offset": 0,
+          "end_offset": 100,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-application_example-1-3",
+          "document_id": "calibration-fictional-application_example-1-3",
+          "page_number": 3,
+          "page_text": "The narrow nozzle fits the hand vacuum and is stored in the lower drawer.",
+          "start_offset": 0,
+          "end_offset": 73,
+          "useful": false,
+          "rationale": "Names or stores the item without the requested use or placement."
+        },
+        {
+          "candidate_id": "C-application_example-1-4",
+          "document_id": "calibration-fictional-application_example-1-4",
+          "page_number": 4,
+          "page_text": "The cleaning kit includes brushes, a hand vacuum, and two nozzles.",
+          "start_offset": 0,
+          "end_offset": 66,
+          "useful": false,
+          "rationale": "Describes the surrounding system without the item’s application."
+        }
+      ]
+    },
+    {
+      "group_id": "C-application_example-2",
+      "split": "calibration",
+      "relation": "application_example",
+      "question": "Where is the blue-tag sensor used in the cold-room system?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "C-application_example-2-1",
+          "document_id": "calibration-fictional-application_example-2-1",
+          "page_number": 1,
+          "page_text": "Cold room: the blue-tag sensor is installed at the door seal to detect when the door has been left ajar.",
+          "start_offset": 0,
+          "end_offset": 104,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "C-application_example-2-2",
+          "document_id": "calibration-fictional-application_example-2-2",
+          "page_number": 2,
+          "page_text": "The blue-tag sensor sends a status signal every five minutes.",
+          "start_offset": 0,
+          "end_offset": 61,
+          "useful": false,
+          "rationale": "Names or stores the item without the requested use or placement."
+        },
+        {
+          "candidate_id": "C-application_example-2-3",
+          "document_id": "calibration-fictional-application_example-2-3",
+          "page_number": 3,
+          "page_text": "Cold-room sensors are checked during the weekly inspection.",
+          "start_offset": 0,
+          "end_offset": 59,
+          "useful": false,
+          "rationale": "Describes the surrounding system without the item’s application."
+        },
+        {
+          "candidate_id": "C-application_example-2-4",
+          "document_id": "calibration-fictional-application_example-2-4",
+          "page_number": 4,
+          "page_text": "The red-tag sensor monitors compressor vibration.",
+          "start_offset": 0,
+          "end_offset": 49,
+          "useful": false,
+          "rationale": "Gives an application for a different item."
+        }
+      ]
+    },
+    {
+      "group_id": "c-acronym_expansion-none",
+      "split": "calibration",
+      "relation": "acronym_expansion",
+      "question": "What does RPK stand for on the workshop order?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-acronym_expansion-none-1",
+          "document_id": "calibration-fictional-acronym_expansion-none-1",
+          "page_number": 1,
+          "page_text": "Workshop order: RPK appears beside the quantity to be packed.",
+          "start_offset": 0,
+          "end_offset": 61,
+          "useful": false,
+          "rationale": "No passage expands RPK; the RPL expansion belongs to a different code."
+        },
+        {
+          "candidate_id": "c-acronym_expansion-none-2",
+          "document_id": "calibration-fictional-acronym_expansion-none-2",
+          "page_number": 2,
+          "page_text": "Workshop order: packing begins after the final inspection.",
+          "start_offset": 0,
+          "end_offset": 58,
+          "useful": false,
+          "rationale": "No passage expands RPK; the RPL expansion belongs to a different code."
+        },
+        {
+          "candidate_id": "c-acronym_expansion-none-3",
+          "document_id": "calibration-fictional-acronym_expansion-none-3",
+          "page_number": 3,
+          "page_text": "RPK labels are printed on blue paper for the shipping desk.",
+          "start_offset": 0,
+          "end_offset": 59,
+          "useful": false,
+          "rationale": "No passage expands RPK; the RPL expansion belongs to a different code."
+        },
+        {
+          "candidate_id": "c-acronym_expansion-none-4",
+          "document_id": "calibration-fictional-acronym_expansion-none-4",
+          "page_number": 4,
+          "page_text": "Workshop order key: RPL means Return Packing Label.",
+          "start_offset": 0,
+          "end_offset": 51,
+          "useful": false,
+          "rationale": "No passage expands RPK; the RPL expansion belongs to a different code."
+        }
+      ]
+    },
+    {
+      "group_id": "c-definition-none",
+      "split": "calibration",
+      "relation": "definition",
+      "question": "What is a bypass shelf in the kiln room?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-definition-none-1",
+          "document_id": "calibration-fictional-definition-none-1",
+          "page_number": 1,
+          "page_text": "Kiln room: the bypass shelf stands near the side entrance.",
+          "start_offset": 0,
+          "end_offset": 58,
+          "useful": false,
+          "rationale": "No passage defines bypass shelf; location and bypass fan are adjacent facts."
+        },
+        {
+          "candidate_id": "c-definition-none-2",
+          "document_id": "calibration-fictional-definition-none-2",
+          "page_number": 2,
+          "page_text": "Staff place spare kiln gloves on a wall shelf.",
+          "start_offset": 0,
+          "end_offset": 46,
+          "useful": false,
+          "rationale": "No passage defines bypass shelf; location and bypass fan are adjacent facts."
+        },
+        {
+          "candidate_id": "c-definition-none-3",
+          "document_id": "calibration-fictional-definition-none-3",
+          "page_number": 3,
+          "page_text": "The bypass fan is serviced twice a year.",
+          "start_offset": 0,
+          "end_offset": 40,
+          "useful": false,
+          "rationale": "No passage defines bypass shelf; location and bypass fan are adjacent facts."
+        },
+        {
+          "candidate_id": "c-definition-none-4",
+          "document_id": "calibration-fictional-definition-none-4",
+          "page_number": 4,
+          "page_text": "Kiln room labels use large print for safety notices.",
+          "start_offset": 0,
+          "end_offset": 52,
+          "useful": false,
+          "rationale": "No passage defines bypass shelf; location and bypass fan are adjacent facts."
+        }
+      ]
+    },
+    {
+      "group_id": "c-mechanism-none",
+      "split": "calibration",
+      "relation": "mechanism",
+      "question": "How does the workshop chime detect a blocked chute?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-mechanism-none-1",
+          "document_id": "calibration-fictional-mechanism-none-1",
+          "page_number": 1,
+          "page_text": "The workshop chime is checked before the chute is loaded.",
+          "start_offset": 0,
+          "end_offset": 57,
+          "useful": false,
+          "rationale": "No passage explains a blocked-chute detection mechanism for the workshop chime."
+        },
+        {
+          "candidate_id": "c-mechanism-none-2",
+          "document_id": "calibration-fictional-mechanism-none-2",
+          "page_number": 2,
+          "page_text": "A blocked chute requires the operator to stop the conveyor.",
+          "start_offset": 0,
+          "end_offset": 59,
+          "useful": false,
+          "rationale": "No passage explains a blocked-chute detection mechanism for the workshop chime."
+        },
+        {
+          "candidate_id": "c-mechanism-none-3",
+          "document_id": "calibration-fictional-mechanism-none-3",
+          "page_number": 3,
+          "page_text": "The chime makes a short tone during the morning test.",
+          "start_offset": 0,
+          "end_offset": 53,
+          "useful": false,
+          "rationale": "No passage explains a blocked-chute detection mechanism for the workshop chime."
+        },
+        {
+          "candidate_id": "c-mechanism-none-4",
+          "document_id": "calibration-fictional-mechanism-none-4",
+          "page_number": 4,
+          "page_text": "A separate light indicates that the conveyor door is open.",
+          "start_offset": 0,
+          "end_offset": 58,
+          "useful": false,
+          "rationale": "No passage explains a blocked-chute detection mechanism for the workshop chime."
+        }
+      ]
+    },
+    {
+      "group_id": "c-measurement-none",
+      "split": "calibration",
+      "relation": "measurement",
+      "question": "What does the yellow dial quantify in the wash station?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-measurement-none-1",
+          "document_id": "calibration-fictional-measurement-none-1",
+          "page_number": 1,
+          "page_text": "The wash station has a yellow dial above the sink.",
+          "start_offset": 0,
+          "end_offset": 50,
+          "useful": false,
+          "rationale": "No passage says what the yellow dial measures; blue dial is another instrument."
+        },
+        {
+          "candidate_id": "c-measurement-none-2",
+          "document_id": "calibration-fictional-measurement-none-2",
+          "page_number": 2,
+          "page_text": "Technicians wipe the dial glass each Friday.",
+          "start_offset": 0,
+          "end_offset": 44,
+          "useful": false,
+          "rationale": "No passage says what the yellow dial measures; blue dial is another instrument."
+        },
+        {
+          "candidate_id": "c-measurement-none-3",
+          "document_id": "calibration-fictional-measurement-none-3",
+          "page_number": 3,
+          "page_text": "The blue dial reports rinse-water temperature.",
+          "start_offset": 0,
+          "end_offset": 46,
+          "useful": false,
+          "rationale": "No passage says what the yellow dial measures; blue dial is another instrument."
+        },
+        {
+          "candidate_id": "c-measurement-none-4",
+          "document_id": "calibration-fictional-measurement-none-4",
+          "page_number": 4,
+          "page_text": "The wash station records each cleaning cycle in a log.",
+          "start_offset": 0,
+          "end_offset": 54,
+          "useful": false,
+          "rationale": "No passage says what the yellow dial measures; blue dial is another instrument."
+        }
+      ]
+    },
+    {
+      "group_id": "c-reason-none",
+      "split": "calibration",
+      "relation": "reason",
+      "question": "Why is the south vent closed during seed drying?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-reason-none-1",
+          "document_id": "calibration-fictional-reason-none-1",
+          "page_number": 1,
+          "page_text": "The south vent is closed during seed drying.",
+          "start_offset": 0,
+          "end_offset": 44,
+          "useful": false,
+          "rationale": "No passage explains why the south vent is closed during seed drying."
+        },
+        {
+          "candidate_id": "c-reason-none-2",
+          "document_id": "calibration-fictional-reason-none-2",
+          "page_number": 2,
+          "page_text": "A humidity meter hangs near the drying trays.",
+          "start_offset": 0,
+          "end_offset": 45,
+          "useful": false,
+          "rationale": "No passage explains why the south vent is closed during seed drying."
+        },
+        {
+          "candidate_id": "c-reason-none-3",
+          "document_id": "calibration-fictional-reason-none-3",
+          "page_number": 3,
+          "page_text": "Seed drying begins when the trays have been cleaned.",
+          "start_offset": 0,
+          "end_offset": 52,
+          "useful": false,
+          "rationale": "No passage explains why the south vent is closed during seed drying."
+        },
+        {
+          "candidate_id": "c-reason-none-4",
+          "document_id": "calibration-fictional-reason-none-4",
+          "page_number": 4,
+          "page_text": "The north vent is opened to let warm air escape.",
+          "start_offset": 0,
+          "end_offset": 48,
+          "useful": false,
+          "rationale": "No passage explains why the south vent is closed during seed drying."
+        }
+      ]
+    },
+    {
+      "group_id": "c-process-none",
+      "split": "calibration",
+      "relation": "process",
+      "question": "How is the red gauge zeroed before a press test?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-process-none-1",
+          "document_id": "calibration-fictional-process-none-1",
+          "page_number": 1,
+          "page_text": "The red gauge is read before and after every press test.",
+          "start_offset": 0,
+          "end_offset": 56,
+          "useful": false,
+          "rationale": "No passage gives steps to zero the red gauge before the press test."
+        },
+        {
+          "candidate_id": "c-process-none-2",
+          "document_id": "calibration-fictional-process-none-2",
+          "page_number": 2,
+          "page_text": "A zero mark is printed on the gauge face.",
+          "start_offset": 0,
+          "end_offset": 41,
+          "useful": false,
+          "rationale": "No passage gives steps to zero the red gauge before the press test."
+        },
+        {
+          "candidate_id": "c-process-none-3",
+          "document_id": "calibration-fictional-process-none-3",
+          "page_number": 3,
+          "page_text": "The press test requires a flat, dry workpiece.",
+          "start_offset": 0,
+          "end_offset": 46,
+          "useful": false,
+          "rationale": "No passage gives steps to zero the red gauge before the press test."
+        },
+        {
+          "candidate_id": "c-process-none-4",
+          "document_id": "calibration-fictional-process-none-4",
+          "page_number": 4,
+          "page_text": "Technicians store spare gauges in the tool cabinet.",
+          "start_offset": 0,
+          "end_offset": 51,
+          "useful": false,
+          "rationale": "No passage gives steps to zero the red gauge before the press test."
+        }
+      ]
+    },
+    {
+      "group_id": "c-property_limitation-none",
+      "split": "calibration",
+      "relation": "property_limitation",
+      "question": "What limitation does the green coating have under ultraviolet light?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-property_limitation-none-1",
+          "document_id": "calibration-fictional-property_limitation-none-1",
+          "page_number": 1,
+          "page_text": "The green coating is applied to the outside panel.",
+          "start_offset": 0,
+          "end_offset": 50,
+          "useful": false,
+          "rationale": "No passage states a UV limitation of green coating; blue coating is different."
+        },
+        {
+          "candidate_id": "c-property_limitation-none-2",
+          "document_id": "calibration-fictional-property_limitation-none-2",
+          "page_number": 2,
+          "page_text": "Protective eyewear is required when a UV lamp is used.",
+          "start_offset": 0,
+          "end_offset": 54,
+          "useful": false,
+          "rationale": "No passage states a UV limitation of green coating; blue coating is different."
+        },
+        {
+          "candidate_id": "c-property_limitation-none-3",
+          "document_id": "calibration-fictional-property_limitation-none-3",
+          "page_number": 3,
+          "page_text": "The coating dries for six hours before handling.",
+          "start_offset": 0,
+          "end_offset": 48,
+          "useful": false,
+          "rationale": "No passage states a UV limitation of green coating; blue coating is different."
+        },
+        {
+          "candidate_id": "c-property_limitation-none-4",
+          "document_id": "calibration-fictional-property_limitation-none-4",
+          "page_number": 4,
+          "page_text": "A blue coating resists abrasion during cleaning.",
+          "start_offset": 0,
+          "end_offset": 48,
+          "useful": false,
+          "rationale": "No passage states a UV limitation of green coating; blue coating is different."
+        }
+      ]
+    },
+    {
+      "group_id": "c-application_example-none",
+      "split": "calibration",
+      "relation": "application_example",
+      "question": "Where is the short copper sleeve used in the garden pump?",
+      "previous_question": null,
+      "source_family": "calibration-workshop-prose",
+      "template_family": "calibration-direct-questions",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "c-application_example-none-1",
+          "document_id": "calibration-fictional-application_example-none-1",
+          "page_number": 1,
+          "page_text": "The short copper sleeve is listed in the garden pump parts box.",
+          "start_offset": 0,
+          "end_offset": 63,
+          "useful": false,
+          "rationale": "No passage identifies a use or placement for the short copper sleeve."
+        },
+        {
+          "candidate_id": "c-application_example-none-2",
+          "document_id": "calibration-fictional-application_example-none-2",
+          "page_number": 2,
+          "page_text": "The pump body has two hose connectors.",
+          "start_offset": 0,
+          "end_offset": 38,
+          "useful": false,
+          "rationale": "No passage identifies a use or placement for the short copper sleeve."
+        },
+        {
+          "candidate_id": "c-application_example-none-3",
+          "document_id": "calibration-fictional-application_example-none-3",
+          "page_number": 3,
+          "page_text": "A long rubber sleeve protects the outlet pipe.",
+          "start_offset": 0,
+          "end_offset": 46,
+          "useful": false,
+          "rationale": "No passage identifies a use or placement for the short copper sleeve."
+        },
+        {
+          "candidate_id": "c-application_example-none-4",
+          "document_id": "calibration-fictional-application_example-none-4",
+          "page_number": 4,
+          "page_text": "The garden pump runs once each morning.",
+          "start_offset": 0,
+          "end_offset": 39,
+          "useful": false,
+          "rationale": "No passage identifies a use or placement for the short copper sleeve."
+        }
+      ]
+    },
+    {
+      "group_id": "H-acronym_expansion-1",
+      "split": "heldout",
+      "relation": "acronym_expansion",
+      "question": "A ferry entry is marked LCT. Expand that harbor-register code.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-acronym_expansion-1-1",
+          "document_id": "heldout-fictional-acronym_expansion-1-1",
+          "page_number": 1,
+          "page_text": "Harbor register / LCT\nEntry: Full term: Landing Clearance Time. | Use: interval reserved for an arriving ferry.",
+          "start_offset": 0,
+          "end_offset": 111,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-1-2",
+          "document_id": "heldout-fictional-acronym_expansion-1-2",
+          "page_number": 2,
+          "page_text": "Harbor register / LCT\nEntry: The harbor guide prints LCT beside each arriving ferry.",
+          "start_offset": 0,
+          "end_offset": 84,
+          "useful": false,
+          "rationale": "Names the requested code without pairing it with its complete phrase."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-1-3",
+          "document_id": "heldout-fictional-acronym_expansion-1-3",
+          "page_number": 3,
+          "page_text": "Harbor register / LCT\nEntry: Landing clearance is confirmed by radio before the ferry enters.",
+          "start_offset": 0,
+          "end_offset": 93,
+          "useful": false,
+          "rationale": "Describes nearby operations but gives no expansion for the requested code."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-1-4",
+          "document_id": "heldout-fictional-acronym_expansion-1-4",
+          "page_number": 4,
+          "page_text": "Harbor register / LCT\nEntry: LCP expands to Landing Clearance Permit on the dock notice.",
+          "start_offset": 0,
+          "end_offset": 88,
+          "useful": false,
+          "rationale": "Expands a different code, which cannot define the requested one."
+        }
+      ]
+    },
+    {
+      "group_id": "H-acronym_expansion-2",
+      "split": "heldout",
+      "relation": "acronym_expansion",
+      "question": "An archive box bears SFB. Supply the complete label term.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-acronym_expansion-2-1",
+          "document_id": "heldout-fictional-acronym_expansion-2-1",
+          "page_number": 1,
+          "page_text": "Archive label key / SFB\nEntry: An SFB label must include the shelf number and handling date.",
+          "start_offset": 0,
+          "end_offset": 92,
+          "useful": false,
+          "rationale": "Names the requested code without pairing it with its complete phrase."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-2-2",
+          "document_id": "heldout-fictional-acronym_expansion-2-2",
+          "page_number": 2,
+          "page_text": "Archive label key / SFB\nEntry: Historic sheets are stored flat in labeled boxes.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "Describes nearby operations but gives no expansion for the requested code."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-2-3",
+          "document_id": "heldout-fictional-acronym_expansion-2-3",
+          "page_number": 3,
+          "page_text": "Archive label key / SFB\nEntry: SFC stands for Sealed Folio Cover in the archive label key.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "Expands a different code, which cannot define the requested one."
+        },
+        {
+          "candidate_id": "H-acronym_expansion-2-4",
+          "document_id": "heldout-fictional-acronym_expansion-2-4",
+          "page_number": 4,
+          "page_text": "Archive label key / SFB\nEntry: Full term: Sealed Folio Box. | Contents: unbound historic sheets.",
+          "start_offset": 0,
+          "end_offset": 96,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "H-definition-1",
+      "split": "heldout",
+      "relation": "definition",
+      "question": "For a timetable reader, explain what headway refers to.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-definition-1-1",
+          "document_id": "heldout-fictional-definition-1-1",
+          "page_number": 1,
+          "page_text": "Tram timetable / headway\nEntry: The timetable lists headway in minutes for peak and off-peak service.",
+          "start_offset": 0,
+          "end_offset": 101,
+          "useful": false,
+          "rationale": "Uses the requested term without explaining its meaning."
+        },
+        {
+          "candidate_id": "H-definition-1-2",
+          "document_id": "heldout-fictional-definition-1-2",
+          "page_number": 2,
+          "page_text": "Tram timetable / headway\nEntry: Successive trams pass the central stop on a numbered route.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "Gives surrounding workflow or location rather than a definition."
+        },
+        {
+          "candidate_id": "H-definition-1-3",
+          "document_id": "heldout-fictional-definition-1-3",
+          "page_number": 3,
+          "page_text": "Tram timetable / headway\nEntry: Dwell time is the time a tram remains stopped for boarding.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "Defines a neighboring term rather than the requested term."
+        },
+        {
+          "candidate_id": "H-definition-1-4",
+          "document_id": "heldout-fictional-definition-1-4",
+          "page_number": 4,
+          "page_text": "Tram timetable / headway\nEntry: Meaning: time gap between successive trams passing the same stop.",
+          "start_offset": 0,
+          "end_offset": 97,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "H-definition-2",
+      "split": "heldout",
+      "relation": "definition",
+      "question": "The museum rule says buffer zone. Describe the area it denotes.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-definition-2-1",
+          "document_id": "heldout-fictional-definition-2-1",
+          "page_number": 1,
+          "page_text": "Museum storage / buffer zone\nEntry: Artifact labels must face the aisle for inventory checks.",
+          "start_offset": 0,
+          "end_offset": 93,
+          "useful": false,
+          "rationale": "Gives surrounding workflow or location rather than a definition."
+        },
+        {
+          "candidate_id": "H-definition-2-2",
+          "document_id": "heldout-fictional-definition-2-2",
+          "page_number": 2,
+          "page_text": "Museum storage / buffer zone\nEntry: A quarantine shelf holds newly arrived artifacts before inspection.",
+          "start_offset": 0,
+          "end_offset": 103,
+          "useful": false,
+          "rationale": "Defines a neighboring term rather than the requested term."
+        },
+        {
+          "candidate_id": "H-definition-2-3",
+          "document_id": "heldout-fictional-definition-2-3",
+          "page_number": 3,
+          "page_text": "Museum storage / buffer zone\nEntry: Meaning: clear perimeter around an artifact; keeps neighboring items from touching it.",
+          "start_offset": 0,
+          "end_offset": 122,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-definition-2-4",
+          "document_id": "heldout-fictional-definition-2-4",
+          "page_number": 4,
+          "page_text": "Museum storage / buffer zone\nEntry: Mark the buffer zone with removable floor tape.",
+          "start_offset": 0,
+          "end_offset": 83,
+          "useful": false,
+          "rationale": "Uses the requested term without explaining its meaning."
+        }
+      ]
+    },
+    {
+      "group_id": "H-mechanism-1",
+      "split": "heldout",
+      "relation": "mechanism",
+      "question": "Trace the closing action of the sprinkler diaphragm once the control pulse stops.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-mechanism-1-1",
+          "document_id": "heldout-fictional-mechanism-1-1",
+          "page_number": 1,
+          "page_text": "Sprinkler valve / diaphragm\nEntry: The irrigation controller sends a short electrical pulse to the valve.",
+          "start_offset": 0,
+          "end_offset": 105,
+          "useful": false,
+          "rationale": "Names a trigger or outcome without tracing how the requested component acts."
+        },
+        {
+          "candidate_id": "H-mechanism-1-2",
+          "document_id": "heldout-fictional-mechanism-1-2",
+          "page_number": 2,
+          "page_text": "Sprinkler valve / diaphragm\nEntry: The sprinkler pipe feeds four garden beds at the far wall.",
+          "start_offset": 0,
+          "end_offset": 93,
+          "useful": false,
+          "rationale": "Describes a neighboring component or maintenance action instead."
+        },
+        {
+          "candidate_id": "H-mechanism-1-3",
+          "document_id": "heldout-fictional-mechanism-1-3",
+          "page_number": 3,
+          "page_text": "Sprinkler valve / diaphragm\nEntry: Pulse ends → upper chamber refills with pressure → diaphragm seats → flow closes.",
+          "start_offset": 0,
+          "end_offset": 116,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-mechanism-1-4",
+          "document_id": "heldout-fictional-mechanism-1-4",
+          "page_number": 4,
+          "page_text": "Sprinkler valve / diaphragm\nEntry: The sprinkler diaphragm can be inspected beneath the valve cap.",
+          "start_offset": 0,
+          "end_offset": 98,
+          "useful": false,
+          "rationale": "Locates the component but omits the causal action asked about."
+        }
+      ]
+    },
+    {
+      "group_id": "H-mechanism-2",
+      "split": "heldout",
+      "relation": "mechanism",
+      "question": "In damp air, identify the physical action that opens the archive cabinet flap.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-mechanism-2-1",
+          "document_id": "heldout-fictional-mechanism-2-1",
+          "page_number": 1,
+          "page_text": "Archive cabinet / humidity flap\nEntry: The cabinet fan circulates air while the door is closed.",
+          "start_offset": 0,
+          "end_offset": 95,
+          "useful": false,
+          "rationale": "Describes a neighboring component or maintenance action instead."
+        },
+        {
+          "candidate_id": "H-mechanism-2-2",
+          "document_id": "heldout-fictional-mechanism-2-2",
+          "page_number": 2,
+          "page_text": "Archive cabinet / humidity flap\nEntry: Moisture-sensitive strip lengthens → linkage pulls → humidity flap opens.",
+          "start_offset": 0,
+          "end_offset": 112,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-mechanism-2-3",
+          "document_id": "heldout-fictional-mechanism-2-3",
+          "page_number": 3,
+          "page_text": "Archive cabinet / humidity flap\nEntry: The humidity flap sits behind the cabinet ventilation slots.",
+          "start_offset": 0,
+          "end_offset": 99,
+          "useful": false,
+          "rationale": "Locates the component but omits the causal action asked about."
+        },
+        {
+          "candidate_id": "H-mechanism-2-4",
+          "document_id": "heldout-fictional-mechanism-2-4",
+          "page_number": 4,
+          "page_text": "Archive cabinet / humidity flap\nEntry: Staff log cabinet humidity before opening the door.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "Names a trigger or outcome without tracing how the requested component acts."
+        }
+      ]
+    },
+    {
+      "group_id": "H-measurement-1",
+      "split": "heldout",
+      "relation": "measurement",
+      "question": "Name the measured quantity and unit reported by the deck radiometer.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-measurement-1-1",
+          "document_id": "heldout-fictional-measurement-1-1",
+          "page_number": 1,
+          "page_text": "Deck instruments / radiometer\nEntry: The barometer reports atmospheric pressure in hectopascals.",
+          "start_offset": 0,
+          "end_offset": 96,
+          "useful": false,
+          "rationale": "States a quantity for a different instrument or indicator."
+        },
+        {
+          "candidate_id": "H-measurement-1-2",
+          "document_id": "heldout-fictional-measurement-1-2",
+          "page_number": 2,
+          "page_text": "Deck instruments / radiometer\nEntry: Radiometer | observed quantity: incoming solar irradiance | unit: W/m².",
+          "start_offset": 0,
+          "end_offset": 108,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-measurement-1-3",
+          "document_id": "heldout-fictional-measurement-1-3",
+          "page_number": 3,
+          "page_text": "Deck instruments / radiometer\nEntry: The deck radiometer is mounted above the navigation cabin.",
+          "start_offset": 0,
+          "end_offset": 95,
+          "useful": false,
+          "rationale": "Names or locates the instrument without stating its measured quantity."
+        },
+        {
+          "candidate_id": "H-measurement-1-4",
+          "document_id": "heldout-fictional-measurement-1-4",
+          "page_number": 4,
+          "page_text": "Deck instruments / radiometer\nEntry: Record the radiometer reading before sunrise and at noon.",
+          "start_offset": 0,
+          "end_offset": 94,
+          "useful": false,
+          "rationale": "Describes sampling or timing without the requested readout meaning."
+        }
+      ]
+    },
+    {
+      "group_id": "H-measurement-2",
+      "split": "heldout",
+      "relation": "measurement",
+      "question": "A river sample is tested with a turbidity tube. What sample property does its reading represent?",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-measurement-2-1",
+          "document_id": "heldout-fictional-measurement-2-1",
+          "page_number": 1,
+          "page_text": "River sampling / turbidity tube\nEntry: Turbidity tube | reading: water cloudiness from suspended particles | indicator: depth where marker disappears.",
+          "start_offset": 0,
+          "end_offset": 150,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-measurement-2-2",
+          "document_id": "heldout-fictional-measurement-2-2",
+          "page_number": 2,
+          "page_text": "River sampling / turbidity tube\nEntry: Rinse the turbidity tube with river water before filling it.",
+          "start_offset": 0,
+          "end_offset": 99,
+          "useful": false,
+          "rationale": "Names or locates the instrument without stating its measured quantity."
+        },
+        {
+          "candidate_id": "H-measurement-2-3",
+          "document_id": "heldout-fictional-measurement-2-3",
+          "page_number": 3,
+          "page_text": "River sampling / turbidity tube\nEntry: River samples are taken upstream of the road bridge.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "Describes sampling or timing without the requested readout meaning."
+        },
+        {
+          "candidate_id": "H-measurement-2-4",
+          "document_id": "heldout-fictional-measurement-2-4",
+          "page_number": 4,
+          "page_text": "River sampling / turbidity tube\nEntry: The conductivity meter estimates dissolved ionic content.",
+          "start_offset": 0,
+          "end_offset": 96,
+          "useful": false,
+          "rationale": "States a quantity for a different instrument or indicator."
+        }
+      ]
+    },
+    {
+      "group_id": "H-reason-1",
+      "split": "heldout",
+      "relation": "reason",
+      "question": "The observatory covers its telescope mirror before dawn. What damage is this meant to prevent?",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-reason-1-1",
+          "document_id": "heldout-fictional-reason-1-1",
+          "page_number": 1,
+          "page_text": "Observatory / telescope mirror\nEntry: Action: cover before dawn. | Risk avoided: moisture condensing on reflective coating.",
+          "start_offset": 0,
+          "end_offset": 123,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-reason-1-2",
+          "document_id": "heldout-fictional-reason-1-2",
+          "page_number": 2,
+          "page_text": "Observatory / telescope mirror\nEntry: The observatory stores mirror covers beside the telescope mount.",
+          "start_offset": 0,
+          "end_offset": 102,
+          "useful": false,
+          "rationale": "Repeats the action or equipment without explaining why it is done."
+        },
+        {
+          "candidate_id": "H-reason-1-3",
+          "document_id": "heldout-fictional-reason-1-3",
+          "page_number": 3,
+          "page_text": "Observatory / telescope mirror\nEntry: Dawn observations end when the sky becomes too bright.",
+          "start_offset": 0,
+          "end_offset": 92,
+          "useful": false,
+          "rationale": "Provides a schedule or context without the reason for the action."
+        },
+        {
+          "candidate_id": "H-reason-1-4",
+          "document_id": "heldout-fictional-reason-1-4",
+          "page_number": 4,
+          "page_text": "Observatory / telescope mirror\nEntry: The mirror coating is cleaned only during scheduled maintenance.",
+          "start_offset": 0,
+          "end_offset": 102,
+          "useful": false,
+          "rationale": "Explains a separate precaution or maintenance task."
+        }
+      ]
+    },
+    {
+      "group_id": "H-reason-2",
+      "split": "heldout",
+      "relation": "reason",
+      "question": "The transit depot separates battery packs on its shelves. Explain the safety reason.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-reason-2-1",
+          "document_id": "heldout-fictional-reason-2-1",
+          "page_number": 1,
+          "page_text": "Transit depot / battery packs\nEntry: Battery packs are stored on steel shelves in the depot.",
+          "start_offset": 0,
+          "end_offset": 92,
+          "useful": false,
+          "rationale": "Repeats the action or equipment without explaining why it is done."
+        },
+        {
+          "candidate_id": "H-reason-2-2",
+          "document_id": "heldout-fictional-reason-2-2",
+          "page_number": 2,
+          "page_text": "Transit depot / battery packs\nEntry: Record the battery pack serial number before storage.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "Provides a schedule or context without the reason for the action."
+        },
+        {
+          "candidate_id": "H-reason-2-3",
+          "document_id": "heldout-fictional-reason-2-3",
+          "page_number": 3,
+          "page_text": "Transit depot / battery packs\nEntry: The depot inspects charging cables for wear each month.",
+          "start_offset": 0,
+          "end_offset": 92,
+          "useful": false,
+          "rationale": "Explains a separate precaution or maintenance task."
+        },
+        {
+          "candidate_id": "H-reason-2-4",
+          "document_id": "heldout-fictional-reason-2-4",
+          "page_number": 4,
+          "page_text": "Transit depot / battery packs\nEntry: Action: keep battery packs apart. | Reason: reduce heat transfer from a failing pack.",
+          "start_offset": 0,
+          "end_offset": 122,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "H-process-1",
+      "split": "heldout",
+      "relation": "process",
+      "question": "List the order of crew actions before reading the harbor tide gauge.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-process-1-1",
+          "document_id": "heldout-fictional-process-1-1",
+          "page_number": 1,
+          "page_text": "Harbor / tide gauge\nEntry: The tide gauge scale is painted on the harbor wall.",
+          "start_offset": 0,
+          "end_offset": 78,
+          "useful": false,
+          "rationale": "Mentions the equipment without giving the requested ordered steps."
+        },
+        {
+          "candidate_id": "H-process-1-2",
+          "document_id": "heldout-fictional-process-1-2",
+          "page_number": 2,
+          "page_text": "Harbor / tide gauge\nEntry: Reading times are listed on the crew shift sheet.",
+          "start_offset": 0,
+          "end_offset": 76,
+          "useful": false,
+          "rationale": "Offers one contextual detail, not the full procedure."
+        },
+        {
+          "candidate_id": "H-process-1-3",
+          "document_id": "heldout-fictional-process-1-3",
+          "page_number": 3,
+          "page_text": "Harbor / tide gauge\nEntry: Do not service the gauge during an active storm warning.",
+          "start_offset": 0,
+          "end_offset": 83,
+          "useful": false,
+          "rationale": "Gives a safety or maintenance note rather than the requested sequence."
+        },
+        {
+          "candidate_id": "H-process-1-4",
+          "document_id": "heldout-fictional-process-1-4",
+          "page_number": 4,
+          "page_text": "Harbor / tide gauge\nEntry: 1. Remove cap. 2. Clear intake debris. 3. Wait for chamber to settle. 4. Record scale.",
+          "start_offset": 0,
+          "end_offset": 113,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        }
+      ]
+    },
+    {
+      "group_id": "H-process-2",
+      "split": "heldout",
+      "relation": "process",
+      "question": "Describe the sequence for bringing a sealed archive packet back to room conditions.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-process-2-1",
+          "document_id": "heldout-fictional-process-2-1",
+          "page_number": 1,
+          "page_text": "Archive / sealed-packet thawing\nEntry: Use clean gloves when handling paper after thawing.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "Offers one contextual detail, not the full procedure."
+        },
+        {
+          "candidate_id": "H-process-2-2",
+          "document_id": "heldout-fictional-process-2-2",
+          "page_number": 2,
+          "page_text": "Archive / sealed-packet thawing\nEntry: Freezing can temporarily halt insect activity in a packet.",
+          "start_offset": 0,
+          "end_offset": 97,
+          "useful": false,
+          "rationale": "Gives a safety or maintenance note rather than the requested sequence."
+        },
+        {
+          "candidate_id": "H-process-2-3",
+          "document_id": "heldout-fictional-process-2-3",
+          "page_number": 3,
+          "page_text": "Archive / sealed-packet thawing\nEntry: 1. Leave sealed packet at room temperature until dry. 2. Open outer sleeve. 3. Inspect for moisture.",
+          "start_offset": 0,
+          "end_offset": 139,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-process-2-4",
+          "document_id": "heldout-fictional-process-2-4",
+          "page_number": 4,
+          "page_text": "Archive / sealed-packet thawing\nEntry: Sealed archive packets are stored on the upper freezer shelf.",
+          "start_offset": 0,
+          "end_offset": 100,
+          "useful": false,
+          "rationale": "Mentions the equipment without giving the requested ordered steps."
+        }
+      ]
+    },
+    {
+      "group_id": "H-property_limitation-1",
+      "split": "heldout",
+      "relation": "property_limitation",
+      "question": "A display panel may be installed in a humid room. Explain the laminate limitation relevant to that choice.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-property_limitation-1-1",
+          "document_id": "heldout-fictional-property_limitation-1-1",
+          "page_number": 1,
+          "page_text": "Display panel / laminate\nEntry: Check the panel surface for scratches before an exhibition.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "Gives an adjacent usage or maintenance note, not that property."
+        },
+        {
+          "candidate_id": "H-property_limitation-1-2",
+          "document_id": "heldout-fictional-property_limitation-1-2",
+          "page_number": 2,
+          "page_text": "Display panel / laminate\nEntry: A glass panel is heavier than a laminate panel.",
+          "start_offset": 0,
+          "end_offset": 79,
+          "useful": false,
+          "rationale": "Attributes a property to a different material."
+        },
+        {
+          "candidate_id": "H-property_limitation-1-3",
+          "document_id": "heldout-fictional-property_limitation-1-3",
+          "page_number": 3,
+          "page_text": "Display panel / laminate\nEntry: Laminate + sustained humidity → swollen edge → layer separation. Avoid damp rooms.",
+          "start_offset": 0,
+          "end_offset": 114,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-property_limitation-1-4",
+          "document_id": "heldout-fictional-property_limitation-1-4",
+          "page_number": 4,
+          "page_text": "Display panel / laminate\nEntry: The laminate panel is mounted on a lightweight frame.",
+          "start_offset": 0,
+          "end_offset": 85,
+          "useful": false,
+          "rationale": "Identifies the material without the property or limitation asked about."
+        }
+      ]
+    },
+    {
+      "group_id": "H-property_limitation-2",
+      "split": "heldout",
+      "relation": "property_limitation",
+      "question": "A film package needs a sharp fold. Which material property makes the biodegradable film unsuitable?",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-property_limitation-2-1",
+          "document_id": "heldout-fictional-property_limitation-2-1",
+          "page_number": 1,
+          "page_text": "Packaging / biodegradable film\nEntry: A reinforced cloth wrap withstands repeated folding.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "Attributes a property to a different material."
+        },
+        {
+          "candidate_id": "H-property_limitation-2-2",
+          "document_id": "heldout-fictional-property_limitation-2-2",
+          "page_number": 2,
+          "page_text": "Packaging / biodegradable film\nEntry: Material: biodegradable film. | At sharp creases: brittle fracture. Use a wide fold radius.",
+          "start_offset": 0,
+          "end_offset": 129,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-property_limitation-2-3",
+          "document_id": "heldout-fictional-property_limitation-2-3",
+          "page_number": 3,
+          "page_text": "Packaging / biodegradable film\nEntry: The biodegradable film is supplied on large rolls.",
+          "start_offset": 0,
+          "end_offset": 88,
+          "useful": false,
+          "rationale": "Identifies the material without the property or limitation asked about."
+        },
+        {
+          "candidate_id": "H-property_limitation-2-4",
+          "document_id": "heldout-fictional-property_limitation-2-4",
+          "page_number": 4,
+          "page_text": "Packaging / biodegradable film\nEntry: The film can be printed with water-based ink.",
+          "start_offset": 0,
+          "end_offset": 83,
+          "useful": false,
+          "rationale": "Gives an adjacent usage or maintenance note, not that property."
+        }
+      ]
+    },
+    {
+      "group_id": "H-application_example-1",
+      "split": "heldout",
+      "relation": "application_example",
+      "question": "The night-service cart needs low-light visibility. Identify where reflective tape goes and why.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-application_example-1-1",
+          "document_id": "heldout-fictional-application_example-1-1",
+          "page_number": 1,
+          "page_text": "Night-service cart / reflective tape\nEntry: A flashing lamp is mounted on the cart roof.",
+          "start_offset": 0,
+          "end_offset": 88,
+          "useful": false,
+          "rationale": "Gives an application for a different item."
+        },
+        {
+          "candidate_id": "H-application_example-1-2",
+          "document_id": "heldout-fictional-application_example-1-2",
+          "page_number": 2,
+          "page_text": "Night-service cart / reflective tape\nEntry: Rear corners: reflective tape. Purpose: visibility to drivers in low light.",
+          "start_offset": 0,
+          "end_offset": 119,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-application_example-1-3",
+          "document_id": "heldout-fictional-application_example-1-3",
+          "page_number": 3,
+          "page_text": "Night-service cart / reflective tape\nEntry: Reflective tape is replaced whenever its surface peels.",
+          "start_offset": 0,
+          "end_offset": 99,
+          "useful": false,
+          "rationale": "Names or stores the item without the requested use or placement."
+        },
+        {
+          "candidate_id": "H-application_example-1-4",
+          "document_id": "heldout-fictional-application_example-1-4",
+          "page_number": 4,
+          "page_text": "Night-service cart / reflective tape\nEntry: The cart is kept in the depot between night shifts.",
+          "start_offset": 0,
+          "end_offset": 95,
+          "useful": false,
+          "rationale": "Describes the surrounding system without the item’s application."
+        }
+      ]
+    },
+    {
+      "group_id": "H-application_example-2",
+      "split": "heldout",
+      "relation": "application_example",
+      "question": "For the aquarium return flow, state the task assigned to the ion exchange column.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": true,
+      "candidates": [
+        {
+          "candidate_id": "H-application_example-2-1",
+          "document_id": "heldout-fictional-application_example-2-1",
+          "page_number": 1,
+          "page_text": "Aquarium loop / ion exchange column\nEntry: Ion exchange column → dissolved nitrate removal before water returns to tank.",
+          "start_offset": 0,
+          "end_offset": 120,
+          "useful": true,
+          "rationale": "States the requested relation for the exact target and condition."
+        },
+        {
+          "candidate_id": "H-application_example-2-2",
+          "document_id": "heldout-fictional-application_example-2-2",
+          "page_number": 2,
+          "page_text": "Aquarium loop / ion exchange column\nEntry: The ion exchange column is installed after the coarse filter.",
+          "start_offset": 0,
+          "end_offset": 104,
+          "useful": false,
+          "rationale": "Names or stores the item without the requested use or placement."
+        },
+        {
+          "candidate_id": "H-application_example-2-3",
+          "document_id": "heldout-fictional-application_example-2-3",
+          "page_number": 3,
+          "page_text": "Aquarium loop / ion exchange column\nEntry: Aquarium water is tested each morning before feeding.",
+          "start_offset": 0,
+          "end_offset": 96,
+          "useful": false,
+          "rationale": "Describes the surrounding system without the item’s application."
+        },
+        {
+          "candidate_id": "H-application_example-2-4",
+          "document_id": "heldout-fictional-application_example-2-4",
+          "page_number": 4,
+          "page_text": "Aquarium loop / ion exchange column\nEntry: The charcoal cartridge removes odors from the supply line.",
+          "start_offset": 0,
+          "end_offset": 101,
+          "useful": false,
+          "rationale": "Gives an application for a different item."
+        }
+      ]
+    },
+    {
+      "group_id": "h-acronym_expansion-none",
+      "split": "heldout",
+      "relation": "acronym_expansion",
+      "question": "A DSR code appears in a harbor register. Provide its full phrase.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-acronym_expansion-none-1",
+          "document_id": "heldout-fictional-acronym_expansion-none-1",
+          "page_number": 1,
+          "page_text": "Harbor register / DSR\nEntry: Harbor register: DSR appears in the arrival column.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "No passage expands DSR; DTR is another harbor code."
+        },
+        {
+          "candidate_id": "h-acronym_expansion-none-2",
+          "document_id": "heldout-fictional-acronym_expansion-none-2",
+          "page_number": 2,
+          "page_text": "Harbor register / DSR\nEntry: DSR entries are checked against the ferry manifest.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "No passage expands DSR; DTR is another harbor code."
+        },
+        {
+          "candidate_id": "h-acronym_expansion-none-3",
+          "document_id": "heldout-fictional-acronym_expansion-none-3",
+          "page_number": 3,
+          "page_text": "Harbor register / DSR\nEntry: The harbor register is archived each month.",
+          "start_offset": 0,
+          "end_offset": 72,
+          "useful": false,
+          "rationale": "No passage expands DSR; DTR is another harbor code."
+        },
+        {
+          "candidate_id": "h-acronym_expansion-none-4",
+          "document_id": "heldout-fictional-acronym_expansion-none-4",
+          "page_number": 4,
+          "page_text": "Harbor register / DSR\nEntry: Harbor key: DTR means Dock Transit Record.",
+          "start_offset": 0,
+          "end_offset": 71,
+          "useful": false,
+          "rationale": "No passage expands DSR; DTR is another harbor code."
+        }
+      ]
+    },
+    {
+      "group_id": "h-definition-none",
+      "split": "heldout",
+      "relation": "definition",
+      "question": "The museum guide names a cold buffer. Describe what it denotes.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-definition-none-1",
+          "document_id": "heldout-fictional-definition-none-1",
+          "page_number": 1,
+          "page_text": "Museum guide / cold buffer\nEntry: Museum guide: the cold buffer is inspected every Tuesday.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "No passage defines the museum cold buffer; buffer pad is a different item."
+        },
+        {
+          "candidate_id": "h-definition-none-2",
+          "document_id": "heldout-fictional-definition-none-2",
+          "page_number": 2,
+          "page_text": "Museum guide / cold buffer\nEntry: Cold storage is used for certain sealed artifacts.",
+          "start_offset": 0,
+          "end_offset": 84,
+          "useful": false,
+          "rationale": "No passage defines the museum cold buffer; buffer pad is a different item."
+        },
+        {
+          "candidate_id": "h-definition-none-3",
+          "document_id": "heldout-fictional-definition-none-3",
+          "page_number": 3,
+          "page_text": "Museum guide / cold buffer\nEntry: The museum guide lists equipment near the loading door.",
+          "start_offset": 0,
+          "end_offset": 89,
+          "useful": false,
+          "rationale": "No passage defines the museum cold buffer; buffer pad is a different item."
+        },
+        {
+          "candidate_id": "h-definition-none-4",
+          "document_id": "heldout-fictional-definition-none-4",
+          "page_number": 4,
+          "page_text": "Museum guide / cold buffer\nEntry: A buffer pad cushions objects during transport.",
+          "start_offset": 0,
+          "end_offset": 81,
+          "useful": false,
+          "rationale": "No passage defines the museum cold buffer; buffer pad is a different item."
+        }
+      ]
+    },
+    {
+      "group_id": "h-mechanism-none",
+      "split": "heldout",
+      "relation": "mechanism",
+      "question": "Trace how the ferry alarm detects a loose stern hatch.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-mechanism-none-1",
+          "document_id": "heldout-fictional-mechanism-none-1",
+          "page_number": 1,
+          "page_text": "Ferry / stern hatch alarm\nEntry: The ferry alarm sounds during its scheduled self-test.",
+          "start_offset": 0,
+          "end_offset": 87,
+          "useful": false,
+          "rationale": "No passage tells how the ferry alarm senses a loose stern hatch."
+        },
+        {
+          "candidate_id": "h-mechanism-none-2",
+          "document_id": "heldout-fictional-mechanism-none-2",
+          "page_number": 2,
+          "page_text": "Ferry / stern hatch alarm\nEntry: A loose stern hatch must be secured before sailing.",
+          "start_offset": 0,
+          "end_offset": 84,
+          "useful": false,
+          "rationale": "No passage tells how the ferry alarm senses a loose stern hatch."
+        },
+        {
+          "candidate_id": "h-mechanism-none-3",
+          "document_id": "heldout-fictional-mechanism-none-3",
+          "page_number": 3,
+          "page_text": "Ferry / stern hatch alarm\nEntry: Crew inspect the alarm cable beside the hatch.",
+          "start_offset": 0,
+          "end_offset": 79,
+          "useful": false,
+          "rationale": "No passage tells how the ferry alarm senses a loose stern hatch."
+        },
+        {
+          "candidate_id": "h-mechanism-none-4",
+          "document_id": "heldout-fictional-mechanism-none-4",
+          "page_number": 4,
+          "page_text": "Ferry / stern hatch alarm\nEntry: A second alarm sounds when the bilge level is high.",
+          "start_offset": 0,
+          "end_offset": 84,
+          "useful": false,
+          "rationale": "No passage tells how the ferry alarm senses a loose stern hatch."
+        }
+      ]
+    },
+    {
+      "group_id": "h-measurement-none",
+      "split": "heldout",
+      "relation": "measurement",
+      "question": "Name the physical quantity monitored by the tram’s silver probe.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-measurement-none-1",
+          "document_id": "heldout-fictional-measurement-none-1",
+          "page_number": 1,
+          "page_text": "Tram service / silver probe\nEntry: The silver probe is attached beneath the tram seat.",
+          "start_offset": 0,
+          "end_offset": 86,
+          "useful": false,
+          "rationale": "No passage states the silver probe’s measured quantity; speed sensor is different."
+        },
+        {
+          "candidate_id": "h-measurement-none-2",
+          "document_id": "heldout-fictional-measurement-none-2",
+          "page_number": 2,
+          "page_text": "Tram service / silver probe\nEntry: Inspect the probe lead during the weekly service.",
+          "start_offset": 0,
+          "end_offset": 84,
+          "useful": false,
+          "rationale": "No passage states the silver probe’s measured quantity; speed sensor is different."
+        },
+        {
+          "candidate_id": "h-measurement-none-3",
+          "document_id": "heldout-fictional-measurement-none-3",
+          "page_number": 3,
+          "page_text": "Tram service / silver probe\nEntry: The tram speed sensor reports wheel rotation.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "No passage states the silver probe’s measured quantity; speed sensor is different."
+        },
+        {
+          "candidate_id": "h-measurement-none-4",
+          "document_id": "heldout-fictional-measurement-none-4",
+          "page_number": 4,
+          "page_text": "Tram service / silver probe\nEntry: A replacement probe is kept at the depot.",
+          "start_offset": 0,
+          "end_offset": 76,
+          "useful": false,
+          "rationale": "No passage states the silver probe’s measured quantity; speed sensor is different."
+        }
+      ]
+    },
+    {
+      "group_id": "h-reason-none",
+      "split": "heldout",
+      "relation": "reason",
+      "question": "The archive cabinet light stays off overnight. Explain why.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-reason-none-1",
+          "document_id": "heldout-fictional-reason-none-1",
+          "page_number": 1,
+          "page_text": "Archive cabinet / overnight light\nEntry: The archive cabinet light is left off overnight.",
+          "start_offset": 0,
+          "end_offset": 89,
+          "useful": false,
+          "rationale": "No passage gives the reason for leaving the archive cabinet light off overnight."
+        },
+        {
+          "candidate_id": "h-reason-none-2",
+          "document_id": "heldout-fictional-reason-none-2",
+          "page_number": 2,
+          "page_text": "Archive cabinet / overnight light\nEntry: An evening guard checks the cabinet lock.",
+          "start_offset": 0,
+          "end_offset": 82,
+          "useful": false,
+          "rationale": "No passage gives the reason for leaving the archive cabinet light off overnight."
+        },
+        {
+          "candidate_id": "h-reason-none-3",
+          "document_id": "heldout-fictional-reason-none-3",
+          "page_number": 3,
+          "page_text": "Archive cabinet / overnight light\nEntry: Cabinet lighting is switched on before inventory.",
+          "start_offset": 0,
+          "end_offset": 90,
+          "useful": false,
+          "rationale": "No passage gives the reason for leaving the archive cabinet light off overnight."
+        },
+        {
+          "candidate_id": "h-reason-none-4",
+          "document_id": "heldout-fictional-reason-none-4",
+          "page_number": 4,
+          "page_text": "Archive cabinet / overnight light\nEntry: The archive workroom lights are dimmed at closing.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "No passage gives the reason for leaving the archive cabinet light off overnight."
+        }
+      ]
+    },
+    {
+      "group_id": "h-process-none",
+      "split": "heldout",
+      "relation": "process",
+      "question": "Give the leveling steps required before inspecting the telescope mount.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-process-none-1",
+          "document_id": "heldout-fictional-process-none-1",
+          "page_number": 1,
+          "page_text": "Observatory / telescope mount leveling\nEntry: The telescope mount is inspected every six months.",
+          "start_offset": 0,
+          "end_offset": 96,
+          "useful": false,
+          "rationale": "No passage gives the telescope-mount leveling sequence."
+        },
+        {
+          "candidate_id": "h-process-none-2",
+          "document_id": "heldout-fictional-process-none-2",
+          "page_number": 2,
+          "page_text": "Observatory / telescope mount leveling\nEntry: A bubble level is stored beside the mount.",
+          "start_offset": 0,
+          "end_offset": 88,
+          "useful": false,
+          "rationale": "No passage gives the telescope-mount leveling sequence."
+        },
+        {
+          "candidate_id": "h-process-none-3",
+          "document_id": "heldout-fictional-process-none-3",
+          "page_number": 3,
+          "page_text": "Observatory / telescope mount leveling\nEntry: The inspection form has a field for the level reading.",
+          "start_offset": 0,
+          "end_offset": 100,
+          "useful": false,
+          "rationale": "No passage gives the telescope-mount leveling sequence."
+        },
+        {
+          "candidate_id": "h-process-none-4",
+          "document_id": "heldout-fictional-process-none-4",
+          "page_number": 4,
+          "page_text": "Observatory / telescope mount leveling\nEntry: The mount bolts must remain accessible.",
+          "start_offset": 0,
+          "end_offset": 85,
+          "useful": false,
+          "rationale": "No passage gives the telescope-mount leveling sequence."
+        }
+      ]
+    },
+    {
+      "group_id": "h-property_limitation-none",
+      "split": "heldout",
+      "relation": "property_limitation",
+      "question": "For salt-water exposure, identify the drawback of red sealing tape.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-property_limitation-none-1",
+          "document_id": "heldout-fictional-property_limitation-none-1",
+          "page_number": 1,
+          "page_text": "Deck piping / red sealing tape\nEntry: Red sealing tape marks the pipe joint below the deck.",
+          "start_offset": 0,
+          "end_offset": 91,
+          "useful": false,
+          "rationale": "No passage states red tape’s salt-water drawback; rubber gasket is different."
+        },
+        {
+          "candidate_id": "h-property_limitation-none-2",
+          "document_id": "heldout-fictional-property_limitation-none-2",
+          "page_number": 2,
+          "page_text": "Deck piping / red sealing tape\nEntry: Wash salt from the deck after each voyage.",
+          "start_offset": 0,
+          "end_offset": 80,
+          "useful": false,
+          "rationale": "No passage states red tape’s salt-water drawback; rubber gasket is different."
+        },
+        {
+          "candidate_id": "h-property_limitation-none-3",
+          "document_id": "heldout-fictional-property_limitation-none-3",
+          "page_number": 3,
+          "page_text": "Deck piping / red sealing tape\nEntry: The tape roll is kept in a dry locker.",
+          "start_offset": 0,
+          "end_offset": 76,
+          "useful": false,
+          "rationale": "No passage states red tape’s salt-water drawback; rubber gasket is different."
+        },
+        {
+          "candidate_id": "h-property_limitation-none-4",
+          "document_id": "heldout-fictional-property_limitation-none-4",
+          "page_number": 4,
+          "page_text": "Deck piping / red sealing tape\nEntry: A different rubber gasket loses flexibility in cold weather.",
+          "start_offset": 0,
+          "end_offset": 98,
+          "useful": false,
+          "rationale": "No passage states red tape’s salt-water drawback; rubber gasket is different."
+        }
+      ]
+    },
+    {
+      "group_id": "h-application_example-none",
+      "split": "heldout",
+      "relation": "application_example",
+      "question": "Locate the amber valve’s role in the aquarium flow path.",
+      "previous_question": null,
+      "source_family": "heldout-field-records",
+      "template_family": "heldout-indirect-tasks",
+      "useful_available": false,
+      "candidates": [
+        {
+          "candidate_id": "h-application_example-none-1",
+          "document_id": "heldout-fictional-application_example-none-1",
+          "page_number": 1,
+          "page_text": "Aquarium flow / amber valve\nEntry: The amber valve appears on the aquarium parts diagram.",
+          "start_offset": 0,
+          "end_offset": 89,
+          "useful": false,
+          "rationale": "No passage identifies the amber valve’s aquarium flow-path role."
+        },
+        {
+          "candidate_id": "h-application_example-none-2",
+          "document_id": "heldout-fictional-application_example-none-2",
+          "page_number": 2,
+          "page_text": "Aquarium flow / amber valve\nEntry: The aquarium has a return pipe and a drain pipe.",
+          "start_offset": 0,
+          "end_offset": 83,
+          "useful": false,
+          "rationale": "No passage identifies the amber valve’s aquarium flow-path role."
+        },
+        {
+          "candidate_id": "h-application_example-none-3",
+          "document_id": "heldout-fictional-application_example-none-3",
+          "page_number": 3,
+          "page_text": "Aquarium flow / amber valve\nEntry: An orange valve is used on the cleaning branch.",
+          "start_offset": 0,
+          "end_offset": 82,
+          "useful": false,
+          "rationale": "No passage identifies the amber valve’s aquarium flow-path role."
+        },
+        {
+          "candidate_id": "h-application_example-none-4",
+          "document_id": "heldout-fictional-application_example-none-4",
+          "page_number": 4,
+          "page_text": "Aquarium flow / amber valve\nEntry: The amber valve is checked during monthly maintenance.",
+          "start_offset": 0,
+          "end_offset": 89,
+          "useful": false,
+          "rationale": "No passage identifies the amber valve’s aquarium flow-path role."
+        }
+      ]
+    }
+  ]
+}

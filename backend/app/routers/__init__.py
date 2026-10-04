@@ -6,6 +6,7 @@ from app.routers.study import router as study_router
 from app.routers.generation import router as generation_router
 from app.routers.rag import router as rag_router
 from app.routers.knowledge import router as knowledge_router
+from app.routers.published_knowledge import router as published_knowledge_router
 
 __all__ = [
     "auth_router",
@@ -15,4 +16,5 @@ __all__ = [
     "generation_router",
     "rag_router",
     "knowledge_router",
+    "published_knowledge_router",
 ]

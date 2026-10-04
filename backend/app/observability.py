@@ -54,6 +54,8 @@ SAFE_ERROR_CODES = frozenset({
     "knowledge_deployment_daily_job_limit", "knowledge_deployment_daily_upload_limit",
     "knowledge_user_source_storage_limit", "knowledge_deployment_source_storage_limit",
     "knowledge_index_failed", "knowledge_cancelled", "knowledge_lease_expired",
+    "knowledge_choice_conflict", "knowledge_choice_unavailable", "knowledge_choice_expired",
+    "knowledge_choice_stale", "knowledge_document_changed",
     "embedding_provider_timeout", "embedding_provider_unavailable",
     "embedding_provider_invalid_request", "embedding_provider_authentication_failed",
     "embedding_provider_access_denied", "embedding_model_unavailable",
@@ -74,7 +76,7 @@ SAFE_ERROR_CODES = frozenset({
     "rag_message_storage_limit", "rag_question_too_long", "rag_knowledge_unavailable", "rag_answer_cost_limit",
     "rag_answer_job_not_found", "rag_answer_not_retryable", "rag_answer_retry_limit",
     "rag_answer_snapshot_changed", "rag_message_not_found", "rag_sources_unavailable",
-    "rag_answer_failed", "rag_answer_cancelled", "rag_answer_lease_expired",
+    "rag_answer_failed", "rag_answer_cancelled", "rag_answer_lease_expired", "rag_ask_disabled", "rag_ask_shutdown",
     "rag_access_revoked", "rag_corpus_changed", "rag_profile_mismatch",
 })
 EVENTS = frozenset({
@@ -89,16 +91,22 @@ EVENTS = frozenset({
     "knowledge_capture_completed", "knowledge_capture_fenced", "index_heartbeat_failed",
     "index_lease_lost", "index_internal_error",
     "answer_completed", "answer_heartbeat_failed", "answer_lease_lost", "answer_internal_error",
+    "knowledge_source_selection",
 })
 NUMERIC_FIELDS = frozenset({
     "status_code", "latency_milliseconds", "duration_milliseconds", "attempt_count",
     "active_count", "card_count", "input_tokens", "output_tokens", "cost_microusd",
     "provider_request_count", "provider_retry_count",
+    "anchor_chunks", "examined_chunks", "examined_pages", "examined_tokens",
+    "neighbor_radius", "selected_chunks", "selected_neighbor_chunks", "selected_beyond_top5",
 })
 ENUM_FIELDS = {
     "kind": {"generation", "email", "index", "answer", "api"},
     "status": {"running", "disabled", "draining", "completed", "failed", "cancelled", "queued"},
     "stage": {"starting", "validating_pdf", "extracting_text", "capturing_knowledge", "generating_cards", "persisting"},
+    "selection_status": {"clarification_needed", "no_active_space", "no_candidate", "ambiguous",
+                          "explicit_relation_candidate", "partial_context", "no_matching_relation", "related_pages"},
+    "selection_policy": {"source_relation_units_v2", "source_relation_units_v3", "source_relation_units_v4", "source_relation_units_v5", "source_relation_units_v6", "source_relation_units_v7", "source_navigation_v8", "source_navigation_v9"},
 }
 
 

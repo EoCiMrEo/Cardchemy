@@ -1,5 +1,81 @@
 # Configuration
 
+## Current source-only v8 configuration — 2026-10-04
+
+Ask AI is enabled in the retained local installation (verified 2026-10-04). Source and retained Alembic head are
+`20261002_0033`; the forward migration was restore-verified. Root `.env`,
+populated data, independent archive key and original PDFs remain preserved.
+The released runtime fence matches `related_knowledge_navigation_v8` while
+fresh validated/template/Compose Ask and judge flags remain **false**.
+
+The current new-job identities are `related_knowledge_navigation_v8` /
+`hybrid_source_navigation_v9` / `visual_source_id_v5`, with immutable
+`literal_subject_admission_v2` context on retained/source head `20261002_0033`.
+Each attempt allows at most one raw-current-question embedding and one bounded
+source-ID judgment, zero generated-answer/verifier calls and zero automatic
+retries. It returns zero to three exact current published-PDF page references,
+each visibly unverified; weak pages are never padding. An eligible unresolved
+follow-up can transfer only a unique literal subject from the strictly preceding
+user question (at most 160 characters/twelve words), immutably bound and
+rechecked. Full history and assistant text stay out of provider input.
+
+The judge uses Flash-Lite HIGH, 32,768 input/4,096 thinking-inclusive output,
+120 seconds and no automatic retry; existing image/request/render/quotas and
+the 300-second job deadline are unchanged. Dedicated embedding and judge keys
+stay only in their respective worker roles. The API receives neither provider
+key; the independent PDF key remains scoped to API/generation/answer workers.
+Activation edits only the two nonsecret Ask/judge flags in the existing root
+file, never bootstraps new secrets or broad-injects root configuration.
+
+V8's narrow ordinary-learning clarity repair is not semantic instruction
+classification; a weak page's conflicting positive cue is discarded, never
+promoted. Historical policies remain immutable/readable and cannot execute or
+retry as v8. See [actual local activation and rollback](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md),
+[maintenance](ASK_AI_SHUTDOWN.md) and
+[ADR-024](decisions/ADR-024-gemini-source-id-judge.md). The dated installation
+snapshots below remain historical.
+
+## Historical dormant retained v7 configuration — 2026-10-02
+
+Checkout requires `related_knowledge_navigation_v7` / `visual_source_id_v3`
+under source and retained head `20261002_0032`. Template/Compose and effective
+retained source-judge timeout are 120 seconds; real root `.env` is preserved.
+Matching services are healthy with Ask/source judging disabled and the
+activation fence closed. Raw current question is
+the sole embedding input. Only unresolved follow-ups may add a uniquely bound
+literal subject (<=160 characters/twelve words) from the strictly preceding user
+question to the one ID-only judge request. No full history or assistant text
+is sent. The typed capability `source_judge_transfers_literal_subject_context`
+and disclosure must match before enqueue or retry. Immutable metadata binding
+is rechecked at every expensive boundary, after quota waiting and at completion.
+See [current cutover evidence](../.agent/logs/2026-10-02/2026-10-02-v7-retained-cutover-and-release-recheck.md).
+The dated v6 section below describes its earlier retained snapshot.
+
+## Historical dormant visual Ask contract — 2026-10-01
+
+Source and retained schema are `20261001_0031`; matching application services
+are healthy after a restore-verified forward cutover, with data, original PDFs
+and root `.env` preserved. Ask and source judging remain disabled. The
+`related_knowledge_navigation_v6` / `hybrid_source_navigation_v9` path uses
+`visual_source_id_v2`, Gemini 3.5 Flash-Lite HIGH, 32,768 input / 4,096 output
+including thinking and a 60-second provider deadline. It allows at most one
+current-question embedding and one issued-ID/category-only judgment, zero
+answer/verifier calls and zero automatic provider retries. Full-page PNGs are
+bounded to 1 MiB/2 MP/1,600 pixels; definitive oversize alone permits bounded
+1,400/1,200/1,000 scale reduction within one 30-second page deadline.
+
+Complete public calibration passed with 89.32% useful displayed cards.
+Independent different-PDF/private usefulness and release gates remain open:
+the prospective target is 80% displayed usefulness, at least 10/12 ordinary
+no-match controls and the existing hit/availability gates. Fabricated,
+unauthorized, stale or wrong-page references still require zero. Installed
+0030 and historical v5/visual-v1 2,048-token snapshots remain immutable and
+readable; they cannot execute or manually retry as v6.
+
+See the [current verification record](../.agent/logs/2026-10-01/2026-10-01-visual-v6-matching-contract-and-backup.md).
+Earlier dated v4/v5 details below describe retained history where they differ.
+
+
 The supported file-based configuration is the repository-root .env, using the
 repository-root .env.example as its only template. Backend and frontend
 directories do not need their own .env files. The bootstrap command creates the
@@ -45,8 +121,8 @@ requests to the host API_PORT, strips /api, and rewrites the refresh-cookie
 path. The built Compose frontend uses Nginx for the same-origin /api route;
 VITE_API_URL is a public value embedded at build time. Only VITE_* settings
 may be exposed to the browser. Flashcard keys are injected only into the
-generation worker, document-embedding keys into the index worker, answer and
-query-embedding keys into the answer worker, and SMTP credentials only into the
+generation worker, document-embedding keys into the index worker, the query-
+embedding key into the Ask worker, and SMTP credentials only into the
 email worker. The API receives only non-secret admission/profile metadata.
 
 The local email worker uses mailpit:1025 inside Compose, with both SMTP TLS
@@ -91,6 +167,13 @@ credential change; editing .env alone does not rotate the database role
 password. Rotating SECRET_KEY revokes JWT validity, and rotating
 GENERATION_SOURCE_ENCRYPTION_KEY makes queued or retained encrypted PDFs
 unreadable until they are drained or removed by the normal workflow.
+`KNOWLEDGE_PDF_ENCRYPTION_KEY` is a separate 32-byte URL-safe base64 key for
+durable original lecture PDFs. Fresh bootstrap generates it; an existing
+installation must add it explicitly before capture or original-PDF attachment.
+An absent key returns a safe storage-unavailable failure. Back up this key
+separately with the database. Do not replace it while archives exist: current
+key version 1 has no in-place rotation command. API and generation worker need
+it; index, Ask, email and browser consumers do not.
 
 ## Basic settings
 
@@ -151,6 +234,7 @@ cookies, trusted origins, and strong generated secret material.
 | --- | --- |
 | SECRET_KEY=empty | Required generated JWT signing secret, at least 32 characters; rotation invalidates active sessions. |
 | GENERATION_SOURCE_ENCRYPTION_KEY=empty | Required independent 32-byte URL-safe base64 key for temporary PDF ciphertext; rotation requires draining retained sources. |
+| KNOWLEDGE_PDF_ENCRYPTION_KEY=empty | Independent 32-byte URL-safe base64 key for permanent original-PDF archives; required for capture, attachment and PDF reads. Keep with recoverable backups; changing it makes existing archives unreadable. |
 | ALGORITHM=HS256 | The only supported JWT signing algorithm. |
 | JWT_ISSUER=cardchemy-api; JWT_AUDIENCE=cardchemy-web | Exact token issuer and audience. Change only with a coordinated client/session rollout. |
 | JWT_CLOCK_SKEW_SECONDS=30 | Token clock tolerance, 0–300 seconds. |
@@ -187,7 +271,9 @@ The selected default daily per-user job limit is 20.
 | GENERATION_WORKER_POLL_SECONDS=1; GENERATION_HEARTBEAT_SECONDS=10 | Empty-queue poll 0.1–30 seconds; lease heartbeat 1–120 seconds and shorter than the lease. |
 | GENERATION_MAX_ATTEMPTS=3; GENERATION_MAX_MANUAL_RETRIES=2 | Infrastructure attempt cap 1–10 and manual retry cap 0–10. Provider failures do not trigger automatic whole-job replay. |
 | GENERATION_RETRY_BASE_SECONDS=2; GENERATION_RETRY_MAX_SECONDS=60 | Infrastructure backoff bounds, 0.1–300 and 1–3600 seconds. |
-| GENERATION_SOURCE_RETRY_RETENTION_HOURS=24; GENERATION_UPLOAD_RESERVATION_MINUTES=15 | Retained-source window 1–168 hours; unfilled reservation window 1–120 minutes. |
+| GENERATION_SOURCE_RETRY_RETENTION_HOURS=24; GENERATION_UPLOAD_RESERVATION_MINUTES=15 | Retained-source window 1–168 hours; unfilled upload reservation and post-upload duplicate-choice window 1–120 minutes. |
+| GENERATION_CANDIDATE_CHOICE_RETENTION_HOURS=24 | Pending exact smaller-target confirmation expires after 1–168 hours; expiry removes staged candidates and the temporary source. |
+| GENERATION_CANDIDATE_CHOICE_MAX_BYTES_PER_JOB=16777216; GENERATION_CANDIDATE_CHOICE_MAX_BYTES_PER_USER=33554432; GENERATION_CANDIDATE_CHOICE_MAX_BYTES_DEPLOYMENT=268435456 | Encrypted, validated-only staged-card payload limits. Per-job range 32768–16777216, per-user 32768–1073741824, deployment 32768–10737418240 bytes; job ≤ user ≤ deployment. Increasing them can retain more private data and consume database storage. |
 | GENERATION_CLEANUP_INTERVAL_SECONDS=60 | Expiration cleanup cadence, 5–3600 seconds. |
 
 Generation retry base cannot exceed its maximum, worker concurrency cannot
@@ -204,12 +290,11 @@ that calls are free. Paid live tests stay explicitly opted in.
 
 | Setting and template default | Purpose, bounds, and required condition |
 | --- | --- |
-| FLASHCARD_AI_PROVIDER_ENABLED=false; FLASHCARD_AI_PROVIDER=gemini | Generation admission switch and gemini/openai_compatible profile. Disabled allows startup without a key. |
-| FLASHCARD_AI_MODEL=gemini-3.8-flash | Model identifier, 1–128 characters; verify availability with the provider. |
+| FLASHCARD_AI_PROVIDER_ENABLED=false; FLASHCARD_AI_PROVIDER=gemini | Generation admission switch and native Gemini-only profile. Disabled allows startup without a key. |
+| FLASHCARD_AI_MODEL=gemini-3.8-flash | Closed, audited five-model Gemini text catalog; verify current availability and price before paid use. |
 | FLASHCARD_AI_API_KEY=empty; FLASHCARD_AI_QUOTA_BUCKET=empty | Worker-only credential and explicit account/project quota label. An enabled worker requires both; no legacy key fallback. |
-| FLASHCARD_AI_BASE_URL=empty | Required for openai_compatible; must be an HTTP(S) origin/endpoint without embedded credentials, query, or fragment. Empty is correct for native Gemini. |
-| FLASHCARD_AI_ALLOW_UNSTABLE_MODEL=false | Explicit production opt-in for model names indicating preview/latest/experimental status. |
-| FLASHCARD_AI_TEMPERATURE=0.2; FLASHCARD_AI_THINKING_LEVEL=low; FLASHCARD_AI_MAX_OUTPUT_TOKENS=8192; FLASHCARD_AI_CONTEXT_WINDOW_TOKENS=1048576 | Sampling 0–2 for compatible/older models; Gemini 3 omits sampling and uses validated `minimal`, `low`, `medium`, or `high` thinking; per-call output 64–131072 tokens; model context 2048–4194304 tokens. |
+| FLASHCARD_AI_ALLOW_UNSTABLE_MODEL=false | Retained setting; it does not admit a model absent from the closed catalog. |
+| FLASHCARD_AI_TEMPERATURE=0.2; FLASHCARD_AI_THINKING_LEVEL=low; FLASHCARD_AI_MAX_OUTPUT_TOKENS=8192; FLASHCARD_AI_CONTEXT_WINDOW_TOKENS=1048576 | Catalog text requests use provider-default sampling; 3.7/3.8 reject `minimal` thinking. Selected output/context budgets must fit catalog ceilings of 65,536/1,048,576 tokens. |
 | FLASHCARD_AI_PROVIDER_TIMEOUT_SECONDS=90; FLASHCARD_AI_PROVIDER_MAX_RETRIES=3 | Per-call timeout 1–600 seconds; 0–3 retries after the first attempt. |
 | FLASHCARD_AI_RETRY_BASE_SECONDS=3; FLASHCARD_AI_RETRY_MAX_SECONDS=30 | Provider retry delay bounds, 3–60 and 3–600 seconds; respect usable longer Retry-After hints. |
 | FLASHCARD_AI_CONCURRENCY=3 | Provider calls shared across one worker process, 1–32. Multiple worker replicas need divided quotas or a distributed governor. |
@@ -238,27 +323,58 @@ the existing `.env`, installed secrets and generation-job provider/model
 snapshots; do not regenerate them to apply the rename.
 
 `RAG_ENABLED=false` keeps new Knowledge capture/retrieval/Ask AI work inactive,
-without purging stored data. `RAG_EMBEDDING_PROVIDER_ENABLED` independently
-suspends the index worker and query embedding; `RAG_AI_PROVIDER_ENABLED`
-suspends answer admission/execution. Enabling a profile is not authorization for paid requests. The complete
-profile defaults are in the one root [.env.example](../.env.example):
+without purging stored data. `RAG_ASK_ENABLED=false` separately pauses new
+threads, questions, retries and answer-worker execution while preserving
+authorized history/source reads and Knowledge lifecycle work. The prospective
+new-job Ask policy is `related_knowledge_navigation_v8` with
+`hybrid_source_navigation_v9`; old v3 and answer-policy snapshots stay fenced.
+Source head `0033` and dormant v8 code do not activate Ask: the runtime release
+policy fence remains closed, and the retained installation was verified at
+`0033` with Ask disabled. `RAG_EMBEDDING_PROVIDER_ENABLED` controls index and query embedding.
+V8 admission also requires `RAG_SOURCE_JUDGE_PROVIDER_ENABLED`, nonzero
+embedding and judge prices, worker-only keys/quota labels and a Subject active
+space matching the configured space. It requires no answer model or local
+verifier.
+Enabling a profile is not authorization for paid requests. The complete profile
+defaults are in the one root [.env.example](../.env.example):
 
 | Profile | Initial model and controls | Secret consumer |
 | --- | --- | --- |
 | `FLASHCARD_AI_*` | Existing selected text provider/model, card/summary/refill budgets, independent quota bucket/RPM/input TPM and cost ceiling | Generation worker |
-| `RAG_AI_*` | Native `gemini`, stable `gemini-3.5-flash`, `minimal` thinking, answer-only output/context/timeout/retry/rate/token/cost limits, explicit quota bucket; Gemini 3 omits temperature and `BASE_URL` stays empty | Answer worker only |
-| `RAG_EMBEDDING_*` | Native `gemini`, stable `gemini-embedding-001`, 1536 normalized float32 cosine, `raw_text_v1`, `gemini-v1` space revision, provider-fixed `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING` modes, batch/input/rate/cost limits, explicit quota bucket; `BASE_URL` stays empty | Index worker for document vectors; answer worker for query vectors |
+| `RAG_AI_*` | Historical answer-model settings retained in the template/validator while consumers are retired. Leave disabled and key empty; they do not enable the new Ask policy. | No new Ask runtime consumer |
+| `RAG_LOCAL_SUPPORT_ENABLED=false`, `RAG_LOCAL_SUPPORT_MODEL_DIR=./runtime-data/local-support/v1` | Historical answer-verifier settings retained for old-installation migration. The source-only Ask worker does not mount or load the bundle. | No new Ask runtime consumer |
+| `RAG_EMBEDDING_*` | Native `gemini`; default `gemini-embedding-001`, 1536 normalized float32 cosine, `raw_text_v1`, `gemini-v1`, `RETRIEVAL_DOCUMENT`/`QUESTION_ANSWERING`. Optional model 2 requires `gemini-embedding-2`, `gemini2_qa_section_v1`, a new space revision, at most 8192 input tokens and the current reviewed price; it uses versioned text modes and no provider `task_type` | Index worker for document vectors; answer worker for query vectors |
+| `RAG_SOURCE_JUDGE_*` | Dormant v8/visual-v5 source-ID selection with immutable admission-v2 context. Template default is disabled, `gemini-3.5-flash-lite`, HIGH thinking, at most 32,768 input/4,096 output tokens including thinking, 120 s/request, zero retries, concurrency 1, RPM 5, input TPM 250,000 and 80% safety. The template's USD 0.30/2.50 per million input/output tokens and USD 1 maximum estimated cost are admission inputs to recheck before live use; an enabled worker needs a separate quota label and key. Only issued candidate IDs can return; no answer text is requested. | Answer worker only; API, index worker, email worker and browser receive no judge key |
 | `RAG_CHAT_RETENTION_DAYS`, `RAG_ANSWER_*` | 90-day chat default; per-user and deployment thread/message storage, per-thread history, queue/active/daily, worker concurrency/lease/deadline/attempt/manual-retry/backoff/cleanup bounds | API admission, retention and answer worker |
 
 Each enabled role must receive only its own credentials. Sharing a provider
 account requires deliberately matching quota-bucket labels and dividing actual
 account/project limits across every profile and replica. Separate keys do not
 multiply a provider's quota. The API/email/frontend receive no profile key.
-The dedicated index worker implements document embedding; the dedicated answer
-worker owns query embedding, grounded answer generation and a separate semantic
-support pass. The API only enqueues durable work. These configuration fields alone do
-not authorize provider calls. Initial prices in the template are planning inputs to verify
-against current provider prices before any live calls.
+The dedicated index worker implements document embedding. The dormant v8 Ask
+worker owns at most one current-question query embedding and at most one
+source-ID judgment over bounded, currently authorized published-page cues,
+both with zero automatic retries. It derives exact source offsets locally and
+calls no answer model or verifier. A transient embedding failure can use
+bounded local lexical candidate search, visibly marked `lexical_fallback`,
+while retaining failed-attempt and uncertain-cost diagnostics. A judge outage
+remains a safe failure, not a true no-match. The API only enqueues durable
+work. These settings alone do not authorize paid calls, private Knowledge
+transfer or Ask activation.
+Initial prices in the template are planning inputs to verify against current
+provider prices before any live calls.
+
+For historical two-request installations only, the retired local artifacts
+were installed with:
+
+```text
+backend/venv/Scripts/python.exe scripts/install_local_support_models.py
+backend/venv/Scripts/python.exe scripts/evaluate_local_support.py --model-dir runtime-data/local-support/v1
+```
+
+The installer accepts only the pinned HTTPS revisions, sizes and SHA-256
+digests and refuses to overwrite a nonmatching directory. The bundle is ignored
+by Git. The source-only Ask runtime neither uses nor requires these artifacts.
 
 Knowledge-only uploads use a separate admitted queue and quota family:
 `KNOWLEDGE_MAX_ACTIVE_JOBS_*`, `KNOWLEDGE_MAX_QUEUED_JOBS_DEPLOYMENT`,
@@ -267,6 +383,17 @@ Knowledge-only uploads use a separate admitted queue and quota family:
 quotas. Combined flashcard uploads capture Knowledge when `RAG_ENABLED=true`;
 supported capacity/capture failures are recorded independently without turning
 a successful flashcard result into a failure.
+
+Once bounded bytes are accepted, the applicable generation or Knowledge-only
+daily job/upload receipt remains charged for raw transfer even when an explicit
+revision has no changes, the user reuses existing Knowledge, cancels, or lets a
+duplicate choice expire. This is separate from Knowledge storage/index charging:
+`no_changes` and `reuse` create no revision, storage reservation, index job or
+embedding request. An `awaiting_choice` job remains active and its encrypted
+source counts against the applicable retained-source cap until continuation,
+cancellation or expiry cleanup. The choice window reuses
+`GENERATION_UPLOAD_RESERVATION_MINUTES`; no additional setting or secret is
+required.
 
 `RAG_INDEX_WORKER_CONCURRENCY`, `RAG_INDEX_MAX_JOB_INPUT_TOKENS`, timeout,
 lease/heartbeat, attempt/backoff and cleanup settings bound the isolated index

@@ -1,5 +1,5 @@
 import api from './api'
-import type { RagAnswerJob, RagHistory, RagProfile, RagSource, RagThread } from './types'
+import type { RagAnswerJob, RagHistory, RagOriginalPdfMetadata, RagProfile, RagRelatedPage, RagSource, RagThread } from './types'
 
 export const ragService = {
   async getProfile(subjectId: string, signal?: AbortSignal): Promise<RagProfile> {
@@ -43,7 +43,7 @@ export const ragService = {
   ): Promise<RagAnswerJob[]> {
     const response = await api.get<{ jobs: RagAnswerJob[] }>(
       `/subjects/${subjectId}/rag/threads/${threadId}/answer-jobs`,
-      { signal },
+      { signal, params: { limit: 100 } },
     )
     return response.data.jobs
   },
@@ -73,6 +73,61 @@ export const ragService = {
       `/subjects/${subjectId}/rag/threads/${threadId}/answer-jobs/${jobId}`,
       { signal },
     )
+    return response.data
+  },
+
+  async getRelatedPage(
+    subjectId: string,
+    threadId: string,
+    jobId: string,
+    excerptOrder: number,
+    signal?: AbortSignal,
+  ): Promise<RagRelatedPage> {
+    const response = await api.get<RagRelatedPage>(
+      `/subjects/${subjectId}/rag/threads/${threadId}/answer-jobs/${jobId}/related-excerpts/${excerptOrder}/page`,
+      { signal },
+    )
+    return response.data
+  },
+
+  async getOriginalPdfMetadata(
+    subjectId: string,
+    threadId: string,
+    jobId: string,
+    excerptOrder: number,
+    signal?: AbortSignal,
+  ): Promise<RagOriginalPdfMetadata> {
+    const response = await api.head(
+      `/subjects/${subjectId}/rag/threads/${threadId}/answer-jobs/${jobId}/related-excerpts/${excerptOrder}/original-pdf`,
+      { signal, timeout: 15_000 },
+    )
+    const byteLength = Number(response.headers['content-length'])
+    const pageCount = Number(response.headers['x-pdf-page-count'])
+    if (!Number.isSafeInteger(byteLength) || byteLength <= 0 || byteLength > 100 * 1024 * 1024
+      || !Number.isSafeInteger(pageCount) || pageCount <= 0
+      || response.headers['accept-ranges'] !== 'bytes') throw new Error('invalid_pdf_metadata')
+    return { byte_length: byteLength, page_count: pageCount }
+  },
+
+  async getOriginalPdfRange(
+    subjectId: string,
+    threadId: string,
+    jobId: string,
+    excerptOrder: number,
+    begin: number,
+    end: number,
+    totalBytes: number,
+    signal?: AbortSignal,
+  ): Promise<ArrayBuffer> {
+    if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || totalBytes > 100 * 1024 * 1024
+      || !Number.isSafeInteger(begin) || !Number.isSafeInteger(end) || begin < 0 || end <= begin
+      || end > totalBytes || end - begin > 8 * 1024 * 1024) throw new Error('invalid_pdf_range')
+    const response = await api.get<ArrayBuffer>(
+      `/subjects/${subjectId}/rag/threads/${threadId}/answer-jobs/${jobId}/related-excerpts/${excerptOrder}/original-pdf`,
+      { responseType: 'arraybuffer', headers: { Range: `bytes=${begin}-${end - 1}` }, signal, timeout: 15_000 },
+    )
+    if (response.status !== 206 || !(response.data instanceof ArrayBuffer) || response.data.byteLength !== end - begin
+      || response.headers['content-range'] !== `bytes ${begin}-${end - 1}/${totalBytes}`) throw new Error('invalid_pdf_range_response')
     return response.data
   },
 

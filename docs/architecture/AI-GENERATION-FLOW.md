@@ -1,6 +1,6 @@
 # AI Generation Flow
 
-Current truth, verified against source on 2026-09-17. Start with
+Current truth, updated for the 2026-09-25 validated-card choice. Start with
 [project orientation](../00-START-HERE.md) and the [project map](../../PROJECT-MAP.md).
 
 ## Purpose and scope
@@ -14,13 +14,14 @@ must be checked separately by the operator.
 
 | Component | Responsibility |
 |---|---|
-| Instructor subject page, API service, generation hook | Reserve/upload with stable operation keys; recover and poll jobs; cancel or manually retry |
-| Generation router and job service | Instructor ownership, idempotency, quotas, bounded body, source encryption, durable states |
+| Instructor subject page, API service, generation hook | Reserve/upload with stable operation keys; recover and poll jobs; confirm an exact smaller validated-card count, cancel or manually retry |
+| Generation router and job service | Instructor ownership, idempotency, quotas, bounded body, source encryption, durable states and atomic card-choice finalization |
 | Generation worker | Claim fencing, heartbeat, extraction, job deadline, atomic result persistence, recovery and cleanup |
 | PDF processor | Page-preserving extraction in a killable child process; optional local OCR |
 | Compatibility graph facade | Retain the `ainvoke` caller boundary while delegating to the plain Python pipeline |
 | AI pipeline, provider adapters, governor | Evidence packing, structured requests, budgets, one retry owner, shared concurrency and rate admission |
 | Grounding/contracts and flashcard service | Strict card shape, trusted provenance, quote/answer validation, duplicate rejection, persistence validation |
+| Candidate storage | Encrypt only fully validated distinct cards with job/attempt-bound authenticated data, size caps and expiry; never expose their content before confirmation |
 | Instructor set review and subject service | Explicit approval and publication; students receive approved cards from published sets |
 
 ## Primary flow
@@ -34,7 +35,10 @@ flowchart LR
     Worker --> Extract[Isolated page extraction]
     Extract --> Pipeline[Pack evidence and generate]
     Pipeline --> Validate[Schema, grounding and distinctness]
-    Validate --> Commit[Atomic draft set and cards]
+    Validate -->|Exact original target| Commit[Atomic draft set and cards]
+    Validate -->|Bounded yield N below target| Stage[(Encrypted validated candidates)]
+    Stage --> Choice[Owner confirms exact smaller count]
+    Choice --> Commit
     Commit --> Review[Instructor approval]
     Review --> Publish[Publish set]
 ```
@@ -42,7 +46,8 @@ flowchart LR
 1. `POST /flashcards/generation-jobs` reserves metadata with a required
    `Idempotency-Key` and returns `202`, a job ID, and `Location`. Matching
    owner/key/metadata replays the reservation; different metadata returns a
-   typed `409`. The provider and model are snapshotted onto the job.
+   typed `409`. Native Gemini provider/model plus catalog and schema-policy
+   versions are snapshotted onto the job after model-aware preflight.
 2. `PUT /flashcards/generation-jobs/{id}/source` accepts a raw PDF body, counts
    streamed bytes as well as declared length, and checks media type/signature.
    Identical reuploads replay; conflicting source bytes return `409`. Accepted
@@ -51,7 +56,10 @@ flowchart LR
 3. A separate `python -m app.worker` process claims an eligible row with
    PostgreSQL `FOR UPDATE SKIP LOCKED`. Worker identity, a random claim token,
    lease expiry, and heartbeats fence each state update and final commit.
-4. The worker decrypts the temporary source and performs bounded extraction in
+4. Before PDF extraction, the worker rejects an old provider or changed
+   catalog/schema-policy snapshot with a safe terminal error and removes its
+   retained source. It does not reinterpret or silently substitute a model.
+   A compatible worker decrypts the temporary source and performs bounded extraction in
    a spawned child process, called through a worker thread. Ordered pages retain
    their original numbering. OCR is disabled by default and runs only when
    native extraction produces no usable document text.
@@ -65,8 +73,9 @@ flowchart LR
    prompt estimates. A one-pack document skips summaries; every direct batch
    receives the complete pack, including chunks allocated zero cards.
    Multi-pack documents summarize packs and reduce summaries in bounded levels;
-   the server tracks source coverage. Largest-remainder allocation and batched
-   generation preserve each logical chunk's card quota.
+   the server tracks source coverage. Adaptive allocation gives bounded work to
+   untried and underrepresented chunks, then uses validated yield to steer
+   remaining work under the same request, token and cost ceilings.
 7. Summary and generation stages begin with a single compatibility request
    before fan-out; a failure cancels outstanding siblings. Every physical
    provider attempt passes through the worker-wide rolling RPM/input-TPM
@@ -75,25 +84,42 @@ flowchart LR
    the trusted chunk and normalized quote. The answer must occur in the
    verified quote. Page/section come from the server, never from model output.
    A deterministic pass rejects unclear/ungrounded cards and near duplicates;
-   bounded refill rounds request only the missing global count.
+   bounded refill rounds request only the missing global count. Same-chunk
+   batches run in waves so a validated first batch can inform later exclusions.
    Versioned generation/map/reduce prompts request feasible assigned targets,
    compact parallel options and exact contiguous quote/answer spans. Refill passes
    bounded accepted question/answer exclusions as untrusted context; summaries
    remain navigation aids. Full accepted cards retain deterministic duplicate
    enforcement. See [evaluation](../AI_EVALUATION.md) for bounds and evidence.
-9. Success requires exactly the requested number of cards. A final transaction
+9. Normal success requires exactly the requested number of cards. A final transaction
    revalidates the lease, creates the unpublished set and unapproved cards,
    records telemetry, deletes the source, and completes the job. A rollback
    leaves no partial result. Instructor approval and publication are separate
-   subsequent actions.
+   subsequent actions. If the bounded run instead validates `N` distinct cards
+   with `0 < N < requested`, a fenced transaction encrypts those candidates and
+   records `awaiting_card_choice`; no set or card row exists. The authorized owner
+   can confirm an exact count from 1 through `N` using a new idempotency key.
+   Confirmation rechecks the encrypted payload and card invariants using the
+   authenticated duplicate threshold from that attempt, selects a
+   diverse subset, and atomically creates one unpublished draft set with exactly
+   that count while deleting staged data and temporary source. It sends no AI
+   request and incurs no new AI quota charge. A separate manual Retry to pursue
+   the original target requires extra-cost acknowledgement and a fresh quota
+   receipt. `N` is only the observed lower bound from that attempt.
+   Confirmation takes the Knowledge write lock before the job lock so Subject
+   or Knowledge removal serializes with it. Candidate payloads from the older
+   v1 choice policy have no saved threshold and fail closed after the v2
+   upgrade; drain or expire such choices before changing the policy.
 
 ## Important invariants
 
 - Only the owning instructor can manage a subject's generation jobs. Status
   routes never return source PDF bytes or prompts. Static `/generation-*`
   routes register before the dynamic `/flashcards/{flashcard_id}` route.
-- Job states are `awaiting_upload`, `queued`, `running`, `completed`, `failed`,
-  and `cancelled`. Queued work survives page/API restarts; interrupted worker
+- Job states are `awaiting_upload`, `awaiting_choice` (Knowledge duplicate),
+  `awaiting_card_choice`, `queued`, `running`, `completed`, `failed`, and
+  `cancelled`. A card choice survives page/API restarts until its finite expiry;
+  queued work survives restarts; interrupted worker
   execution can be recovered after its lease expires.
 - All cards have four unique options and exactly one matching answer. Generated
   quality scores never approve a card. Publication requires at least one
@@ -108,7 +134,10 @@ flowchart LR
   quota charges. Use [PDF operations](../PDF_GENERATION.md) and
   [configuration](../CONFIGURATION.md) for settings; do not duplicate defaults
   across the context system.
-- The source key is independent of the authentication secret. Success,
+- The source key is independent of the authentication secret. The pending
+  candidate payload uses that key with separate authenticated associated data,
+  retention and per-job/user/deployment byte caps. Drain or expire pending
+  choices before source-key rotation. Success,
   cancellation, and permanent failures remove ciphertext. Final retryable
   failures retain it for a configured period (24 hours by default); cleanup
   removes expired ciphertext and disables retry. Upload reservations expire
@@ -125,9 +154,12 @@ flowchart LR
 | Token/cost preflight refusal | No provider request; precise limit code |
 | Request exceeds context or safe rate-token budget | Refused before that request |
 | Invalid strict schema | `invalid_generated_cards`; no persisted result |
-| Refill cannot supply enough grounded distinct cards | `insufficient_grounded_cards`; no partial set; retained source permits bounded manual retry |
+| Refill yields zero grounded distinct cards | `insufficient_grounded_cards`; no set or smaller-target choice |
+| Refill yields `0 < N < requested` validated distinct cards | Encrypted owner-private `awaiting_card_choice` with observed `N`; no partial set; confirm an exact smaller target without AI or explicitly retry the original target with cost acknowledgement |
+| Card choice expires or is cancelled | Encrypted candidates and temporary source removed; no set or automatic replay; independently reviewed/published Knowledge remains |
 | Provider timeout/network/408/409/425/429/5xx | One application loop: initial attempt plus at most three retries, at least three seconds apart; honor usable longer `Retry-After` |
 | Provider 400/401/403/404 | Permanent compatibility/credential/access/model error; no request retries |
+| Unknown catalog model, incompatible thinking/output/context, old policy snapshot | Safe pre-provider rejection; old job fails terminally and cannot be reinterpreted by manual retry |
 | Retry hint exceeds maximum wait | Stop rather than retry earlier than requested; retryable source can be retained |
 | Handled pipeline/provider failure or whole-job timeout | Finalize with available telemetry; no automatic whole-job replay |
 | Retryable internal infrastructure failure or dead lease | Bounded automatic job requeue with exponential backoff/full jitter; stale worker cannot commit |
@@ -138,6 +170,11 @@ Gemini SDK retries are disabled (`attempts=1`); provider adapters own the single
 per-call retry loop. Rate waits occur outside the per-call timeout and inside
 the whole-job timeout. The governor is process-local: multiple worker replicas
 need divided per-replica limits or a distributed governor.
+The closed Gemini text catalog uses provider-default sampling, validates
+model-specific thinking, context and output ceilings, and pins an inline JSON
+schema policy. `openai_compatible` and custom endpoints are not available for
+new generation. Historical provider snapshots remain stored for audit and
+recovery; see [ADR-015](../decisions/ADR-015-ask-pause-and-gemini-catalog.md).
 
 Job telemetry records estimated/used tokens, configured costs, rejected/accepted
 cards, planned logical requests, physical attempts, retries, wait time, cached

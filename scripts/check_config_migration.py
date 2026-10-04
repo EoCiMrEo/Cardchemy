@@ -27,6 +27,15 @@ REMOVED_AI_NAMES = frozenset({
     "AI_INPUT_COST_PER_MILLION_USD", "AI_OUTPUT_COST_PER_MILLION_USD",
     "AI_MAX_ESTIMATED_COST_USD", "GEMINI_API_KEY",
 })
+RETIRED_ENDPOINT_NAMES = frozenset({
+    "FLASHCARD_AI_BASE_URL", "RAG_AI_BASE_URL", "RAG_EMBEDDING_BASE_URL",
+})
+RETIRED_TASK_MODE_NAMES = frozenset({
+    "RAG_EMBEDDING_DOCUMENT_TASK_MODE", "RAG_EMBEDDING_QUERY_TASK_MODE",
+})
+GEMINI_ONLY_PROVIDER_NAMES = frozenset({
+    "FLASHCARD_AI_PROVIDER", "RAG_AI_PROVIDER", "RAG_EMBEDDING_PROVIDER",
+})
 _ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 
 
@@ -34,15 +43,28 @@ class ConfigMigrationError(RuntimeError):
     """A fixed, value-free migration diagnostic."""
 
 
-def _nonempty_env_value(raw: str) -> bool:
+def _env_assignment_value(raw: str) -> str:
     value = raw.strip()
     if not value or value.startswith("#"):
-        return False
+        return ""
     if value[0] in {"'", '"'}:
         closing = value.find(value[0], 1)
         if closing >= 0:
-            return bool(value[1:closing].strip())
-    return bool(re.split(r"\s+#", value, maxsplit=1)[0].strip())
+            return value[1:closing].strip()
+    return re.split(r"\s+#", value, maxsplit=1)[0].strip()
+
+
+def _nonempty_env_value(raw: str) -> bool:
+    return bool(_env_assignment_value(raw))
+
+
+def _retired(name: str, value: str) -> bool:
+    return (
+        (name in REMOVED_AI_NAMES and bool(value))
+        or (name in RETIRED_ENDPOINT_NAMES and bool(value))
+        or (name in RETIRED_TASK_MODE_NAMES and bool(value))
+        or (name in GEMINI_ONLY_PROVIDER_NAMES and bool(value) and value.casefold() != "gemini")
+    )
 
 
 def removed_names(
@@ -50,12 +72,12 @@ def removed_names(
     *,
     environment: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
-    """Return only known removed names with nonempty file or process values."""
+    """Return only retired key names or legacy provider selections, never values."""
 
     source = os.environ if environment is None else environment
     found = {
         key.upper() for key, value in source.items()
-        if key.upper() in REMOVED_AI_NAMES and value.strip()
+        if _retired(key.upper(), value.strip())
     }
     if env_file is not None:
         try:
@@ -64,9 +86,10 @@ def removed_names(
                 # content stays in memory only and is never logged.
                 for line in env_file.read_text(encoding="utf-8-sig").splitlines():
                     match = _ASSIGNMENT.match(line)
-                    if match and match.group(1).upper() in REMOVED_AI_NAMES:
-                        if _nonempty_env_value(match.group(2)):
-                            found.add(match.group(1).upper())
+                    if match:
+                        name = match.group(1).upper()
+                        if _retired(name, _env_assignment_value(match.group(2))):
+                            found.add(name)
         except (OSError, UnicodeError) as exc:
             raise ConfigMigrationError("Could not inspect the root configuration file.") from exc
     return tuple(sorted(found))
@@ -81,8 +104,8 @@ def ensure_no_legacy_configuration(
     if names:
         raise ConfigMigrationError(
             "Removed AI configuration keys: " + ", ".join(names)
-            + ". Migrate AI_* to FLASHCARD_AI_* and GEMINI_API_KEY to "
-            "FLASHCARD_AI_API_KEY before starting services."
+            + ". Migrate AI_* to FLASHCARD_AI_*, use only verified Gemini "
+            "providers, and remove custom AI BASE_URL values before starting services."
         )
 
 

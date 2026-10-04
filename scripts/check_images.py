@@ -54,6 +54,14 @@ from app.services.source_storage import SourceStorage, SourceStorageError
 from app.time_utils import utcnow
 from app.workers.email import EmailWorker
 from app.workers.generation import GenerationWorker
+from app.workers.rag_answer import RagAnswerWorker
+
+# Source-only Ask runs in this same image. No answer inference dependency,
+# mounted verifier artifact or answer client is required or shipped.
+for name in ("onnxruntime", "tokenizers", "numpy"):
+    assert importlib.util.find_spec(name) is None, "Retired Ask inference package: " + name
+assert not Path("/opt/cardchemy/local-support").exists()
+assert RagAnswerWorker().settings.rag_source_only_available is False
 
 assert "/auth/login" in app.openapi()["paths"]
 assert app.openapi()["info"]["title"] == "Cardchemy"
@@ -157,9 +165,17 @@ if os.environ["RUNTIME_PROBE_OCR"] == "true":
             ocr_page_timeout_seconds=30)
         assert "alpine ocr runtime works" in result.text.lower(), "OCR did not recover the generated English text"
 else:
-    assert shutil.which("pdftoppm") is None and shutil.which("tesseract") is None
+    assert shutil.which("pdftoppm") and shutil.which("tesseract") is None
 
-print("Backend runtime smoke passed: native dependencies, API/workers, bcrypt, HS256/purpose, AES-GCM, PDF" +
+from app.services.knowledge_pdf_renderer import render_pdf_pages
+import hashlib
+rendered = render_pdf_pages(pdf, source_sha256=hashlib.sha256(pdf).hexdigest(), page_numbers=[1])
+assert len(rendered) == 1 and rendered[0].physical_page == 1
+assert max(rendered[0].width, rendered[0].height) <= 1600
+assert rendered[0].width * rendered[0].height <= 2000000
+assert len(rendered[0].png_bytes) <= 1048576 and rendered[0].png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+assert not list(Path(tempfile.gettempdir()).glob("cardchemy-pdf-render-*"))
+print("Backend runtime smoke passed: native dependencies, API/workers, bcrypt, HS256/purpose, AES-GCM, PDF, bounded original-page PNG" +
     (", image-only PDF OCR/eng data" if os.environ["RUNTIME_PROBE_OCR"] == "true" else ", OCR absent"))
 '''
 
@@ -213,6 +229,15 @@ wget -S -O /tmp/probe-asset "http://127.0.0.1:8080$asset" 2>/tmp/probe-asset-hea
 test -s /tmp/probe-asset
 grep -qi 'Cache-Control: public, max-age=31536000, immutable' /tmp/probe-asset-headers
 grep -qi 'Content-Security-Policy:' /tmp/probe-asset-headers
+set -- /usr/share/nginx/html/assets/pdf.worker*.mjs
+test -f "$1"
+worker_asset=${1#/usr/share/nginx/html}
+wget -S -O /tmp/probe-pdf-worker "http://127.0.0.1:8080$worker_asset" 2>/tmp/probe-pdf-worker-headers
+test -s /tmp/probe-pdf-worker
+grep -qi 'Content-Type: text/javascript' /tmp/probe-pdf-worker-headers
+grep -qi 'Cache-Control: public, max-age=31536000, immutable' /tmp/probe-pdf-worker-headers
+grep -qi 'Content-Security-Policy:' /tmp/probe-pdf-worker-headers
+grep -qi 'X-Content-Type-Options: nosniff' /tmp/probe-pdf-worker-headers
 wget -q -O /tmp/probe-private-query 'http://127.0.0.1:8080/index.html?token=phase10-private-query-sentinel'
 if wget -q --post-data='phase10-private-body-sentinel' -O /tmp/probe-private-error 'http://127.0.0.1:8080/index.html?token=phase10-private-query-sentinel'; then
     echo 'Static POST unexpectedly succeeded' >&2
@@ -224,7 +249,7 @@ if grep -q 'phase10-private-' /tmp/probe-edge-log; then
     echo 'Private request target leaked into edge logs' >&2
     exit 1
 fi
-echo 'Frontend runtime smoke passed: UID 101, nginx config, health/index/asset, PNG/ICO and missing-brand 404, security/cache headers, private target redaction'
+echo 'Frontend runtime smoke passed: UID 101, nginx config, health/index/asset/PDF module worker, PNG/ICO and missing-brand 404, security/cache headers, private target redaction'
 '''
 
 

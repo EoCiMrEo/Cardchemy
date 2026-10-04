@@ -1,4 +1,5 @@
 from pathlib import Path
+import base64
 import re
 import secrets
 
@@ -116,7 +117,17 @@ def test_root_example_covers_application_and_compose_settings():
     example = (ROOT_DIR / ".env.example").read_text(encoding="utf-8")
     names = re.findall(r"(?m)^([A-Z][A-Z0-9_]*)=", example)
     assert len(names) == len(set(names))
-    application_names = {name.upper() for name in Settings.model_fields}
+    retired_migration_only_names = {
+        "FLASHCARD_AI_BASE_URL",
+        "RAG_AI_BASE_URL",
+        "RAG_EMBEDDING_BASE_URL",
+        "RAG_EMBEDDING_DOCUMENT_TASK_MODE",
+        "RAG_EMBEDDING_QUERY_TASK_MODE",
+    }
+    application_names = {
+        name.upper() for name in Settings.model_fields
+        if name.upper() not in retired_migration_only_names
+    }
     compose_text = "\n".join(
         (ROOT_DIR / name).read_text(encoding="utf-8")
         for name in (
@@ -134,6 +145,7 @@ def test_root_example_covers_application_and_compose_settings():
     )
     compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", active_compose_text))
     assert application_names | compose_names <= set(names)
+    assert retired_migration_only_names.isdisjoint(names)
     assert "SMTP_PORT=1025" in example
     assert "GENERATION_DAILY_JOBS_PER_USER=20" in example
     assert "VITE_API_URL=/api" in example
@@ -151,21 +163,19 @@ def test_compose_ai_profile_defaults_match_the_root_template():
     critical_names = (
         "FLASHCARD_AI_PROVIDER",
         "FLASHCARD_AI_MODEL",
-        "FLASHCARD_AI_BASE_URL",
         "FLASHCARD_AI_THINKING_LEVEL",
-        "RAG_AI_PROVIDER",
-        "RAG_AI_MODEL",
-        "RAG_AI_BASE_URL",
-        "RAG_AI_THINKING_LEVEL",
-        "RAG_AI_CONTEXT_WINDOW_TOKENS",
-        "RAG_AI_INPUT_COST_PER_MILLION_USD",
-        "RAG_AI_OUTPUT_COST_PER_MILLION_USD",
         "RAG_EMBEDDING_PROVIDER",
         "RAG_EMBEDDING_MODEL",
-        "RAG_EMBEDDING_BASE_URL",
         "RAG_EMBEDDING_SPACE_REVISION",
         "RAG_EMBEDDING_MAX_INPUT_TOKENS",
         "RAG_EMBEDDING_INPUT_COST_PER_MILLION_USD",
+        "RAG_SOURCE_JUDGE_PROVIDER",
+        "RAG_SOURCE_JUDGE_MODEL",
+        "RAG_SOURCE_JUDGE_MAX_INPUT_TOKENS",
+        "RAG_SOURCE_JUDGE_MAX_OUTPUT_TOKENS",
+        "RAG_SOURCE_JUDGE_INPUT_COST_PER_MILLION_USD",
+        "RAG_SOURCE_JUDGE_OUTPUT_COST_PER_MILLION_USD",
+        "RAG_SOURCE_JUDGE_PROVIDER_MAX_RETRIES",
     )
     for name in critical_names:
         match = re.search(
@@ -174,6 +184,78 @@ def test_compose_ai_profile_defaults_match_the_root_template():
         )
         assert match is not None, f"Compose does not interpolate {name}"
         assert match.group(1) == example[name], f"Compose default drifted for {name}"
+    answer_worker = re.search(
+        r"(?ms)^  answer-worker:\n(.*?)(?=^  [a-z][\w-]*:\n|\Z)", compose,
+    )
+    assert answer_worker is not None
+    assert "RAG_EMBEDDING_API_KEY" in answer_worker.group(1)
+    assert "RAG_SOURCE_JUDGE_API_KEY" in answer_worker.group(1)
+    assert "RAG_AI_" not in answer_worker.group(1)
+    for service in ("backend", "worker", "index-worker"):
+        block = re.search(
+            rf"(?ms)^  {service}:\n(.*?)(?=^  [a-z][\w-]*:\n|\Z)", compose,
+        )
+        assert block is not None
+        assert "RAG_SOURCE_JUDGE_API_KEY" not in block.group(1)
+
+
+def test_source_judge_profile_is_closed_and_rejects_underpriced_or_retrying_config(monkeypatch):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "two_request_local_support_v1")
+    base = {
+        "_env_file": None,
+        "database_url": "postgresql+asyncpg://user:password@database/app",
+        "secret_key": "a-test-secret-with-real-entropy-1234567890",
+        "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rag_enabled": True,
+        "rag_ask_enabled": True,
+        "rag_embedding_provider_enabled": True,
+        "rag_source_judge_provider_enabled": True,
+    }
+    configured = Settings(**base)
+    assert configured.rag_ask_effective_enabled is False
+    assert configured.rag_source_only_available is False
+    assert configured.rag_source_judge_provider_max_retries == 0
+    assert configured.rag_source_judge_model == "gemini-3.5-flash-lite"
+    assert configured.rag_source_judge_contract_version == "visual_source_id_v5"
+    assert configured.rag_source_judge_thinking_level == "high"
+    assert configured.rag_source_judge_max_input_tokens == 32768
+    assert configured.rag_source_judge_max_output_tokens == 4096
+    assert configured.rag_source_judge_provider_timeout_seconds == 120
+    assert configured.rag_source_judge_endpoint_identity == (
+        "https://generativelanguage.googleapis.com"
+    )
+    for invalid in (
+        {"rag_source_judge_model": "gemini-3.5-flash"},
+        {"rag_source_judge_provider_max_retries": 1},
+        {"rag_source_judge_thinking_level": "low"},
+        {"rag_source_judge_provider_timeout_seconds": 121},
+        {"rag_source_judge_max_input_tokens": 32769},
+        {"rag_source_judge_max_output_tokens": 4097},
+        {"rag_source_judge_input_cost_per_million_usd": "0.29"},
+        {"rag_source_judge_output_cost_per_million_usd": "2.49"},
+    ):
+        with pytest.raises(ValidationError):
+            Settings(**base, **invalid)
+
+
+def test_visual_worker_requires_original_pdf_key_only_after_release_activation(monkeypatch):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "two_request_local_support_v1")
+    base = dict(_env_file=None, database_url="postgresql+asyncpg://user:password@database/app",
+        secret_key="a-test-secret-with-real-entropy-1234567890",
+        generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        knowledge_pdf_encryption_key=None,
+        rag_enabled=True, rag_ask_enabled=True, rag_embedding_provider_enabled=True,
+        rag_embedding_api_key="synthetic-embedding-key", rag_embedding_quota_bucket="synthetic-project",
+        rag_source_judge_provider_enabled=True, rag_source_judge_api_key="synthetic-judge-key",
+        rag_source_judge_quota_bucket="synthetic-project")
+    settings = Settings(**base)
+    assert settings.require_rag_answer_worker_config() is settings
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "related_knowledge_navigation_v8")
+    with pytest.raises(ValueError, match="KNOWLEDGE_PDF_ENCRYPTION_KEY"):
+        settings.require_rag_answer_worker_config()
+    key = base64.urlsafe_b64encode(b"synthetic-independent-pdf-key-32!!"[:32]).decode().rstrip("=")
+    configured = Settings(**dict(base, knowledge_pdf_encryption_key=key))
+    assert configured.require_rag_answer_worker_config() is configured
 
 
 def test_bootstrap_template_validates_without_operator_environment_and_never_overwrites(tmp_path, monkeypatch):
@@ -187,6 +269,10 @@ def test_bootstrap_template_validates_without_operator_environment_and_never_ove
     temporary_env = tmp_path / ".env"
     temporary_env.write_text(rendered, encoding="utf-8")
     loaded = Settings(_env_file=temporary_env)
+    assert loaded.rag_ask_enabled is False
+    assert loaded.rag_source_judge_provider_enabled is False
+    assert loaded.rag_ask_effective_enabled is False
+    assert loaded.rag_source_only_available is False
     assert loaded.generation_daily_jobs_per_user == 20
     assert loaded.smtp_port == 1025
     assert loaded.smtp_security == "none"
@@ -241,7 +327,7 @@ def test_ai_request_pack_must_fit_context_and_safety_adjusted_tpm():
         )
 
 
-def test_gemini_and_openai_rag_profiles_have_distinct_task_aware_spaces():
+def test_gemini_profile_preserves_task_aware_space_and_rejects_legacy_selection():
     base = {
         "_env_file": None,
         "database_url": "postgresql+asyncpg://user:password@database/app",
@@ -267,29 +353,44 @@ def test_gemini_and_openai_rag_profiles_have_distinct_task_aware_spaces():
         "https://generativelanguage.googleapis.com"
     )
 
-    compatible = Settings(
-        **base,
-        rag_ai_provider="openai_compatible",
-        rag_ai_model="answer-model",
-        rag_ai_base_url="https://answer.example.test/v1",
-        rag_embedding_provider="openai_compatible",
-        rag_embedding_model="embedding-model",
-        rag_embedding_base_url="https://embedding.example.test/v1",
-    )
-    assert compatible.rag_embedding_provider_task_modes == (
-        "shared_input",
-        "shared_input",
-    )
-    assert compatible.rag_embedding_space_identity[-2:] == (
-        "shared_input",
-        "shared_input",
-    )
-
-    with pytest.raises(ValidationError, match="RAG_AI_BASE_URL"):
+    with pytest.raises(ValidationError, match="rag_ai_provider"):
         Settings(**base, rag_ai_provider="openai_compatible", rag_ai_base_url=None)
-    with pytest.raises(ValidationError, match="RAG_EMBEDDING_BASE_URL"):
+    with pytest.raises(ValidationError, match="rag_embedding_provider"):
         Settings(
             **base,
             rag_embedding_provider="openai_compatible",
             rag_embedding_base_url=None,
+        )
+    with pytest.raises(ValidationError, match="RAG_AI_BASE_URL"):
+        Settings(**base, rag_ai_base_url="https://answer.example.test/v1")
+
+
+def test_embedding_2_selection_requires_distinct_versioned_format():
+    base = {
+        "_env_file": None,
+        "database_url": "postgresql+asyncpg://user:password@database/app",
+        "secret_key": "a-test-secret-with-real-entropy-1234567890",
+        "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    }
+    configured = Settings(
+        **base,
+        rag_embedding_model="gemini-embedding-2",
+        rag_embedding_format_version="gemini2_qa_section_v1",
+        rag_embedding_space_revision="gemini2-v1",
+        rag_embedding_input_cost_per_million_usd="0.20",
+    )
+    assert configured.rag_embedding_provider_task_modes == (
+        "title_section_text_v1", "question_answering_query_v1"
+    )
+    assert configured.rag_embedding_space_identity != Settings(**base).rag_embedding_space_identity
+    with pytest.raises(ValidationError, match="gemini2_qa_section_v1"):
+        Settings(**base, rag_embedding_model="gemini-embedding-2")
+    with pytest.raises(ValidationError, match="raw_text_v1"):
+        Settings(**base, rag_embedding_format_version="gemini2_qa_section_v1")
+    with pytest.raises(ValidationError, match="8192"):
+        Settings(
+            **base,
+            rag_embedding_model="gemini-embedding-2",
+            rag_embedding_format_version="gemini2_qa_section_v1",
+            rag_embedding_max_input_tokens=8193,
         )

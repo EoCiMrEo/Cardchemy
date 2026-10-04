@@ -93,7 +93,8 @@ test.describe('role-aware subject details and recovery', () => {
     allowProgress = true
     await page.getByRole('alert').getByRole('button', { name: 'Retry' }).click()
 
-    await expect(page.getByText('37% complete')).toBeVisible()
+    await expect(page.getByText('1/4')).toBeVisible()
+    await expect(page.getByText('Accuracy 50%')).toBeVisible()
     await expect(page.getByText('63% mastery')).toBeVisible()
     expect(api.count('GET', '/subjects/subject-1')).toBe(subjectCallsBeforeProgressRetry + 1)
     expect(api.count('GET', '/subjects/subject-1/sets')).toBe(setCallsBeforeProgressRetry + 1)

@@ -1,0 +1,14 @@
+# Lane 6 independent offline release recheck
+
+Date: 2026-09-29 (America/Chicago). Scope: keyless regression checks for the four open Lane 6 source-navigation, original-PDF, generation-choice and release boxes. The starting checkout was `main` at `6c02d6c` with extensive existing local changes, which this check preserved. Read root `AGENTS.md`, project orientation/maps, ADR-023/024, the Lane 6 plan, `docs/TESTING.md`, and relevant earlier release evidence. No provider request, retained-database mutation, root `.env` edit, Ask activation, volume cleanup or runtime implementation occurred.
+
+## Fresh verification
+
+- From `backend`, `venv\Scripts\python.exe -m pytest -q tests/test_rag_source_only.py tests/test_rag_source_only_negative_gate.py tests/test_source_navigation.py tests/test_source_judgment.py tests/test_source_judgment_worker.py tests/test_knowledge_pdf.py tests/test_pdf_cors.py tests/test_knowledge_duplicate_choice.py tests/test_generation_card_choice.py tests/test_generation_jobs.py`: **145 passed**, exit 0. These are synthetic, keyless contracts for source-only Ask, negative cases, source judging, PDF access, Knowledge duplicate choice and partial-card decisions.
+- From `backend`, `venv\Scripts\python.exe -m pytest -q`: **2,434 passed, 151 skipped, 2 deselected**, exit 0 in 196.39 seconds. The maintained test setup injects offline configuration; PostgreSQL, Mailpit and explicitly live AI cases do not run in this command. These counts are not disposable-service, paid-provider or real-course usefulness evidence.
+- From `frontend`, `npm run check -- --workers=2`: exit 0. Typechecks, lint and build passed; **6/6 Node unit**, **65/65 component**, and **82/83 Chromium** cases passed, with **one opt-in live password-reset case skipped**. The preserved bundle/coverage gates passed; component coverage summary was 96.66% statements, 87.36% branches, 93.22% functions and 97.84% lines.
+- From the repository root, `.\backend\venv\Scripts\python.exe .\scripts\check_context.py`: exit 0, **37 required files, 79 active guides, 1,519 local links** validated before this record was indexed and **1,520 links** afterward. An initial root command omitted the `backend\` prefix and failed before starting the script; the corrected documented Python environment then passed.
+
+## Limits and outstanding gates
+
+The browser suite uses mocked API data and synthetic PDFs. This recheck did not run guarded disposable PostgreSQL migrations or the deterministic cross-stack journey, open the retained original PDFs in a signed-in browser, perform spoken assistive-technology review, generate cards with a live provider, or score any independent original-PDF source-usefulness holdout. It cannot close the four Lane 6 boxes, prove the 90% displayed-page usefulness threshold, or justify enabling Ask. The separately approved public source-ID pilot and its one-shot ledger are outside this keyless verification.
