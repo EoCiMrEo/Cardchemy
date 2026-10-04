@@ -1,24 +1,24 @@
 # Runtime dependencies. Compile with scripts/lock_dependencies.ps1.
-fastapi==0.141.1
+fastapi==0.142.2
 # Direct middleware/test imports must stay on a fixed Starlette release.
-starlette==1.6.0
-uvicorn[standard]==0.53.0
+starlette==1.7.0
+uvicorn[standard]==0.54.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 email-validator==2.3.0
 
-sqlalchemy==2.0.53
+sqlalchemy==2.1.1
 asyncpg==0.31.0
 alembic==1.20.0
 pgvector==0.5.0
 
-PyJWT==2.15.0
-cryptography==50.0.1
+PyJWT==2.15.1
+cryptography==50.0.2
 bcrypt==5.0.0
 python-multipart==0.0.32
 
-google-genai==2.23.0
+google-genai==2.26.0
 httpx==0.28.1
 pypdf==6.19.0
 
-python-dotenv==1.2.3
+python-dotenv==1.2.4

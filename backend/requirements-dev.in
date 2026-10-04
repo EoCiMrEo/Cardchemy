@@ -11,6 +11,6 @@ pip-audit==2.10.1
 PyYAML==6.0.3
 
 # Keyless historical local-model guard tests; no weights or runtime AI lane.
-numpy==2.4.1
+numpy==2.5.3
 onnxruntime==1.30.0
-tokenizers==0.22.1
+tokenizers==0.23.2
