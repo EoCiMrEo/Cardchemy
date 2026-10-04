@@ -14,6 +14,12 @@ checks that NumPy, ONNX Runtime, tokenizers and local model artifacts are
 absent. Historical local-model research scripts are outside the shipped
 Ask path; they do not require or enable an answer verifier in the application.
 
+NumPy, ONNX Runtime and tokenizers are explicitly pinned in the development
+inputs for maintained offline model-research guard/calibration tests. They are
+not production dependencies, do not enter the backend images, and do not restore
+the retired answer-verifier path. Fresh CI installs must reproduce these tests
+without relying on packages left in a local development environment.
+
 The frontend original-page viewer pins `pdfjs-dist`
 6.3.289 (Apache-2.0), lazy-loads its display code and worker on source open,
 and retains the existing no-iframe/object CSP. Its upstream Apache-2.0 text
@@ -26,6 +32,11 @@ browser compatibility together before release.
 The backend uses FastAPI, SQLAlchemy, PostgreSQL through `asyncpg`, and Alembic
 for schema migrations. PyJWT handles purpose-scoped HS256 tokens; token
 claims, issuer/audience, clock skew, and session verification remain enforced.
+The runtime pin is PyJWT 2.15.0, which fixes the upstream recursive payload
+parser exception recorded in
+[GHSA-42vr-xj54-vc7v](https://github.com/advisories/GHSA-42vr-xj54-vc7v).
+This package upgrade does not introduce JWKS or signature-disabled token reads;
+the existing verified HS256 application contract remains authoritative.
 The direct `bcrypt` backend replaces Passlib while preserving the existing
 password record formats and full-password v2 prehash. Historic v1 and raw
 bcrypt verification is covered by independent known vectors and fixtures from

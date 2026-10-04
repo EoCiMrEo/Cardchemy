@@ -89,3 +89,66 @@ These files are preserved as reviewed; this optional check returned two, not a
 pass. No migration history, source semantics, security/coverage/bundle threshold
 or required CI gate was rewritten to silence formatting warnings. Earlier plain
 worktree diff checks covered tracked modifications and remain their own scope.
+
+## First published candidate and fresh-CI diagnosis
+
+Commit `2d96b68bbe1d13e82942b8374e592f23f0986313` contains 987 changed paths,
+including the new publication evidence and previously unchanged CI guide fix.
+It was pushed normally, without force, and opened as
+[PR 41](https://github.com/EoCiMrEo/Cardchemy/pull/41). The PR is attached to this
+task. Remote base remains the original main commit; GitHub reports no conflicts.
+
+The first hosted CI run, `37221870078`, completed seven mandatory jobs
+successfully and six unsuccessfully, including the required aggregator.
+Frontend, real deterministic journey, database artifact, full-history/source
+secret scanning and all three runtime image checks passed. Separate dependency
+review `37221870079` passed. No merge occurred under a failed required check.
+
+Both Python versions and PostgreSQL/Mailpit test collection stopped because
+the development lock omitted NumPy, which the local environment already had.
+Maintained historical guard/calibration tests also directly import ONNX Runtime
+and tokenizers. These packages are being explicitly pinned in development only,
+with official Python 3.11/3.13 compatible wheels; no tests are skipped or removed,
+and runtime images still exclude them. The existing lock-generation script
+reuses unaffected pins without a blanket dependency upgrade.
+
+The exact dependency-audit artifact identified PyJWT 2.14.0 with
+`PYSEC-2026-4141` / `CVE-2026-101918`, fixed in 2.15.0. The
+[official upstream advisory](https://github.com/advisories/GHSA-42vr-xj54-vc7v)
+and published release were verified. The direct runtime pin is being updated;
+the existing HS256 signature/claim/session contract is unchanged. Cardchemy does
+not add JWKS or signature-disabled reads. This dependency finding is recorded
+without claiming that the affected pre-verification path exists in Cardchemy.
+
+Fresh collection and current coverage did not run in the failed jobs. Earlier
+local passes are preserved with their environment scope; the collection failure
+is not relabeled as a pass. All fixes will face the same unchanged hosted gates.
+
+## Reproducible dependency repair
+
+The required `backend/scripts/lock_dependencies.ps1` completed successfully.
+The runtime graph changes only PyJWT from 2.14.0 to 2.15.0. Development adds
+NumPy 2.4.1, ONNX Runtime 1.30.0 and tokenizers 0.22.1 plus their required
+dependencies; unaffected pins are preserved. Official wheel metadata supports
+both Python versions. These local research guard dependencies remain absent
+from production requirements and the runtime image install path.
+
+A fresh Windows Python 3.13 environment installed the complete development
+graph with `--require-hashes`; a separate fresh runtime install also passed.
+Fresh strict pip-audit returned zero vulnerabilities. Targeted authentication
+and historical local-model guard contracts passed: 185 passed and one existing
+Windows symlink skip. Full collection found 5,633 of 5,635 tests, with only the
+two opt-in live tests deselected and no import errors. No model weights,
+inference, provider calls or database changes were used. Python 3.11 execution
+and complete current coverage remain the hosted matrix's responsibility.
+
+Workflow/protection validation and context validation passed again, including
+37 required files, 79 active guides and 2,191 local links. The independent
+repair review confirmed unchanged fixed-HS256 authorization and runtime
+dependency isolation. The repair is published through the same PR and the
+same required gates; no failing test, audit or threshold is waived.
+
+PR 41 and its Actions runs are the authoritative evolving publication record.
+This dated snapshot records preparation and the first repair; final merge and
+exact-main outcomes will be checked against their actual remote commit, rather
+than predicted here. No local runtime deployment is part of this GitHub update.

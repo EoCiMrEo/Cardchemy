@@ -32,6 +32,11 @@ and the Keep a Changelog structure.
 
 ## [Unreleased]
 
+- Updated PyJWT to 2.15.0 for the upstream recursive payload-parser fix, retaining
+  verified purpose-scoped HS256 tokens. Declared development-only NumPy, ONNX
+  Runtime and tokenizers so fresh CI reproduces the maintained offline research
+  guards without restoring any local model dependency to production images.
+
 - Completed source-only Lane 6 as **7/7 complete** and
   Ask AI is enabled in the retained local installation (verified 2026-10-04). Current v8/visual-v5/admission-v2 on additive head
   0033 returns up to three exact unverified published-PDF page references;
