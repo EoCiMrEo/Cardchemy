@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, FileUp, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { BookOpen, FileUp, Loader2, Paperclip, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { copy } from '@/i18n/en'
 import { apiErrorMessage } from '@/services/errors'
+import { flashcardService } from '@/services/flashcards'
 import { knowledgeService } from '@/services/knowledge'
 import { ragService } from '@/services/rag'
-import type { KnowledgeDocument, RagProfile } from '@/services/types'
+import type { GenerationJob, KnowledgeDocument, RagProfile } from '@/services/types'
 
 interface KnowledgeAreaProps {
   subjectId: string
+  onJobUpdated: (job: GenerationJob) => void
 }
 
-export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
+const MAX_ORIGINAL_PDF_BYTES = 100 * 1024 * 1024
+
+export function KnowledgeArea({ subjectId, onJobUpdated }: KnowledgeAreaProps) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
   const [profile, setProfile] = useState<RagProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -28,7 +32,15 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [fileInputKey, setFileInputKey] = useState(0)
+  const [originalPdfLimit, setOriginalPdfLimit] = useState(MAX_ORIGINAL_PDF_BYTES)
+  const [attachTargetId, setAttachTargetId] = useState<string | null>(null)
+  const [attachFile, setAttachFile] = useState<File | null>(null)
+  const [attaching, setAttaching] = useState(false)
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [attachNotice, setAttachNotice] = useState<{ documentId: string; revisionId: string } | null>(null)
+  const [attachInputKey, setAttachInputKey] = useState(0)
   const pollControllerRef = useRef<AbortController | null>(null)
+  const attachControllerRef = useRef<AbortController | null>(null)
 
   const loadDocuments = useCallback(async (signal?: AbortSignal, quiet = false) => {
     if (!quiet) setLoading(true)
@@ -57,6 +69,22 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
       })
     return () => controller.abort()
   }, [subjectId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void flashcardService.getGenerationLimits(controller.signal)
+      .then((limits) => {
+        if (!controller.signal.aborted) {
+          setOriginalPdfLimit(Math.min(limits.max_upload_bytes, MAX_ORIGINAL_PDF_BYTES))
+        }
+      })
+      .catch(() => {
+        // The server still enforces its configured upload limit if this optional hint is unavailable.
+      })
+    return () => controller.abort()
+  }, [subjectId])
+
+  useEffect(() => () => attachControllerRef.current?.abort(), [subjectId])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -113,8 +141,17 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
         title: title.trim(),
         source_pdf_name: file.name,
       }, key, controller.signal)
-      await knowledgeService.uploadSource(job.id, file, controller.signal)
-      setUploadMessage(copy.knowledge.uploadQueued)
+      const uploaded = await knowledgeService.uploadSource(job.id, file, controller.signal)
+      onJobUpdated(uploaded)
+      setUploadMessage(
+        uploaded.status === 'awaiting_choice'
+          ? copy.knowledge.duplicatePending
+          : uploaded.knowledge_upload_outcome === 'no_changes'
+            ? copy.knowledge.noChanges
+            : uploaded.knowledge_upload_outcome === 'reused'
+              ? copy.knowledge.reused
+              : copy.knowledge.uploadQueued,
+      )
       setSubmissionKey(null)
       setRevisionTarget(null)
       setTitle('')
@@ -145,6 +182,52 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
       setActionError(apiErrorMessage(caught, copy.knowledge.actionFailed))
     } finally {
       setBusyDocumentId(null)
+    }
+  }
+
+  const startOriginalAttachment = (documentId: string) => {
+    setAttachTargetId(documentId)
+    setAttachFile(null)
+    setAttachError(null)
+    setAttachInputKey((value) => value + 1)
+  }
+
+  const cancelOriginalAttachment = () => {
+    setAttachTargetId(null)
+    setAttachFile(null)
+    setAttachError(null)
+    setAttachInputKey((value) => value + 1)
+  }
+
+  const handleOriginalAttachment = async (event: React.FormEvent, document: KnowledgeDocument) => {
+    event.preventDefault()
+    if (!attachFile || uploading || busyDocumentId !== null || !document.content_revision?.is_active || document.content_revision.status !== 'ready') return
+    if (attachFile.size === 0 || attachFile.size > originalPdfLimit) {
+      setAttachError(copy.knowledge.originalPdfSizeExceeded(originalPdfLimit))
+      return
+    }
+    const controller = new AbortController()
+    attachControllerRef.current = controller
+    setAttaching(true)
+    setAttachError(null)
+    try {
+      const updated = await knowledgeService.attachOriginalPdf(
+        subjectId, document.id, attachFile, controller.signal,
+      )
+      if (controller.signal.aborted) return
+      setDocuments((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setAttachNotice({ documentId: updated.id, revisionId: updated.content_revision?.id ?? '' })
+      setAttachTargetId(null)
+      setAttachFile(null)
+      setAttachInputKey((value) => value + 1)
+      await loadDocuments(controller.signal, true)
+    } catch (caught: unknown) {
+      if (!controller.signal.aborted) {
+        setAttachError(apiErrorMessage(caught, copy.knowledge.originalPdfAttachFailed))
+      }
+    } finally {
+      if (attachControllerRef.current === controller) attachControllerRef.current = null
+      setAttaching(false)
     }
   }
 
@@ -205,7 +288,7 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={uploading || !profile?.embedding_available} className="min-h-11">
+              <Button type="submit" disabled={uploading || attaching || !profile?.embedding_available} className="min-h-11">
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <FileUp className="mr-2 h-4 w-4" aria-hidden="true" />}
                 {uploading ? copy.knowledge.uploading : submissionKey ? copy.knowledge.retryUpload : copy.knowledge.submitUpload}
               </Button>
@@ -231,6 +314,8 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
           const content = document.content_revision
           const index = document.index_revision
           const busy = busyDocumentId === document.id
+          const canAttachOriginal = content?.is_active && content.status === 'ready'
+          const showAttachForm = attachTargetId === document.id
           return (
             <Card key={document.id} className="min-w-0 overflow-hidden">
               <CardContent className="p-4 sm:p-5">
@@ -255,13 +340,42 @@ export function KnowledgeArea({ subjectId }: KnowledgeAreaProps) {
                     {document.requires_pdf_reupload ? <p className="mt-3 text-sm text-amber-800">{copy.knowledge.rawSourceUnavailable}</p> : <p className="mt-3 text-xs text-muted-foreground">{copy.knowledge.storedPagesHelp}</p>}
                   </div>
                   <div className="flex max-w-full flex-wrap gap-2 xl:max-w-sm xl:justify-end">
-                    {document.can_review_publish ? <Button size="sm" disabled={busy} onClick={() => void mutate(document, () => knowledgeService.reviewPublish(subjectId, document.id))}>{copy.knowledge.reviewPublish}</Button> : null}
-                    {document.can_unpublish ? <Button size="sm" variant="outline" disabled={busy} onClick={() => { if (confirm(copy.knowledge.confirmUnpublish)) void mutate(document, () => knowledgeService.unpublish(subjectId, document.id)) }}>{copy.knowledge.unpublish}</Button> : null}
-                    {document.can_retry_index ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void mutate(document, () => knowledgeService.retryIndex(subjectId, document.id))}><RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" />{copy.knowledge.retryIndex}</Button> : null}
-                    <Button size="sm" variant="outline" disabled={busy || uploading} onClick={() => startRevision(document)}>{copy.knowledge.uploadRevision}</Button>
-                    <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-50 hover:text-red-800" disabled={busy} onClick={() => { if (confirm(copy.knowledge.confirmRemove)) void mutate(document, () => knowledgeService.remove(subjectId, document.id)) }}><Trash2 className="mr-1 h-4 w-4" aria-hidden="true" />{copy.knowledge.remove}</Button>
+                    {document.can_review_publish ? <Button size="sm" disabled={busy || attaching} onClick={() => void mutate(document, () => knowledgeService.reviewPublish(subjectId, document.id))}>{copy.knowledge.reviewPublish}</Button> : null}
+                    {document.can_unpublish ? <Button size="sm" variant="outline" disabled={busy || attaching} onClick={() => { if (confirm(copy.knowledge.confirmUnpublish)) void mutate(document, () => knowledgeService.unpublish(subjectId, document.id)) }}>{copy.knowledge.unpublish}</Button> : null}
+                    {document.can_retry_index ? <Button size="sm" variant="outline" disabled={busy || attaching} onClick={() => void mutate(document, () => knowledgeService.retryIndex(subjectId, document.id))}><RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" />{copy.knowledge.retryIndex}</Button> : null}
+                    {canAttachOriginal ? <Button size="sm" variant="outline" disabled={busy || uploading || attaching} aria-expanded={showAttachForm} aria-controls={showAttachForm ? `knowledge-original-form-${document.id}` : undefined} onClick={() => showAttachForm ? cancelOriginalAttachment() : startOriginalAttachment(document.id)}><Paperclip className="mr-1 h-4 w-4" aria-hidden="true" />{copy.knowledge.attachOriginalPdf}</Button> : null}
+                    <Button size="sm" variant="outline" disabled={busy || uploading || attaching} onClick={() => startRevision(document)}>{copy.knowledge.uploadRevision}</Button>
+                    <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-50 hover:text-red-800" disabled={busy || attaching} onClick={() => { if (confirm(copy.knowledge.confirmRemove)) void mutate(document, () => knowledgeService.remove(subjectId, document.id)) }}><Trash2 className="mr-1 h-4 w-4" aria-hidden="true" />{copy.knowledge.remove}</Button>
                   </div>
                 </div>
+                {attachNotice?.documentId === document.id && attachNotice.revisionId === content?.id ? (
+                  <p className="mt-3 text-sm text-emerald-800" role="status" aria-live="polite">{copy.knowledge.originalPdfAttached}</p>
+                ) : null}
+                {showAttachForm ? (
+                  <form id={`knowledge-original-form-${document.id}`} className="mt-4 space-y-3 rounded border border-blue-200 bg-blue-50/50 p-3" onSubmit={(event) => void handleOriginalAttachment(event, document)}>
+                    <p className="text-sm font-medium">{copy.knowledge.originalPdfAttachTitle}</p>
+                    <p className="text-sm text-slate-700">{copy.knowledge.originalPdfAttachHelp}</p>
+                    <p className="text-xs text-slate-600">{copy.knowledge.originalPdfMaxSize(originalPdfLimit)}</p>
+                    <label htmlFor={`knowledge-original-file-${document.id}`} className="block text-sm font-medium">{copy.knowledge.exactOriginalPdfFile}</label>
+                    <Input
+                      key={attachInputKey}
+                      id={`knowledge-original-file-${document.id}`}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      required
+                      disabled={attaching}
+                      onChange={(event) => { setAttachFile(event.target.files?.[0] ?? null); setAttachError(null) }}
+                    />
+                    {attachError ? <p className="text-sm text-red-800" role="alert">{attachError}</p> : null}
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" size="sm" disabled={attaching || uploading || busyDocumentId !== null || !attachFile}>
+                        {attaching ? <Loader2 className="mr-1 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+                        {attaching ? copy.knowledge.attachingOriginalPdf : copy.knowledge.confirmAttachOriginalPdf}
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" disabled={attaching} onClick={cancelOriginalAttachment}>{copy.common.cancel}</Button>
+                    </div>
+                  </form>
+                ) : null}
               </CardContent>
             </Card>
           )

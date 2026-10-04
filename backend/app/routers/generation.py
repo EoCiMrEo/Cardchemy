@@ -12,10 +12,13 @@ from app.models.user import User
 from app.routers.auth import get_current_instructor
 from app.schemas.generation import (
     GenerationJobCreate,
+    CardChoiceRequest,
+    GenerationRetryRequest,
     GenerationJobListResponse,
     GenerationJobResponse,
     GenerationLimitsResponse,
     KnowledgeJobCreate,
+    KnowledgeChoiceRequest,
 )
 from app.services.generation import GenerationJobService, read_bounded_pdf_body
 from app.services.pdf_processor import PDFProcessingError
@@ -208,10 +211,47 @@ async def cancel_generation_job(
     return await _response(db, job)
 
 
+@router.post("/generation-jobs/{job_id}/knowledge-choice", response_model=GenerationJobResponse)
+async def submit_knowledge_choice(
+    job_id: UUID,
+    data: KnowledgeChoiceRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    user: User = Depends(get_current_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJobResponse:
+    user_id = user.id
+    await db.rollback()
+    async with db.begin():
+        job = await jobs.submit_knowledge_choice(
+            db, job_id=job_id, user_id=user_id,
+            choice=data.choice, idempotency_key=idempotency_key,
+        )
+    return await _response(db, job)
+
+
+@router.post("/generation-jobs/{job_id}/card-choice", response_model=GenerationJobResponse)
+async def submit_card_choice(
+    job_id: UUID,
+    data: CardChoiceRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    user: User = Depends(get_current_instructor),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJobResponse:
+    user_id = user.id
+    await db.rollback()
+    async with db.begin():
+        job = await jobs.submit_card_choice(
+            db, job_id=job_id, user_id=user_id,
+            card_count=data.card_count, idempotency_key=idempotency_key,
+        )
+    return await _response(db, job)
+
+
 @router.post("/generation-jobs/{job_id}/retry", response_model=GenerationJobResponse)
 async def retry_generation_job(
     job_id: UUID,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    data: GenerationRetryRequest | None = None,
     user: User = Depends(get_current_instructor),
     db: AsyncSession = Depends(get_db),
 ) -> GenerationJobResponse:
@@ -223,5 +263,6 @@ async def retry_generation_job(
             job_id=job_id,
             user_id=user_id,
             idempotency_key=idempotency_key,
+            acknowledge_additional_cost=bool(data and data.acknowledge_additional_cost),
         )
     return await _response(db, job)

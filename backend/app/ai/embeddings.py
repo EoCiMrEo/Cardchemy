@@ -20,9 +20,20 @@ from typing import Any, Protocol, Sequence, runtime_checkable
 import httpx
 
 from app.ai.chunking import estimate_tokens
-from app.ai.providers import AIProviderError, ProviderAttemptTelemetry, ProviderUsage
+from app.ai.providers import (
+    AIProviderError,
+    ProviderAttemptTelemetry,
+    ProviderUsage,
+    current_attempt_scope,
+    provider_attempt_scope,
+)
 from app.ai.rate_limit import ProviderRateGovernor, ProviderRateLimitExceeded
-from app.config import Settings
+from app.config import (
+    GEMINI_2_DOCUMENT_TASK_MODE,
+    GEMINI_2_EMBEDDING_FORMAT,
+    GEMINI_2_QUERY_TASK_MODE,
+    Settings,
+)
 
 
 _FLOAT32_MAX = 3.4028234663852886e38
@@ -102,11 +113,15 @@ class EmbeddingResponse:
 
 @runtime_checkable
 class EmbeddingProvider(Protocol):
-    async def embed_documents(self, texts: Sequence[str]) -> EmbeddingResponse: ...
+    async def embed_documents(
+        self, texts: Sequence[str], *, titles: Sequence[str | None] | None = None
+    ) -> EmbeddingResponse: ...
 
     async def embed_query(self, text: str) -> EmbeddingResponse: ...
 
     def telemetry_snapshot(self) -> ProviderAttemptTelemetry: ...
+
+    def attempt_scope(self): ...
 
 
 def _parse_retry_after(value: Any) -> float | None:
@@ -172,12 +187,21 @@ def _normalize_error(exc: Exception) -> AIProviderError:
             "embedding_provider_timeout",
             "The embedding provider did not respond before the configured timeout.",
             retryable=True,
+            reason_code="transport_timeout",
         )
-    if isinstance(exc, (httpx.NetworkError, httpx.RemoteProtocolError)):
+    if isinstance(exc, httpx.RemoteProtocolError):
         return AIProviderError(
             "embedding_provider_unavailable",
             "The embedding provider is temporarily unavailable.",
             retryable=True,
+            reason_code="transport_protocol",
+        )
+    if isinstance(exc, httpx.NetworkError):
+        return AIProviderError(
+            "embedding_provider_unavailable",
+            "The embedding provider is temporarily unavailable.",
+            retryable=True,
+            reason_code="transport_network",
         )
     status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
     if status_code is None:
@@ -189,24 +213,28 @@ def _normalize_error(exc: Exception) -> AIProviderError:
             "embedding_provider_invalid_request",
             "The embedding model rejected the request format.",
             retryable=False,
+            reason_code="http_invalid_request",
         )
     if status_code == 401:
         return AIProviderError(
             "embedding_provider_authentication_failed",
             "The embedding provider rejected its credentials.",
             retryable=False,
+            reason_code="http_authentication",
         )
     if status_code == 403:
         return AIProviderError(
             "embedding_provider_access_denied",
             "The embedding provider denied access.",
             retryable=False,
+            reason_code="http_access_denied",
         )
     if status_code == 404:
         return AIProviderError(
             "embedding_model_unavailable",
             "The configured embedding model is unavailable.",
             retryable=False,
+            reason_code="http_model_missing",
         )
     if status_code == 429:
         return AIProviderError(
@@ -214,6 +242,7 @@ def _normalize_error(exc: Exception) -> AIProviderError:
             "The embedding provider rate limit was reached.",
             retryable=True,
             retry_after_seconds=_provider_retry_after(exc),
+            reason_code="http_rate_limited",
         )
     if status_code is not None:
         retryable = status_code in {408, 409, 425} or status_code >= 500
@@ -230,11 +259,16 @@ def _normalize_error(exc: Exception) -> AIProviderError:
                 if retryable
                 else None
             ),
+            reason_code=(
+                "http_server_error" if status_code >= 500 else
+                "http_transient" if retryable else "http_rejected"
+            ),
         )
     return AIProviderError(
         "embedding_provider_unavailable",
         "The embedding provider is temporarily unavailable.",
         retryable=True,
+        reason_code="sdk_unclassified",
     )
 
 
@@ -276,7 +310,10 @@ class OpenAICompatibleEmbeddingProvider:
         self.profile = EmbeddingProfile.from_settings(settings)
         if self.profile.provider != _expected_provider:
             raise ValueError("The configured embedding provider is not supported")
-        if self.profile.format_version != "raw_text_v1":
+        if self.profile.format_version != "raw_text_v1" and not (
+            _expected_provider == "gemini"
+            and self.profile.format_version == GEMINI_2_EMBEDDING_FORMAT
+        ):
             raise ValueError("The configured embedding format is not supported")
         if self.profile.representation != "float32" or self.profile.metric != "cosine":
             raise ValueError("The configured embedding representation is not supported")
@@ -304,7 +341,14 @@ class OpenAICompatibleEmbeddingProvider:
             request_counts_by_stage=dict(self._request_counts_by_stage),
         )
 
-    async def embed_documents(self, texts: Sequence[str]) -> EmbeddingResponse:
+    def attempt_scope(self):
+        return provider_attempt_scope(self)
+
+    async def embed_documents(
+        self, texts: Sequence[str], *, titles: Sequence[str | None] | None = None
+    ) -> EmbeddingResponse:
+        if titles is not None:
+            raise ValueError("Document titles are not supported by this embedding profile")
         return await self._embed(texts, operation="embedding_documents")
 
     async def embed_query(self, text: str) -> EmbeddingResponse:
@@ -413,6 +457,13 @@ class OpenAICompatibleEmbeddingProvider:
                     self._request_counts_by_stage.get(operation, 0) + 1
                 )
                 self._rate_limit_wait_seconds += reservation.waited_seconds
+                scope = current_attempt_scope(self)
+                if scope is not None:
+                    scope.record_request(
+                        operation,
+                        retry=attempt > 0,
+                        waited_seconds=float(reservation.waited_seconds),
+                    )
                 async with asyncio.timeout(self.profile.timeout_seconds):
                     result = await call()
                 await reservation.commit(result.usage.input_tokens)
@@ -436,6 +487,9 @@ class OpenAICompatibleEmbeddingProvider:
                 if delay > self.profile.retry_max_seconds:
                     raise normalized_error from exc
                 self._rate_limit_wait_seconds += delay
+                scope = current_attempt_scope(self)
+                if scope is not None:
+                    scope.record_retry_wait(delay)
                 await asyncio.sleep(delay)
         raise AssertionError("embedding retry loop exhausted unexpectedly")
 
@@ -510,18 +564,26 @@ class GeminiEmbeddingProvider(OpenAICompatibleEmbeddingProvider):
             rate_governor=rate_governor,
             _expected_provider="gemini",
         )
+        supported_profiles = {
+            "gemini-embedding-001": (
+                "raw_text_v1", "RETRIEVAL_DOCUMENT", "QUESTION_ANSWERING"
+            ),
+            "gemini-embedding-2": (
+                GEMINI_2_EMBEDDING_FORMAT,
+                GEMINI_2_DOCUMENT_TASK_MODE,
+                GEMINI_2_QUERY_TASK_MODE,
+            ),
+        }
         if (
-            self.profile.model != "gemini-embedding-001"
-            or self.profile.dimensions != 1_536
-        ):
-            raise ValueError(
-                "The Gemini embedding provider requires gemini-embedding-001 with 1536 dimensions"
+            self.profile.dimensions != 1_536
+            or supported_profiles.get(self.profile.model)
+            != (
+                self.profile.format_version,
+                self.profile.document_task_mode,
+                self.profile.query_task_mode,
             )
-        if (
-            self.profile.document_task_mode != "RETRIEVAL_DOCUMENT"
-            or self.profile.query_task_mode != "QUESTION_ANSWERING"
         ):
-            raise ValueError("The configured Gemini embedding task modes are not supported")
+            raise ValueError("The configured Gemini embedding profile is not supported")
         if client is None:
             if not self.profile.api_key_value:
                 raise ValueError("The Gemini embedding provider requires an API key")
@@ -538,6 +600,28 @@ class GeminiEmbeddingProvider(OpenAICompatibleEmbeddingProvider):
             )
         self._client = client
 
+    async def embed_documents(
+        self, texts: Sequence[str], *, titles: Sequence[str | None] | None = None
+    ) -> EmbeddingResponse:
+        if self.profile.model == "gemini-embedding-001":
+            if titles is not None:
+                raise ValueError("Document titles require gemini-embedding-2")
+            return await super().embed_documents(texts)
+        if titles is None:
+            titles = (None,) * len(texts)
+        if len(titles) != len(texts):
+            raise ValueError("Embedding document titles must match the input count")
+        formatted = tuple(
+            f"title: {title.strip() if title and title.strip() else 'none'} | text: {text}"
+            for text, title in zip(texts, titles, strict=True)
+        )
+        return await self._embed(formatted, operation="embedding_documents")
+
+    async def embed_query(self, text: str) -> EmbeddingResponse:
+        if self.profile.model == "gemini-embedding-2":
+            text = f"task: question answering | query: {text}"
+        return await self._embed((text,), operation="embedding_query")
+
     async def _embed(
         self, texts: Sequence[str], *, operation: str
     ) -> EmbeddingResponse:
@@ -549,13 +633,24 @@ class GeminiEmbeddingProvider(OpenAICompatibleEmbeddingProvider):
         )
 
         async def call() -> EmbeddingResponse:
+            config: dict[str, object] = {"output_dimensionality": self.profile.dimensions}
+            contents: list[object]
+            if self.profile.model == "gemini-embedding-2":
+                # Embedding 2 aggregates strings in one Content. Distinct Content
+                # objects retain the one-vector-per-chunk ordering contract.
+                from google.genai import types as genai_types
+
+                contents = [
+                    genai_types.Content(parts=[genai_types.Part(text=value)])
+                    for value in normalized
+                ]
+            else:
+                contents = list(normalized)
+                config["task_type"] = task_mode
             response = await self._client.aio.models.embed_content(
                 model=self.profile.model,
-                contents=list(normalized),
-                config={
-                    "task_type": task_mode,
-                    "output_dimensionality": self.profile.dimensions,
-                },
+                contents=contents,
+                config=config,
             )
             embeddings = getattr(response, "embeddings", None)
             if not isinstance(embeddings, list) or len(embeddings) != len(normalized):
@@ -610,8 +705,6 @@ def get_embedding_provider(
 ) -> EmbeddingProvider:
     if settings.rag_embedding_provider == "gemini":
         return GeminiEmbeddingProvider(settings, rate_governor=rate_governor)
-    if settings.rag_embedding_provider == "openai_compatible":
-        return OpenAICompatibleEmbeddingProvider(settings, rate_governor=rate_governor)
     raise ValueError("The configured embedding provider is not supported")
 
 

@@ -3,9 +3,20 @@
 ## Status
 
 Accepted design, 2026-09-17; G3 and execution amendment accepted 2026-09-19.
-The initial G5 provider/model selection is superseded by
-[ADR-014](ADR-014-native-gemini-rag-profiles.md) as of 2026-09-20; every other
-boundary in this record remains accepted.
+The initial G5 provider/model selection was superseded by
+[ADR-014](ADR-014-native-gemini-rag-profiles.md) as of 2026-09-20. New-work
+Gemini-only selection and the separate Ask pause are governed by
+[ADR-015](ADR-015-ask-pause-and-gemini-catalog.md). The ownership, privacy,
+publication, revision and worker boundaries in this record remain accepted.
+Distinct exact-byte repeat uploads, revision no-ops and reuse/cancellation
+ownership are governed by
+[ADR-017](ADR-017-repeat-knowledge-upload-choice.md). ADR-017 supersedes the
+earlier implication that every new operation without a document link creates a
+new capture; same-operation idempotent replay remains unchanged.
+The remote semantic-support call and automatic Ask provider-retry choices are
+superseded by [ADR-019](ADR-019-two-request-local-support-ask.md). Its
+two-request/local-support policy retains this record's authorization,
+publication, source, citation, privacy and abstention boundaries.
 The operator approved G1/G2/G4/G6, delegated G5 selection, and approved the G3
 capture/cancellation outcome during implementation of the
 [archived RAG plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
@@ -62,9 +73,10 @@ requiring card generation. Identical-upload replay is confined to the same
 Subject and current authorized operation; changed payload reuse conflicts.
 No cross-Subject content-hash lookup or deduplication may reveal existence.
 
-Cancellation after a durable capture deletes the document/revision created by
-that job and cancels its indexing work, for both combined and Knowledge-only
-jobs. A non-cancelled flashcard failure may retain a valid private capture;
+Cancellation after a durable capture deletes only the document/revision created
+by that job and cancels its indexing work, for both combined and Knowledge-only
+jobs. It does not delete a revision linked through ADR-017 reuse. A non-cancelled
+flashcard failure may retain a valid private capture;
 supported capture/capacity failures are recorded independently and need not
 discard successful flashcards. Invalid/unreadable PDFs create no usable
 Knowledge. Every path keeps raw PDFs transient and never publishes capture
@@ -203,6 +215,10 @@ covered by capture/cancellation fencing tests.
 [root configuration](ADR-007-root-configuration.md),
 [durable work](ADR-008-postgresql-durable-jobs.md),
 [privacy](ADR-011-operational-privacy-controls.md),
+[Ask pause and Gemini catalog](ADR-015-ask-pause-and-gemini-catalog.md),
+[repeat Knowledge uploads](ADR-017-repeat-knowledge-upload-choice.md),
+[Embedding 2 staging](ADR-018-gemini-embedding-2-space.md),
+[two-request Ask](ADR-019-two-request-local-support-ask.md),
 [data model](../architecture/DATA-MODEL.md),
 [AI flow](../architecture/AI-GENERATION-FLOW.md),
 [runtime support](../RUNTIMES.md), [evaluation](../AI_EVALUATION.md).

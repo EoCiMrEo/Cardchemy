@@ -80,8 +80,10 @@ give each a bounded task and ownership area.
   Nonempty process values override root settings, then validated defaults.
   Only intended public `VITE_*` values reach the browser; signing and source
   encryption keys are independent.
-- Compose isolates AI credentials to the generation worker and SMTP credentials
-  to the email worker. Preserve that boundary. Native operators must inject
+- Compose isolates Flashcard AI credentials to the generation worker, RAG
+  embedding credentials to the index and answer workers, source-judge
+  credentials to the answer worker, and SMTP credentials to the email worker.
+  Preserve those boundaries. Native operators must inject
   only required credentials; reading a shared root file does not provide the
   same isolation. Tests use injected settings and guarded disposable services,
   not operator `.env`, databases or production SMTP.
@@ -112,6 +114,10 @@ give each a bounded task and ownership area.
 - Completion measures attempted approved cards; mastery measures `review` plus
   `mastered` approved cards. Statuses: `new` before an attempt, `learning` below
   7 interval days, `review` at 7–20, `mastered` from 21. See [study flow](docs/architecture/STUDY-PROGRESS-FLOW.md).
+  Student Progress is distinct currently approved cards answered correctly at
+  least once; Accuracy is correct attempts over all attempts on those cards,
+  including no-answer as incorrect. The browser shuffles a copy of options once
+  per card presentation and submits option text against canonical server order.
   Answer secrecy is limited to study-session payloads; general authorized card
   reads currently expose answers. Do not claim exam secrecy.
 - Keep short-lived access tokens in browser memory; refresh tokens remain in
@@ -129,25 +135,71 @@ give each a bounded task and ownership area.
 
 ## Generation, AI and transactional email
 
-- Preserve reserve → bounded raw-PDF upload → PostgreSQL queue → fenced worker
+- Preserve reserve → bounded raw-PDF upload → any authorized same-Subject
+  Knowledge duplicate choice → PostgreSQL queue → fenced worker
   claim → isolated extraction → validated pipeline → atomic draft set/cards.
   Count streamed bytes regardless of `Content-Length`; validate media/signature,
   use filenames only as metadata, and keep extraction off the API event loop in
   a bounded child process. OCR is opt-in and needs the appropriate build/runtime.
 - Retain metadata/manual-retry idempotency, race-safe admission/quotas, upload
   expiry, lease/worker identity/claim-token fencing and durable cancellation.
+  A repeated new Knowledge upload pauses before capture/indexing for an explicit
+  reuse or separate-copy choice. Reuse requires the current ready revision in
+  the active compatible embedding space; an unchanged explicit revision is a
+  Knowledge no-op. Cancel ends the whole upload job. Raw upload-byte accounting
+  remains separate from avoided Knowledge storage/index work.
   Stale workers cannot commit. AES-256-GCM sources are temporary: success,
   cancellation/permanent failures delete them; retryable failures have bounded
   retention. Final set/cards/status/source cleanup commit atomically with no
   partial generated set. At most one DB result does not mean one remote execution.
+  If bounded generation yields too few cards, only fully validated, deduplicated
+  cards may be encrypted in a finite owner-private pending choice; keep the
+  original requested count unchanged. Confirming an exact smaller count creates
+  the set atomically without another provider call. A new paid attempt toward
+  the original count requires a separate cost acknowledgement. Expiry or cancel
+  clears staged cards and the temporary source without deleting independent
+  reviewed Knowledge.
 - Treat documents/summaries/model output as untrusted evidence, never system
   instructions. Preserve token-bounded server-issued chunks, bounded requests,
   structured output plus strict local validation, trusted chunk lookup,
   normalized quote/answer containment, server-derived page/section provenance,
   canonical card rules, deterministic quality/duplicate rejection and bounded
   refill. Never persist raw model cards through a validation shortcut.
-- Preserve `gemini`/`openai_compatible` profiles, the non-secret enablement switch
-  and snapshotted provider/model. One application retry owner handles transient
+- New AI text execution for flashcards uses the verified native Gemini-only
+  catalog; `gemini-embedding-001` remains the default and optional Embedding 2
+  uses a distinct staged space. Preserve historical provider/model/space
+  snapshots without executing an old policy under a new worker. Ask AI has a
+  separate default-off gate. Its approved new-job path is source-only Related
+  published Knowledge: at most one current-question query embedding, zero
+  answer-model or local answer-verifier calls, and exact current authorized
+  unverified references that direct students to the original lecture PDF page
+  under ADR-023, with bounded local lexical fallback for transient embedding
+  unavailability. The ADR-024 v8/visual-v5 policy may add at most one bounded
+  Gemini source-ID judgment over the current question and authorized published
+  exact text and bounded original-page PNGs, returning only issued IDs. Unresolved
+  follow-ups may additionally transfer only a unique literal subject of at most
+  160 characters/twelve words from the strictly preceding user question, bound
+  immutably at admission and rechecked before dispatch; full history and assistant
+  responses are excluded. It makes no answer/verifier call and
+  has zero automatic retries. Its immutable admission contract is
+  `literal_subject_admission_v2`; historical v7/visual-v3/v1 rows stay readable
+  but cannot execute or retry under v8. The clarity change only permits an
+  ordinary learning use of `ignore`; it is not a semantic instruction detector.
+  A non-useful page with a conflicting positive cue is discarded, never promoted.
+  Source/schema head `0033` does not itself activate Ask. The released v8
+  source fence still requires explicit installation Ask/judge flags; fresh
+  installations stay default-off. Ask AI is enabled in the retained local installation (verified 2026-10-04). Complete public
+  sixty-case quality is 94/99 useful cards; independently reviewed private
+  twelve-case quality is 21/24 (87.5%), with 12/12 hits and four per form.
+  The accepted floor is 80% of all displayed cards; source/access integrity
+  requires zero fabricated, stale, unauthorized or wrong-page references.
+  See the [actual closure](.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md)
+  for seed/control, display, activation and release proof and all retained
+  physical failures/unknown charges. Local closure does not claim hosted CI
+  or production deployment; future live evaluations retain exact approval.
+  Legacy three-call and two-request answer policies stay fenced. Enable the
+  new path only after its displayed-window, access and release gates pass. Preserve the
+  non-secret generation enablement switch. One application retry owner handles transient
   requests with at most three retries and configured delays of at least three
   seconds, respecting usable longer `Retry-After`; SDK retries must not multiply
   attempts. Invalid request/auth/access/model failures do not retry. Handled

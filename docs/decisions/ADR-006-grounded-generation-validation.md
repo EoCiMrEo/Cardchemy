@@ -2,8 +2,10 @@
 
 ## Status
 
-Accepted. Prompt/diagnostic refinement added on 2026-09-17 without relaxing
-the existing validation or persistence decision.
+Accepted validation. Prompt/diagnostic refinement added on 2026-09-17. The
+rule against storing validated candidates before an exact-count set is
+narrowly superseded by [ADR-020](ADR-020-validated-card-choice.md); its strict
+validation and no-partial-set requirements remain accepted.
 
 ## Context
 
@@ -50,3 +52,4 @@ incomplete usage receipts do not establish exact tokenization or billing bounds.
 - [Contracts](../../backend/app/ai/contracts.py), [grounding](../../backend/app/ai/grounding.py),
   [pipeline](../../backend/app/ai/pipeline.py), [persistence](../../backend/app/services/flashcard.py)
 - [AI evaluation](../AI_EVALUATION.md), [ADR index](ADR-000-INDEX.md)
+- [ADR-020: private validated-card choice](ADR-020-validated-card-choice.md)

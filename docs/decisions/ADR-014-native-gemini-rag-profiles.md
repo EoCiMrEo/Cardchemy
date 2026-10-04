@@ -6,6 +6,13 @@ Accepted 2026-09-20. This supersedes only the initial G5 provider/model
 selection in [ADR-012](ADR-012-subject-knowledge-and-rag-boundaries.md). All
 Subject authorization, publication, revision, worker, privacy, exact-search and
 rollout boundaries in ADR-012 remain in force.
+As of 2026-09-22, [ADR-015](ADR-015-ask-pause-and-gemini-catalog.md)
+supersedes this record's unrestricted text-model choice, and
+[ADR-019](ADR-019-two-request-local-support-ask.md) supersedes its remote
+support call and automatic Ask retry choices. The native
+`gemini-embedding-001` contract and historical-space rules below remain in
+force. [ADR-018](ADR-018-gemini-embedding-2-space.md) adds an isolated optional
+model-2 profile without changing the default.
 
 ## Context
 
@@ -79,6 +86,9 @@ portable exact-search baseline.
 ## Related areas
 
 [ADR-012](ADR-012-subject-knowledge-and-rag-boundaries.md),
+[ADR-015](ADR-015-ask-pause-and-gemini-catalog.md),
+[ADR-018](ADR-018-gemini-embedding-2-space.md),
+[ADR-019](ADR-019-two-request-local-support-ask.md),
 [configuration](../CONFIGURATION.md), [AI providers](../AI_PROVIDERS.md),
 [RAG evaluation](../RAG_EVALUATION.md),
 [Subject Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md).

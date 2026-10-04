@@ -78,6 +78,7 @@ jobs:
           set -euo pipefail
           for variant in backend backend-ocr frontend; do
             context=backend
+            dockerfile=Dockerfile
             licenses=Apache-2.0
             arguments=(--build-arg INSTALL_OCR=false)
             if [[ "$variant" == backend-ocr ]]; then arguments=(--build-arg INSTALL_OCR=true); fi
@@ -85,7 +86,7 @@ jobs:
               context=frontend; arguments=(--build-arg VITE_API_URL=/api)
               licenses='Apache-2.0 AND LicenseRef-Cardchemy-Brand-Assets'
             fi
-            docker build --platform linux/amd64 --target runtime "${arguments[@]}" \
+            docker build --platform linux/amd64 --target runtime --file "$context/$dockerfile" "${arguments[@]}" \
               --label org.opencontainers.image.source=https://github.com/EoCiMrEo/Cardchemy \
               --label org.opencontainers.image.revision="$SOURCE_SHA" \
               --label org.opencontainers.image.version="$VERSION" \

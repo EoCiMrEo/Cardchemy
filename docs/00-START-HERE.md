@@ -1,6 +1,6 @@
 # Cardchemy: Start Here
 
-Current truth, checked against this checkout on 2026-09-20. This is the
+Current truth, checked against this checkout on 2026-10-04. This is the
 canonical orientation; [source navigation](../PROJECT-MAP.md) leads to the
 implementation, which remains the final authority.
 
@@ -8,7 +8,8 @@ implementation, which remains the final authority.
 
 Instructors upload lecture PDFs to generate source-grounded flashcards,
 review them, and publish them for enrolled students. Students study approved
-cards and see completion, accuracy, and mastery. This is a responsive browser
+cards and see correct-card Progress, attempt Accuracy, Attempted and Mastery.
+This is a responsive browser
 application with an online-first study flow.
 
 ## Users and roles
@@ -24,17 +25,34 @@ application with an online-first study flow.
 
 1. Instructor creation/sign-in → subject → reserved job/raw PDF upload → durable
    extraction and grounded generation → instructor approval → publication.
+   When bounded generation finds fewer valid cards than requested, a pending
+   owner choice can commit an exact smaller count without another AI call;
+   retrying toward the original count requires a separate cost confirmation.
 2. Invitation link/email → validation → student registration or existing-user
    join → atomic invitation consumption and enrollment.
 3. Published approved cards → due/review-all study → selected option/timeout →
-   server-derived result and durable receipt → refreshed progress.
+   server-derived result and durable receipt → refreshed correct-card Progress,
+   Accuracy, Attempted and Mastery.
 4. Forgot password → transactional email outbox → SMTP worker → single-use
    reset → session revocation and password-change notification.
 5. Instructor PDF → private extracted Knowledge → isolated embedding/index
-   worker → explicit Knowledge review/publication → an enrolled user's private
-   Subject Ask AI thread → isolated answer worker → supported answer/citations.
+   worker → explicit Knowledge review/publication. Existing private Subject
+   Ask AI history remains readable. The released v8 path is default-off for
+   fresh installations: at most one current-question embedding and one bounded
+   text/PNG source-ID judgment, then zero to three exact published PDF page
+   references, clearly marked unverified, and an authenticated original-PDF
+   viewer. Transient embedding failure may use bounded local lexical search.
+   It creates no generated or verified answer; see
+   [ADR-023](decisions/ADR-023-original-pdf-source-navigation.md).
+   A same-Subject repeated new upload pauses for an owner choice before capture;
+   an unchanged explicit revision creates no new Knowledge revision or index.
 
 ## Current development state
+
+Ask AI is enabled in the retained local installation (verified 2026-10-04). Product-quality Lane 6 is **7/7 complete** on
+retained head `20261002_0033`; Lane 7's three tasks remain unchecked. See the
+[actual local closure](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md), including independent usefulness,
+source/display, release checks and the limits of controlled browser replay.
 
 Version 0.1.0; [current state](development/CURRENT-STATE.md) and dated
 [closure evidence](../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md)
@@ -51,7 +69,11 @@ live production deployment. Read [current state](development/CURRENT-STATE.md).
 ## Technology stack
 
 FastAPI/Pydantic, SQLAlchemy async/asyncpg, PostgreSQL 16 and Alembic; typed
-application AI orchestration with direct Gemini SDK or OpenAI-compatible HTTP.
+application AI orchestration with the native Gemini SDK. The Ask worker's new
+source-only path uses query embeddings, local retrieval and at most one
+bounded Gemini text/PNG source-ID judgment; its former ONNX answer-verifier
+runtime is historical. Historical
+OpenAI-compatible job and vector identities remain readable for migration.
 PDF extraction uses pypdf, with optional Poppler/Tesseract OCR. React 19,
 TypeScript, Vite, React Router, Axios, Redux Toolkit, Tailwind, Radix and Framer
 Motion make up the client. Docker Compose runs separate generation, index,
@@ -62,7 +84,10 @@ answer and email workers plus a built Nginx frontend; local SMTP is Mailpit. See
 
 - Cards currently have exactly four distinct options and one correct answer.
 - The server derives correctness and scheduling from the selected answer;
-  completion and mastery measure different things.
+  Progress counts approved cards ever answered correctly, Attempted counts
+  distinct attempted approved cards, Accuracy counts successful attempts, and
+  Mastery follows spaced-repetition status. Study shuffles displayed options
+  without changing stored order.
 - Instructor ownership, student role/enrollment, publication and approval are
   server checks. The study-session payload hides the answer, but authorized
   card-read APIs currently include it; see [study limits](architecture/STUDY-PROGRESS-FLOW.md).
@@ -71,8 +96,11 @@ answer and email workers plus a built Nginx frontend; local SMTP is Mailpit. See
 - Alembic alone evolves the schema; processes verify every head before work.
 - AI content passes structural, grounding and duplicate checks before atomic
   persistence. Generated cards still require instructor approval.
-- Generation, Knowledge indexing, Subject Ask AI and email are durable PostgreSQL workflows with leases/fencing; no
-  Redis/broker is required. Provider retries are bounded under one owner.
+- Generation, Knowledge indexing, Subject Ask AI history and email are durable
+  PostgreSQL workflows with leases/fencing; no Redis/broker is required.
+  Ask defaults off and requires explicit Ask/judge flags, matching active
+  embeddings, current embedding/judge prices and source-only release evidence. Its durable attempt has zero automatic provider
+  retries; generation and indexing retain their separate bounded retry policy.
 - Root `.env` is the only user-managed file configuration. Secrets remain
   outside the browser and repository; Compose limits provider/SMTP credentials
   to their workers. Normal tests use injected settings/disposable services.

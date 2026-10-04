@@ -180,6 +180,11 @@ class SetProgressResponse(BaseModel):
     review: int
     mastered: int
     studied: int
+    attempted_count: int
+    attempted_percentage: float = Field(ge=0, le=100)
     correct_count: int
+    ever_correct_count: int
+    progress_percentage: float = Field(ge=0, le=100)
+    accuracy_percentage: float = Field(ge=0, le=100)
     completion_percentage: float = Field(ge=0, le=100)
     mastery_percentage: float = Field(ge=0, le=100)

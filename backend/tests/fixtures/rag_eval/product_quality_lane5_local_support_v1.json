@@ -1,0 +1,94 @@
+{
+  "version": "product_quality_lane5_local_support_v1",
+  "policy_version": "local_nli_qa_v1",
+  "cases": [
+    {
+      "id": "supported-perihelion-paraphrase",
+      "expected_supported": true,
+      "question": "What is the point of an orbit nearest to the Sun called?",
+      "source_quote": "Perihelion is the point of an orbit nearest to the Sun.",
+      "statement": "Perihelion is the nearest orbital point to the Sun.",
+      "additional_evidence": []
+    },
+    {
+      "id": "supported-perihelion-definition-paraphrase",
+      "expected_supported": true,
+      "question": "What is perihelion?",
+      "source_quote": "Perihelion is the point in an orbit nearest the Sun.",
+      "statement": "Perihelion is the nearest orbital point to the Sun.",
+      "additional_evidence": []
+    },
+    {
+      "id": "supported-mitochondria-paraphrase",
+      "expected_supported": true,
+      "question": "Which organelles generate most cellular ATP?",
+      "source_quote": "Mitochondria generate most of the cell's ATP through cellular respiration.",
+      "statement": "Mitochondria generate most cellular ATP through respiration.",
+      "additional_evidence": []
+    },
+    {
+      "id": "supported-photosynthesis-direct",
+      "expected_supported": true,
+      "question": "What energy do plants convert during photosynthesis?",
+      "source_quote": "Plants convert light energy into chemical energy during photosynthesis.",
+      "statement": "Plants convert light energy into chemical energy during photosynthesis.",
+      "additional_evidence": []
+    },
+    {
+      "id": "supported-boiling-point-paraphrase",
+      "expected_supported": true,
+      "question": "At what temperature does water boil at sea level?",
+      "source_quote": "At sea level, water boils at 100 degrees Celsius.",
+      "statement": "Water boils at 100 degrees Celsius at sea level.",
+      "additional_evidence": []
+    },
+    {
+      "id": "supported-paris-paraphrase",
+      "expected_supported": true,
+      "question": "What is the capital of France?",
+      "source_quote": "Paris is the capital of France.",
+      "statement": "France's capital is Paris.",
+      "additional_evidence": []
+    },
+    {
+      "id": "unsupported-unrelated-capital-question",
+      "expected_supported": false,
+      "question": "What is the capital of France?",
+      "source_quote": "The Moon orbits Earth approximately every 27 days.",
+      "statement": "The Moon orbits Earth approximately every 27 days.",
+      "additional_evidence": []
+    },
+    {
+      "id": "unsupported-unrelated-atp-question",
+      "expected_supported": false,
+      "question": "Which organelles generate ATP?",
+      "source_quote": "Plants convert light energy into chemical energy during photosynthesis.",
+      "statement": "Plants convert light energy into chemical energy during photosynthesis.",
+      "additional_evidence": []
+    },
+    {
+      "id": "unsupported-contradicted-capital-claim",
+      "expected_supported": false,
+      "question": "What is the capital of France?",
+      "source_quote": "Paris is the capital of France.",
+      "statement": "Berlin is the capital of France.",
+      "additional_evidence": []
+    },
+    {
+      "id": "conflict-nearest-versus-farthest",
+      "expected_supported": false,
+      "question": "What is the point of an orbit nearest to the Sun called?",
+      "source_quote": "Perihelion is the point of an orbit nearest to the Sun.",
+      "statement": "Perihelion is the nearest orbital point to the Sun.",
+      "additional_evidence": ["Perihelion is the point farthest from the Sun."]
+    },
+    {
+      "id": "conflict-boiling-temperature",
+      "expected_supported": false,
+      "question": "At what temperature does water boil at sea level?",
+      "source_quote": "At sea level, water boils at 100 degrees Celsius.",
+      "statement": "Water boils at 100 degrees Celsius at sea level.",
+      "additional_evidence": ["Water boils at 50 degrees Celsius at sea level."]
+    }
+  ]
+}

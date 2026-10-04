@@ -26,6 +26,9 @@ def generated_values() -> dict[str, str]:
         "GENERATION_SOURCE_ENCRYPTION_KEY": base64.urlsafe_b64encode(
             secrets.token_bytes(32)
         ).decode("ascii").rstrip("="),
+        "KNOWLEDGE_PDF_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode("ascii").rstrip("="),
     }
 
 

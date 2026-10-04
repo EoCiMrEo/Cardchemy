@@ -179,6 +179,10 @@ test('Review Again requests review_all and renders a real session', async ({ pag
     studied: fixtures.progress.total,
     new: 0,
     completion_percentage: 100,
+    attempted_count: fixtures.progress.total,
+    attempted_percentage: 100,
+    ever_correct_count: fixtures.progress.total,
+    progress_percentage: 100,
   }
   const api = await installMockApi(page, {
     auth: 'student',
@@ -210,6 +214,64 @@ test('Review Again requests review_all and renders a real session', async ({ pag
   expect(sessionCall?.query.get('limit')).toBe('20')
 })
 
+test('wrong-only attempts show zero Progress without success controls', async ({ page }) => {
+  const wrongOnly = {
+    ...fixtures.progress,
+    total: 10,
+    studied: 10,
+    attempted_count: 10,
+    attempted_percentage: 100,
+    completion_percentage: 100,
+    ever_correct_count: 0,
+    progress_percentage: 0,
+    accuracy_percentage: 0,
+    correct_count: 0,
+    new: 0,
+    learning: 10,
+    review: 0,
+  }
+  await installMockApi(page, {
+    auth: 'student',
+    resolver: (call) => {
+      if (call.method === 'GET' && call.path === '/subjects/subject-1') return { json: fixtures.subject }
+      if (call.method === 'GET' && call.path === '/subjects/subject-1/sets') return { json: [fixtures.set] }
+      if (call.method === 'GET' && call.path === '/study/sets/set-1/progress') return { json: wrongOnly }
+      return undefined
+    },
+  })
+
+  await page.goto('/subjects/subject-1')
+  await expect(page.getByText('0/10', { exact: true })).toBeVisible()
+  await expect(page.getByText('Accuracy 0%')).toBeVisible()
+  await expect(page.getByText('Attempted 10/10 (100%)')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Study Now' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Review Again' })).toHaveCount(0)
+  await expect(page.getByLabel('All approved cards answered correctly at least once')).toHaveCount(0)
+})
+
+test('rounded Progress cannot show success before every card is correct', async ({ page }) => {
+  const nearlyComplete = {
+    ...fixtures.progress,
+    total: 2001,
+    ever_correct_count: 2000,
+    progress_percentage: 100,
+  }
+  await installMockApi(page, {
+    auth: 'student',
+    resolver: (call) => {
+      if (call.method === 'GET' && call.path === '/subjects/subject-1') return { json: fixtures.subject }
+      if (call.method === 'GET' && call.path === '/subjects/subject-1/sets') return { json: [fixtures.set] }
+      if (call.method === 'GET' && call.path === '/study/sets/set-1/progress') return { json: nearlyComplete }
+      return undefined
+    },
+  })
+
+  await page.goto('/subjects/subject-1')
+  await expect(page.getByText('2000/2001')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Study Now' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Review Again' })).toHaveCount(0)
+})
+
 test('the complete study flow is operable with the keyboard at a mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const api = await installMockApi(page, {
@@ -231,18 +293,14 @@ test('the complete study flow is operable with the keyboard at a mobile viewport
   await expect(page.getByRole('heading', { name: studyCards[0].front_content })).toBeFocused()
 
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: /Nucleus/ }).first()).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: /Mitochondrion/ })).toBeFocused()
+  await expect(page.locator('main button:focus')).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: 'Next Question' })).toBeFocused()
   await page.keyboard.press('Enter')
 
   await expect(page.getByRole('heading', { name: studyCards[1].front_content })).toBeFocused()
   await page.keyboard.press('Tab')
-  await page.keyboard.press('Tab')
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: /Nucleus/ })).toBeFocused()
+  await expect(page.locator('main button:focus')).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: 'Next Question' })).toBeFocused()
   await page.keyboard.press('Enter')

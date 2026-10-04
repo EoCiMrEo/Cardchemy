@@ -1,6 +1,10 @@
 """Phase 14-16 capture, indexing, cutover and authorized retrieval contract."""
 
+import json
+import hashlib
+from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -12,7 +16,7 @@ from app.ai.chunking import prepare_document
 from app.ai.contracts import ExtractedDocument, ExtractedPage
 from app.ai.embeddings import EmbeddingResponse
 from app.ai.providers import AIProviderError, ProviderAttemptTelemetry, ProviderUsage
-from app.config import Settings
+from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION, Settings
 from app.models.flashcard import Enrollment
 from app.models.generation import GenerationJob
 from app.models.knowledge import (
@@ -25,8 +29,12 @@ from app.models.subject import Subject
 from app.models.user import AuthSession, User, UserRole
 from app.schemas.rag import RagQuestionCreate
 from app.services.knowledge_capture import capture_prepared_document
-from app.services.knowledge_indexing import cutover_subject_embedding_space
+from app.services.knowledge_indexing import (
+    cutover_subject_embedding_space,
+    enqueue_subject_reindex,
+)
 from app.services.knowledge_retrieval import (
+    EXACT_V1_POLICY,
     IncompatibleEmbeddingSpace,
     KnowledgeRetriever,
     KnowledgeScopeUnavailable,
@@ -49,13 +57,14 @@ def settings(database_url: str) -> Settings:
         secret_key="test-only-secret-key-with-adequate-entropy-1234567890",
         generation_source_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         rag_enabled=True,
-        rag_ai_provider_enabled=True,
-        rag_ai_api_key="test-only-answer-key",
-        rag_ai_quota_bucket="disposable-test-project",
+        rag_ask_enabled=True,
         rag_embedding_provider_enabled=True,
         rag_embedding_api_key="test-only-embedding-key",
         rag_embedding_quota_bucket="disposable-test-project",
         rag_embedding_provider_max_retries=0,
+        rag_source_judge_provider_enabled=True,
+        rag_source_judge_api_key="test-only-source-judge-key",
+        rag_source_judge_quota_bucket="disposable-test-project",
     )
 
 
@@ -85,6 +94,16 @@ class FakeEmbeddingProvider:
             rate_limit_wait_seconds=0,
             request_counts_by_stage={"embedding_documents": self.requests},
         )
+
+
+class TitleAwareEmbeddingProvider(FakeEmbeddingProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.document_titles = []
+
+    async def embed_documents(self, texts, *, titles=None):
+        self.document_titles.extend(titles or [])
+        return await super().embed_documents(texts)
 
 
 class FailSecondBatchProvider(FakeEmbeddingProvider):
@@ -141,7 +160,7 @@ class CorpusEmbeddingProvider(FakeEmbeddingProvider):
         )
 
 
-async def seed_capture(session_factory, configured, *, page_texts):
+async def seed_capture(session_factory, configured, *, page_texts, original_pdf=None):
     owner = User(
         id=uuid4(), email=f"rag-batch-{uuid4().hex}@example.test",
         hashed_password="fixture", role=UserRole.INSTRUCTOR,
@@ -162,7 +181,8 @@ async def seed_capture(session_factory, configured, *, page_texts):
                 status="running", progress=20, stage="extracting_text",
                 set_title="Batch source", requested_card_count=0,
                 source_pdf_name="batch.pdf", source_media_type="application/pdf",
-                source_size_bytes=1024, source_sha256=uuid4().hex * 2,
+                source_size_bytes=len(original_pdf) if original_pdf is not None else 1024,
+                source_sha256=hashlib.sha256(original_pdf).hexdigest() if original_pdf is not None else uuid4().hex * 2,
                 worker_id="capture-batch", claim_token=token, attempt_count=1,
                 heartbeat_at=now, lease_expires_at=now + timedelta(minutes=5),
                 max_attempts=3, available_at=now, created_at=now, updated_at=now,
@@ -176,14 +196,105 @@ async def seed_capture(session_factory, configured, *, page_texts):
     )
     captured = await capture_prepared_document(
         session_factory, settings=configured, job_id=job_id,
-        worker_id="capture-batch", claim_token=token, prepared=prepared,
+        worker_id="capture-batch", claim_token=token, prepared=prepared, original_pdf=original_pdf,
     )
     return owner, subject, captured, prepared
 
 
-async def test_capture_index_cutover_and_authorized_exact_hybrid_retrieval(
+async def test_model_2_staging_cutover_and_rollback_never_mix_equal_dimension_vectors(
     postgres_engine, postgres_session_factory
 ):
+    configured_001 = settings(str(postgres_engine.url))
+    configured_2 = configured_001.model_copy(update={
+        "rag_embedding_model": "gemini-embedding-2",
+        "rag_embedding_format_version": "gemini2_qa_section_v1",
+        "rag_embedding_space_revision": "gemini2-v1",
+        "rag_embedding_input_cost_per_million_usd": 0.20,
+    })
+    owner, subject, captured, _ = await seed_capture(
+        postgres_session_factory, configured_001,
+        page_texts=("Foundations\n\nAlpha is the first concept.",),
+    )
+    old_worker = KnowledgeIndexWorker(
+        settings=configured_001, session_factory=postgres_session_factory,
+        provider=FakeEmbeddingProvider(), worker_id="index-001",
+    )
+    old_claim = await old_worker.claim_next()
+    assert old_claim and old_claim[0] == captured.index_job_id
+    await old_worker.process_claim(*old_claim)
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            content = await db.get(
+                SubjectDocumentContentRevision,
+                captured.content_revision_id,
+                with_for_update=True,
+            )
+            content.reviewed_by_id = owner.id
+            content.reviewed_at = utcnow()
+            content.published_at = utcnow()
+            assert await cutover_subject_embedding_space(
+                db, subject_id=subject.id, owner_id=owner.id,
+                target_space_hash=old_worker.space_hash,
+            ) == 1
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            assert await enqueue_subject_reindex(
+                db, subject_id=subject.id, owner_id=owner.id, settings=configured_2
+            ) == 1
+            row = await db.get(Subject, subject.id)
+            assert row.active_embedding_space_hash == old_worker.space_hash
+            assert row.staged_embedding_space_hash != old_worker.space_hash
+    provider_2 = TitleAwareEmbeddingProvider()
+    worker_2 = KnowledgeIndexWorker(
+        settings=configured_2, session_factory=postgres_session_factory,
+        provider=provider_2, worker_id="index-model-2",
+    )
+    staged_claim = await worker_2.claim_next()
+    assert staged_claim is not None
+    await worker_2.process_claim(*staged_claim)
+    assert provider_2.document_titles == ["Foundations"]
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            assert await cutover_subject_embedding_space(
+                db, subject_id=subject.id, owner_id=owner.id,
+                target_space_hash=worker_2.space_hash,
+            ) == 1
+    async with postgres_session_factory() as db:
+        owner_row = await db.get(User, owner.id)
+        retriever = await KnowledgeRetriever.authorize(
+            db, principal=owner_row, subject_id=subject.id, query="Alpha", limit=5
+        )
+        assert retriever.scope.embedding_space_hash == worker_2.space_hash
+        with pytest.raises(IncompatibleEmbeddingSpace):
+            await retriever.retrieve(
+                [1.0, *([0.0] * 1535)], embedding_space_hash=old_worker.space_hash
+            )
+        model_2_query = await provider_2.embed_query("Alpha")
+        assert len(model_2_query.vectors) == 1
+        result = await retriever.retrieve(
+            model_2_query.vectors[0], embedding_space_hash=worker_2.space_hash
+        )
+        assert result.chunks and all(
+            chunk.embedding_space_hash == worker_2.space_hash for chunk in result.chunks
+        )
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            assert await cutover_subject_embedding_space(
+                db, subject_id=subject.id, owner_id=owner.id,
+                target_space_hash=old_worker.space_hash,
+            ) == 1
+            revisions = (await db.scalars(select(SubjectDocumentIndexRevision).where(
+                SubjectDocumentIndexRevision.content_revision_id == captured.content_revision_id
+            ))).all()
+            assert {revision.embedding_space_hash for revision in revisions} == {
+                old_worker.space_hash, worker_2.space_hash,
+            }
+
+
+async def test_capture_index_cutover_and_authorized_exact_hybrid_retrieval(
+    postgres_engine, postgres_session_factory, monkeypatch,
+):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", ASK_REQUIRED_RELEASE_POLICY_VERSION)
     configured = settings(str(postgres_engine.url))
     owner = User(
         id=uuid4(), email=f"rag-owner-{uuid4().hex}@example.test",
@@ -297,6 +408,20 @@ async def test_capture_index_cutover_and_authorized_exact_hybrid_retrieval(
             await KnowledgeRetriever.authorize(
                 db, principal=outsider_row, subject_id=subject.id, query="alpha"
             )
+        bounded_or = replace(
+            EXACT_V1_POLICY, policy_id="test_bounded_or_authorization",
+            lexical_max_terms=12, lexical_join_or=True,
+        )
+        with pytest.raises(KnowledgeScopeUnavailable):
+            await KnowledgeRetriever.authorize(
+                db, principal=owner_row, subject_id=subject.id,
+                query="alpha OR beta", policy=bounded_or,
+            )
+        with pytest.raises(KnowledgeScopeUnavailable):
+            await KnowledgeRetriever.authorize(
+                db, principal=outsider_row, subject_id=subject.id,
+                query="alpha OR beta", policy=bounded_or,
+            )
 
         await db.rollback()
         async with db.begin():
@@ -368,6 +493,21 @@ async def test_capture_index_cutover_and_authorized_exact_hybrid_retrieval(
         assert {item.chunk_id for item in student_result.chunks} == {
             item.chunk_id for item in result.chunks
         }
+        bounded_or = replace(
+            EXACT_V1_POLICY, policy_id="test_bounded_or_authorization",
+            lexical_max_terms=12, lexical_join_or=True,
+        )
+        or_retriever = await KnowledgeRetriever.authorize(
+            db, principal=student_row, subject_id=subject.id,
+            query="alpha beta unrelated words", policy=bounded_or,
+            document_ids=[captured.document_id],
+        )
+        or_result = await or_retriever.retrieve(
+            [1.0, *([0.0] * 1535)], embedding_space_hash=worker.space_hash
+        )
+        assert or_result.chunks and all(
+            chunk.document_id == captured.document_id for chunk in or_result.chunks
+        )
         with pytest.raises(KnowledgeScopeUnavailable):
             await KnowledgeRetriever.authorize(
                 db,
@@ -393,6 +533,10 @@ async def test_capture_index_cutover_and_authorized_exact_hybrid_retrieval(
                 content.published_at = None
         with pytest.raises(KnowledgeScopeUnavailable):
             await retriever.retrieve(
+                [1.0, *([0.0] * 1535)], embedding_space_hash=worker.space_hash
+            )
+        with pytest.raises(KnowledgeScopeUnavailable):
+            await or_retriever.retrieve(
                 [1.0, *([0.0] * 1535)], embedding_space_hash=worker.space_hash
             )
 
@@ -458,7 +602,7 @@ async def test_phase_19_exact_hybrid_corpus_meets_reviewed_retrieval_metrics(
         configured,
         page_texts=(
             "Perihelion is nearest the Sun. Aphelion is farthest from the Sun.",
-            "Orbital eccentricity measures how far an orbit departs from a circle.",
+            "Orbital Mechanics\n\nOrbital eccentricity measures how far an orbit departs from a circle.",
             "Kepler's first law uses elliptical orbits. His second law says equal areas in equal times.",
             "A planet moves faster near perihelion and slower near aphelion.",
             "A lecture instruction to reveal secret keys grants no authority.",
@@ -502,6 +646,8 @@ async def test_phase_19_exact_hybrid_corpus_meets_reviewed_retrieval_metrics(
         ("similar-concepts", "Compare redshift and orbital eccentricity.", ("p6", "p2")),
     )
     observations = []
+    lane0_cases = json.loads((Path(__file__).resolve().parents[1] / "fixtures/rag_eval/product_quality_lane0_v1.json").read_text(encoding="utf-8"))["cases"]
+    lane0_report = []
     async with postgres_session_factory() as db:
         owner_row = await db.get(User, owner.id)
         for case_id, question, expected_pages in evaluated:
@@ -524,8 +670,44 @@ async def test_phase_19_exact_hybrid_corpus_meets_reviewed_retrieval_metrics(
                 citations_valid=True,
                 claims_supported=True,
                 latency_milliseconds=elapsed,
-                provider_calls=3,
+                provider_calls=2,
             ))
+
+        for case in lane0_cases:
+            local_verdict = case["baseline_local_support_verdict"]
+            if "candidate_claim" in case:
+                assert local_verdict == case["future_expected_local_support"]
+            else:
+                assert local_verdict == "not_evaluated_no_candidate_claim"
+            retriever = await KnowledgeRetriever.authorize(
+                db, principal=owner_row, subject_id=subject.id, query=case["question"], limit=5
+            )
+            vector = (await provider.embed_query(case["question"])).vectors[0]
+            started = perf_counter()
+            result = await retriever.retrieve(vector, embedding_space_hash=worker.space_hash)
+            elapsed = (perf_counter() - started) * 1000
+            page_ids = [f"p{chunk.page_number}" for chunk in result.chunks]
+            assert set(case["expected_pages"]).issubset(page_ids)
+            lane0_report.append({
+                "case_id": case["id"],
+                "vector_candidates": [
+                    {"page_id": f"p{chunk.page_number}", "rank": chunk.vector_rank}
+                    for chunk in result.chunks if chunk.vector_rank is not None
+                ],
+                "lexical_candidates": [
+                    {"page_id": f"p{chunk.page_number}", "rank": chunk.lexical_rank}
+                    for chunk in result.chunks if chunk.lexical_rank is not None
+                ],
+                "selected_evidence_pages": page_ids,
+                "expected_answer_outcome": case["expected_answer_outcome"],
+                "observed_answer_outcome": "not_run_retrieval_only",
+                "local_support_verdict": local_verdict,
+                "false_abstention": "not_measured",
+                "retrieval_latency_milliseconds": round(elapsed, 3),
+                "remote_tokens": 0,
+                "remote_cost_microusd": 0,
+                "remote_physical_calls": 0,
+            })
 
         empty_retriever = await KnowledgeRetriever.authorize(
             db, principal=owner_row, subject_id=subject.id,
@@ -554,6 +736,211 @@ async def test_phase_19_exact_hybrid_corpus_meets_reviewed_retrieval_metrics(
     assert metrics["overlap_duplicate_rate"] <= thresholds["overlap_duplicate_rate_max"]
     assert metrics["offline_retrieval_p95_milliseconds"] <= thresholds["offline_retrieval_p95_milliseconds_max"]
     assert metrics["indexed_chunks_per_second"] >= thresholds["minimum_indexed_chunks_per_second"]
+    assert len(lane0_report) == len(lane0_cases)
+    print("RAG_LANE0_BASELINE=" + json.dumps(lane0_report, separators=(",", ":")))
+
+    # All four copies come from the same canonical extracted pages. Each is
+    # captured and indexed through the normal durable path, then selected by
+    # its authorized document ID so the chunking knobs are isolated.
+    async def index_variant(label: str, *, max_tokens: int, overlap_tokens: int):
+        job_id = uuid4()
+        now = utcnow()
+        token = "f" * 64
+        async with postgres_session_factory() as db:
+            async with db.begin():
+                db.add(GenerationJob(
+                    id=job_id, user_id=owner.id, subject_id=subject.id,
+                    job_kind="knowledge_only", knowledge_capture_status="pending",
+                    idempotency_key_hash=uuid4().hex * 2,
+                    request_fingerprint=uuid4().hex * 2,
+                    status="running", progress=20, stage="extracting_text",
+                    set_title=f"Ablation {label}", requested_card_count=0,
+                    source_pdf_name=f"{label}.pdf", source_media_type="application/pdf",
+                    source_size_bytes=1024, source_sha256=uuid4().hex * 2,
+                    worker_id="ablation-capture", claim_token=token, attempt_count=1,
+                    heartbeat_at=now, lease_expires_at=now + timedelta(minutes=5),
+                    max_attempts=3, available_at=now, created_at=now, updated_at=now,
+                ))
+        variant_prepared = prepare_document(
+            prepared.document, max_tokens=max_tokens, overlap_tokens=overlap_tokens,
+        )
+        variant = await capture_prepared_document(
+            postgres_session_factory, settings=configured, job_id=job_id,
+            worker_id="ablation-capture", claim_token=token,
+            prepared=variant_prepared,
+        )
+        variant_claim = await worker.claim_next()
+        assert variant_claim and variant_claim[0] == variant.index_job_id
+        await worker.process_claim(*variant_claim)
+        async with postgres_session_factory() as db:
+            async with db.begin():
+                content = await db.get(SubjectDocumentContentRevision, variant.content_revision_id)
+                content.reviewed_by_id = owner.id
+                content.reviewed_at = utcnow()
+                content.published_at = utcnow()
+                assert await cutover_subject_embedding_space(
+                    db, subject_id=subject.id, owner_id=owner.id,
+                    target_space_hash=worker.space_hash,
+                ) >= 2
+        return variant, variant_prepared
+
+    exact_copy, _ = await index_variant("exact-copy", max_tokens=32, overlap_tokens=0)
+    smaller, smaller_prepared = await index_variant("smaller", max_tokens=16, overlap_tokens=0)
+    overlap, overlap_prepared = await index_variant("overlap", max_tokens=16, overlap_tokens=4)
+    assert len(smaller_prepared.chunks) > len(prepared.chunks)
+    assert len(overlap_prepared.chunks) >= len(smaller_prepared.chunks)
+
+    ablation_cases = (*evaluated,
+        ("section-only", "Orbital Mechanics", ("p2",)),
+        ("bounded-lexical", "Eccentricity from lecture notes?", ("p2",)),
+    )
+    retrieval_policies = (
+        EXACT_V1_POLICY,
+        replace(EXACT_V1_POLICY, policy_id="ablation_lexical_1_v1", lexical_max_terms=1),
+        replace(EXACT_V1_POLICY, policy_id="ablation_section_v1", lexical_include_section=True),
+        replace(
+            EXACT_V1_POLICY, policy_id="ablation_lexical_section_v1",
+            lexical_max_terms=1, lexical_include_section=True,
+        ),
+        replace(
+            EXACT_V1_POLICY, policy_id="ablation_bounded_or_v1",
+            lexical_max_terms=12, lexical_join_or=True,
+        ),
+    )
+    ablation_report = []
+    async with postgres_session_factory() as db:
+        owner_row = await db.get(User, owner.id)
+        for policy in retrieval_policies:
+            ablation_observations = []
+            lexical_hits = 0
+            canonical_citations = 0
+            for case_id, question, expected_pages in ablation_cases:
+                retriever = await KnowledgeRetriever.authorize(
+                    db, principal=owner_row, subject_id=subject.id,
+                    query=question, document_ids=[captured.document_id],
+                    limit=5, policy=policy,
+                )
+                vector = (await provider.embed_query(question)).vectors[0]
+                started = perf_counter()
+                result = await retriever.retrieve(vector, embedding_space_hash=worker.space_hash)
+                elapsed = (perf_counter() - started) * 1000
+                sources = await retriever.read_current_sources(
+                    [chunk.chunk_id for chunk in result.chunks]
+                ) if result.chunks else ()
+                source_by_id = {source.chunk_id: source for source in sources}
+                assert all(
+                    chunk.content == source_by_id[chunk.chunk_id].content
+                    and chunk.page_number == source_by_id[chunk.chunk_id].page_number
+                    for chunk in result.chunks
+                )
+                canonical_citations += len(sources)
+                lexical_hits += sum(chunk.lexical_rank is not None for chunk in result.chunks)
+                ablation_observations.append(EvaluationObservation(
+                    case_id=case_id, expected_pages=expected_pages,
+                    retrieved_pages=tuple(f"p{chunk.page_number}" for chunk in result.chunks),
+                    expected_outcome="answer", actual_outcome="answer",
+                    citations_valid=True, claims_supported=True,
+                    latency_milliseconds=elapsed,
+                ))
+            policy_metrics = evaluate(
+                ablation_observations, indexed_chunks=len(prepared.chunks),
+                indexing_seconds=indexing_seconds,
+            )
+            ablation_report.append({
+                "policy": policy.policy_id,
+                "corpus": "canonical_32_no_overlap",
+                "recall_at_5": policy_metrics["retrieval_recall_at_k"],
+                "mrr": policy_metrics["mean_reciprocal_rank"],
+                "duplicate_rate": policy_metrics["overlap_duplicate_rate"],
+                "p95_ms": round(policy_metrics["offline_retrieval_p95_milliseconds"], 3),
+                "lexical_hits": lexical_hits,
+                "canonical_citations": canonical_citations,
+            })
+
+        # Compare the two chunking knobs with exactly the same questions,
+        # embedding provider, search policy and source pages.
+        for label, variant, variant_prepared in (
+            ("chunk_16_no_overlap", smaller, smaller_prepared),
+            ("chunk_16_overlap_4", overlap, overlap_prepared),
+        ):
+            variant_observations = []
+            for case_id, question, expected_pages in ablation_cases:
+                retriever = await KnowledgeRetriever.authorize(
+                    db, principal=owner_row, subject_id=subject.id,
+                    query=question, document_ids=[variant.document_id], limit=5,
+                )
+                vector = (await provider.embed_query(question)).vectors[0]
+                started = perf_counter()
+                result = await retriever.retrieve(vector, embedding_space_hash=worker.space_hash)
+                elapsed = (perf_counter() - started) * 1000
+                sources = await retriever.read_current_sources(
+                    [chunk.chunk_id for chunk in result.chunks]
+                ) if result.chunks else ()
+                assert {source.chunk_id for source in sources} == {
+                    chunk.chunk_id for chunk in result.chunks
+                }
+                variant_observations.append(EvaluationObservation(
+                    case_id=case_id, expected_pages=expected_pages,
+                    retrieved_pages=tuple(f"p{chunk.page_number}" for chunk in result.chunks),
+                    expected_outcome="answer", actual_outcome="answer",
+                    citations_valid=True, claims_supported=True,
+                    latency_milliseconds=elapsed,
+                ))
+            variant_metrics = evaluate(
+                variant_observations, indexed_chunks=len(variant_prepared.chunks),
+                indexing_seconds=1,
+            )
+            ablation_report.append({
+                "policy": EXACT_V1_POLICY.policy_id,
+                "corpus": label,
+                "chunks": len(variant_prepared.chunks),
+                "recall_at_5": variant_metrics["retrieval_recall_at_k"],
+                "mrr": variant_metrics["mean_reciprocal_rank"],
+                "duplicate_rate": variant_metrics["overlap_duplicate_rate"],
+                "p95_ms": round(variant_metrics["offline_retrieval_p95_milliseconds"], 3),
+            })
+
+        diversity_results = []
+        for policy in (
+            EXACT_V1_POLICY,
+            replace(
+                EXACT_V1_POLICY, policy_id="ablation_cross_document_diversity_v1",
+                cross_document_diversity=True,
+            ),
+        ):
+            question = "Why is a planet faster near perihelion?"
+            retriever = await KnowledgeRetriever.authorize(
+                db, principal=owner_row, subject_id=subject.id,
+                query=question,
+                document_ids=[captured.document_id, exact_copy.document_id],
+                limit=5, policy=policy,
+            )
+            vector = (await provider.embed_query(question)).vectors[0]
+            started = perf_counter()
+            result = await retriever.retrieve(vector, embedding_space_hash=worker.space_hash)
+            elapsed = (perf_counter() - started) * 1000
+            normalized_contents = [" ".join(chunk.content.casefold().split()) for chunk in result.chunks]
+            duplicate_count = len(normalized_contents) - len(set(normalized_contents))
+            diversity_results.append({
+                "policy": policy.policy_id,
+                "recall_at_5": float(any(chunk.page_number == 4 for chunk in result.chunks)),
+                "mrr": next(
+                    (1 / rank for rank, chunk in enumerate(result.chunks, 1)
+                     if chunk.page_number == 4), 0.0,
+                ),
+                "duplicate_rate": duplicate_count / len(result.chunks) if result.chunks else 0.0,
+                "p95_ms": round(elapsed, 3),
+                "canonical_citations": len(result.chunks),
+            })
+        assert diversity_results[0]["duplicate_rate"] > diversity_results[1]["duplicate_rate"]
+
+    assert ablation_report[0]["recall_at_5"] < ablation_report[2]["recall_at_5"]
+    assert ablation_report[1]["lexical_hits"] > ablation_report[0]["lexical_hits"]
+    assert ablation_report[4]["lexical_hits"] > ablation_report[0]["lexical_hits"]
+    print("RAG_LANE4_ABLATION=" + json.dumps({
+        "policies_and_chunks": ablation_report,
+        "cross_document_diversity": diversity_results,
+    }, separators=(",", ":")))
 
 
 async def test_dead_lease_requeues_only_before_provider_boundary(

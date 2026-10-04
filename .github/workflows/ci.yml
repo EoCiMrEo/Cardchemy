@@ -265,12 +265,15 @@ jobs:
         include:
           - image: backend
             context: backend
+            dockerfile: Dockerfile
             build-arguments: --build-arg INSTALL_OCR=false
           - image: backend-ocr
             context: backend
+            dockerfile: Dockerfile
             build-arguments: --build-arg INSTALL_OCR=true
           - image: frontend
             context: frontend
+            dockerfile: Dockerfile
             build-arguments: --build-arg VITE_API_URL=/api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -280,8 +283,9 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           CONTEXT: ${{ matrix.context }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
           BUILD_ARGUMENTS: ${{ matrix.build-arguments }}
-        run: docker build --platform linux/amd64 --target runtime $BUILD_ARGUMENTS -t "cardchemy-$IMAGE:ci" "$CONTEXT"
+        run: docker build --platform linux/amd64 --target runtime --file "$CONTEXT/$DOCKERFILE" $BUILD_ARGUMENTS -t "cardchemy-$IMAGE:ci" "$CONTEXT"
       - name: Exercise the final runtime, including native libraries and OCR
         env:
           IMAGE: ${{ matrix.image }}

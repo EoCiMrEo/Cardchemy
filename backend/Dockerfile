@@ -16,7 +16,8 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --require-hashes --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/pip uninstall -y pip setuptools wheel
 
-# The final image contains runtime libraries and application code only. OCR is
+# The final image contains runtime libraries and application code only. Full-page
+# PDF rendering (Poppler/fonts) is available independently of OCR. OCR is
 # opt-in and is intentionally installed here because its executables are needed
 # while jobs run, not while Python dependencies build.
 FROM python:3.11.16-alpine3.24@sha256:0495f5559318affa673172ec7e35cd0a5213e4aaf4c76d0a66554c0af97b157e AS runtime
@@ -29,9 +30,9 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1
 
 RUN apk upgrade --no-cache \
-    && apk add --no-cache ca-certificates libffi \
+    && apk add --no-cache ca-certificates libffi poppler-utils font-liberation \
     && if [ "$INSTALL_OCR" = "true" ]; then \
-         apk add --no-cache poppler-utils tesseract-ocr tesseract-ocr-data-eng font-liberation; \
+         apk add --no-cache tesseract-ocr tesseract-ocr-data-eng; \
        fi
 
 # Dependency installation is finished. Remove base-image build tools and their

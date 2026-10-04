@@ -1,11 +1,11 @@
 # Study and Progress Flow
 
-Current truth verified against code: 2026-09-16.
+Current truth verified against code: 2026-09-22.
 
 ## Purpose and scope
 
 Describe the online student study loop, exactly-once answer effects and separate
-completion/mastery metrics. There is no offline sync API or durable browser
+Progress, Accuracy, Attempted and Mastery metrics. There is no offline sync API or durable browser
 answer outbox.
 
 ## Key components
@@ -29,6 +29,9 @@ and the [frontend study service](../../frontend/src/services/study.ts).
 3. The client submits exactly one selected option text or index (0–3), or an
    explicit null for no answer/timeout, to `POST /study/progress`. It sends one
    8–128-character visible-ASCII `Idempotency-Key` per logical answer.
+   The browser shuffles a copy of four options once per card presentation and
+   submits the selected text. The displayed order remains stable through a
+   save retry; stored option order never changes.
 4. The route rechecks enrollment, publication and approval. The service resolves
    the selection against the canonical stored options, derives correctness and
    assigns quality 5 for correct or 1 for incorrect/no-answer.
@@ -50,10 +53,18 @@ and the [frontend study service](../../frontend/src/services/study.ts).
 | Correct answer | Increment correct count; interval progresses 0 → 1 → 6 → rounded previous interval × ease factor. Then adjust ease factor with the quality formula, floor 1.3. |
 | Status | `new` before an attempt; `learning` below 7 days; `review` at 7–20; `mastered` from 21 days. |
 | Completion | Cards with `last_reviewed` / total approved cards × 100. Attempting a card counts even when incorrect. |
+| Progress | Distinct currently approved cards with `correct_count > 0` / total approved cards × 100. Later wrong attempts do not erase credit. |
+| Accuracy | Correct attempts / (correct + incorrect attempts) on currently approved cards × 100. Timeout/no-answer is incorrect. |
+| Attempted | Distinct attempted approved cards / total approved cards × 100; explicit alias of the compatible completion meaning. |
 | Mastery | (`review` + `mastered`) / total approved cards × 100. |
 
 Percentages round to one decimal and empty sets return zero. `correct_count`
 is accumulated successful attempts, not a distinct-card or completion metric.
+The student page uses exact `ever_correct_count == total` with nonzero total for
+trophy, green completion styling and Review Again, not a rounded percentage.
+The API retains `studied`, `correct_count` and `completion_percentage` for
+compatibility; it adds explicit `ever_correct_count`, `progress_percentage`,
+`attempted_count`, `attempted_percentage` and `accuracy_percentage`.
 The session's `total_due` is the number of returned cards after the requested
 limit; `review_cards` is a status count, not an independently computed global
 due queue size. Set publication is checked before study/progress reads.
@@ -79,6 +90,7 @@ See [study progress tests](../../backend/tests/test_study_progress.py),
 [PostgreSQL transaction tests](../../backend/tests/postgres/test_database_integrity.py),
 [testing commands](../TESTING.md) and [backend map](../../backend/MOC.md).
 Decisions: [server correctness](../decisions/ADR-002-server-derived-correctness.md),
-[completion/mastery](../decisions/ADR-003-completion-and-mastery.md) and
+[completion/mastery compatibility](../decisions/ADR-003-completion-and-mastery.md),
+[Progress and option order](../decisions/ADR-016-study-progress-and-option-order.md) and
 [four-option cards](../decisions/ADR-001-four-option-cards.md).
 Continue with [data model](DATA-MODEL.md) and [system overview](SYSTEM-OVERVIEW.md).

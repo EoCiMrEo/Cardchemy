@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -34,6 +34,7 @@ from app.services.knowledge_indexing import (
     ensure_embedding_space,
 )
 from app.services.knowledge_lock import acquire_knowledge_write_lock
+from app.services.knowledge_pdf import archive_pdf, KnowledgePdfError
 from app.services.audit import AuditService
 from app.services.subject import SubjectService
 from app.time_utils import utcnow
@@ -182,6 +183,28 @@ class KnowledgeManagementService:
         index = indexes.get(content.id) if content else None
         job = jobs.get(index.id) if index else None
         return self.to_response(document, content, index, job)
+
+    async def attach_original_pdf(
+        self, db: AsyncSession, *, subject_id: UUID, document_id: UUID,
+        user: User, expected_revision_id: UUID, content: bytes,
+    ) -> None:
+        """Attach exact original bytes without changing revision or indexing."""
+        await acquire_knowledge_write_lock(db)
+        _subject, document = await self._owned_document(
+            db, subject_id=subject_id, document_id=document_id, user=user, for_update=True,
+        )
+        revision = await db.scalar(select(SubjectDocumentContentRevision).where(
+            SubjectDocumentContentRevision.document_id == document.id,
+            SubjectDocumentContentRevision.id == expected_revision_id,
+            SubjectDocumentContentRevision.is_active.is_(True),
+            SubjectDocumentContentRevision.status == "ready",
+        ).with_for_update())
+        if revision is None:
+            raise knowledge_http_error(409, "knowledge_pdf_revision_changed", "Knowledge revision changed; reload before attaching the original PDF.")
+        try:
+            await archive_pdf(db, settings=self.settings, revision=revision, data=content)
+        except KnowledgePdfError as exc:
+            raise knowledge_http_error(exc.status_code, exc.code, exc.safe_message) from None
 
     async def review_and_publish(
         self,
@@ -445,6 +468,11 @@ class KnowledgeManagementService:
                 "knowledge_work_active",
                 "Stop or cancel active work for this Knowledge document before removal.",
             )
+        # Pending upload hints are not ownership of the candidate document.
+        # Clear the scoped FK before removal; a later reuse choice fails safely.
+        await db.execute(update(GenerationJob).where(
+            GenerationJob.knowledge_choice_candidate_id == document.id,
+        ).values(knowledge_choice_candidate_id=None))
         await db.execute(delete(SubjectDocument).where(SubjectDocument.id == document.id))
         AuditService.record(
             db,

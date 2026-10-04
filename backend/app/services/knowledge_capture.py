@@ -25,6 +25,7 @@ from app.models.knowledge import (
 )
 from app.models.subject import Subject
 from app.services.knowledge_lock import acquire_knowledge_write_lock
+from app.services.knowledge_pdf import KnowledgePdfError, archive_pdf
 from app.time_utils import as_utc, utcnow
 
 
@@ -99,6 +100,7 @@ async def capture_prepared_document(
     worker_id: str,
     claim_token: str,
     prepared: PreparedDocument,
+    original_pdf: bytes | None = None,
 ) -> KnowledgeCaptureResult:
     """Persist pages/chunks and enqueue indexing in one short transaction."""
 
@@ -229,6 +231,11 @@ async def capture_prepared_document(
             )
             db.add(content_revision)
             await db.flush()
+            if original_pdf is not None:
+                try:
+                    await archive_pdf(db, settings=settings, revision=content_revision, data=original_pdf)
+                except KnowledgePdfError as exc:
+                    raise KnowledgeCaptureFailure(exc.code, exc.safe_message) from None
             db.add_all(
                 [
                     SubjectDocumentPage(
@@ -366,17 +373,37 @@ async def record_capture_failure(
 
 
 async def remove_captured_knowledge(db: AsyncSession, job: GenerationJob) -> None:
-    """Delete only the revision created by this job, or its new document."""
+    """Remove unreviewed private capture, preserving independently accepted Knowledge."""
 
     await acquire_knowledge_write_lock(db)
+    revision = None
+    if job.knowledge_content_revision_id is not None:
+        revision = await db.scalar(
+            select(SubjectDocumentContentRevision)
+            .where(SubjectDocumentContentRevision.id == job.knowledge_content_revision_id)
+            .with_for_update()
+        )
+    # Publication and cancellation use this same Knowledge write lock. A
+    # reviewed revision may have been unpublished later and still belongs to
+    # the instructor rather than to the generation rollback.
+    independently_reviewed = bool(
+        revision is not None
+        and (revision.reviewed_at is not None or revision.published_at is not None)
+    )
+    if job.knowledge_created_document and job.document_id is not None:
+        independently_reviewed = independently_reviewed or bool(await db.scalar(
+            select(SubjectDocumentContentRevision.id).where(
+                SubjectDocumentContentRevision.document_id == job.document_id,
+                SubjectDocumentContentRevision.reviewed_at.is_not(None),
+            ).limit(1)
+        ))
+    if independently_reviewed:
+        return
     if job.knowledge_created_document and job.document_id is not None:
         document = await db.get(SubjectDocument, job.document_id)
         if document is not None:
             await db.delete(document)
-    elif job.knowledge_content_revision_id is not None:
-        revision = await db.get(
-            SubjectDocumentContentRevision, job.knowledge_content_revision_id
-        )
+    elif revision is not None:
         if revision is not None:
             await db.delete(revision)
     job.document_id = None

@@ -16,15 +16,107 @@ import httpx
 from sqlalchemy import func, select
 
 from app.models.email import EmailOutboxMessage
-from app.models.generation import GenerationJob
+from app.models.generation import GenerationJob, GenerationJobSource
 from app.models.operations import RequestEvent, WorkerHeartbeat
-from app.models.knowledge import SubjectDocumentIndexJob, SubjectDocumentIndexRevision
-from app.models.rag import RagAnswerJob, RagMessage
+from app.models.knowledge import RagEmbeddingSpace, SubjectDocumentIndexJob, SubjectDocumentIndexRevision
+from app.models.rag import RagAnswerJob, RagAnswerStageAttempt, RagMessage
+from app.models.subject import Subject
 from app.time_utils import as_utc, utcnow
 
 
 logger = logging.getLogger(__name__)
 _last_pulse: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+async def provider_migration_inventory(db, settings) -> dict:
+    """Return a content-free, credential-free inventory before Gemini-only cutover.
+
+    The result is operator-private. It never selects document text, model output,
+    endpoints, API keys, source ciphertext, question text or user identifiers.
+    """
+
+    generation_rows = (await db.execute(
+        select(GenerationJob.ai_provider, GenerationJob.status,
+               GenerationJob.error_retryable, func.count(GenerationJob.id))
+        .group_by(GenerationJob.ai_provider, GenerationJob.status,
+                  GenerationJob.error_retryable)
+        .order_by(GenerationJob.ai_provider, GenerationJob.status,
+                  GenerationJob.error_retryable)
+    )).all()
+    retained_sources = (await db.execute(
+        select(GenerationJob.ai_provider, GenerationJob.status,
+               func.count(GenerationJobSource.job_id))
+        .join(GenerationJobSource, GenerationJobSource.job_id == GenerationJob.id)
+        .group_by(GenerationJob.ai_provider, GenerationJob.status)
+        .order_by(GenerationJob.ai_provider, GenerationJob.status)
+    )).all()
+    index_rows = (await db.execute(
+        select(SubjectDocumentIndexRevision.embedding_provider,
+               SubjectDocumentIndexJob.status,
+               func.count(SubjectDocumentIndexJob.id))
+        .join(SubjectDocumentIndexRevision,
+              SubjectDocumentIndexRevision.id == SubjectDocumentIndexJob.index_revision_id)
+        .group_by(SubjectDocumentIndexRevision.embedding_provider,
+                  SubjectDocumentIndexJob.status)
+        .order_by(SubjectDocumentIndexRevision.embedding_provider,
+                  SubjectDocumentIndexJob.status)
+    )).all()
+    answer_rows = (await db.execute(
+        select(RagAnswerJob.ai_provider, RagAnswerJob.status,
+               RagAnswerJob.error_retryable, func.count(RagAnswerJob.id))
+        .group_by(RagAnswerJob.ai_provider, RagAnswerJob.status,
+                  RagAnswerJob.error_retryable)
+        .order_by(RagAnswerJob.ai_provider, RagAnswerJob.status,
+                  RagAnswerJob.error_retryable)
+    )).all()
+    space_rows = (await db.execute(
+        select(RagEmbeddingSpace.provider, func.count(RagEmbeddingSpace.identity_hash))
+        .group_by(RagEmbeddingSpace.provider).order_by(RagEmbeddingSpace.provider)
+    )).all()
+    active_rows = (await db.execute(
+        select(RagEmbeddingSpace.provider, func.count(Subject.id))
+        .join(Subject, Subject.active_embedding_space_hash == RagEmbeddingSpace.identity_hash)
+        .group_by(RagEmbeddingSpace.provider).order_by(RagEmbeddingSpace.provider)
+    )).all()
+    staged_rows = (await db.execute(
+        select(RagEmbeddingSpace.provider, func.count(Subject.id))
+        .join(Subject, Subject.staged_embedding_space_hash == RagEmbeddingSpace.identity_hash)
+        .group_by(RagEmbeddingSpace.provider).order_by(RagEmbeddingSpace.provider)
+    )).all()
+    return {
+        "configured": {
+            "flashcard_provider": settings.flashcard_ai_provider,
+            "answer_provider": settings.rag_ai_provider,
+            "embedding_provider": settings.rag_embedding_provider,
+            "ask_enabled": settings.rag_ask_effective_enabled,
+            "legacy_provider_configured": any(provider == "openai_compatible" for provider in (
+                settings.flashcard_ai_provider, settings.rag_ai_provider,
+                settings.rag_embedding_provider,
+            )),
+        },
+        "generation_jobs": [
+            {"provider": provider, "status": state, "retryable": retryable, "count": count}
+            for provider, state, retryable, count in generation_rows
+        ],
+        "retained_generation_sources": [
+            {"provider": provider, "status": state, "count": count}
+            for provider, state, count in retained_sources
+        ],
+        "index_jobs": [
+            {"provider": provider, "status": state, "count": count}
+            for provider, state, count in index_rows
+        ],
+        "answer_jobs": [
+            {"provider": provider, "status": state, "retryable": retryable, "count": count}
+            for provider, state, retryable, count in answer_rows
+        ],
+        "embedding_spaces": [
+            {"provider": provider, "count": count,
+             "active_subjects": dict(active_rows).get(provider, 0),
+             "staged_subjects": dict(staged_rows).get(provider, 0)}
+            for provider, count in space_rows
+        ],
+    }
 
 
 async def record_request(factory, identifier: UUID, route: str, method: str, status_code: int, latency_milliseconds: int, error_code: str | None) -> None:
@@ -237,12 +329,53 @@ async def _collect_metrics(db, settings) -> dict:
 async def job_diagnostics(db, job_id: UUID) -> dict | None:
     """Diagnose by opaque ID without querying document/card/user columns."""
 
-    columns = ("id", "request_id", "status", "stage", "attempt_count", "error_code", "error_retryable", "generated_card_count", "ai_provider", "ai_model", "estimated_input_tokens", "estimated_output_tokens", "estimated_cost_microusd", "actual_input_tokens", "actual_output_tokens", "actual_cost_microusd", "usage_estimated", "provider_request_count", "provider_retry_count", "provider_rate_limit_wait_milliseconds", "cached_input_tokens", "created_at", "started_at", "completed_at", "heartbeat_at")
+    columns = ("id", "request_id", "status", "stage", "attempt_count", "manual_retry_count", "error_code", "error_retryable", "requested_card_count", "generated_card_count", "accepted_card_count", "rejected_card_count", "selected_card_count", "quality_attempts", "ai_provider", "ai_model", "estimated_input_tokens", "estimated_output_tokens", "estimated_cost_microusd", "actual_input_tokens", "actual_output_tokens", "actual_cost_microusd", "usage_estimated", "provider_request_count", "provider_retry_count", "provider_rate_limit_wait_milliseconds", "cached_input_tokens", "created_at", "started_at", "completed_at", "heartbeat_at")
     row = (await db.execute(select(*(getattr(GenerationJob, name) for name in columns)).where(GenerationJob.id == job_id))).first()
     if row is None:
         return None
     result = dict(zip(columns, row))
     from app.observability import safe_error_code
+    from app.ai.grounding import REJECTION_CATEGORIES
+
+    # JSON is retained for durable diagnostics. Re-allowlist it at the operator
+    # boundary so unexpected stored keys can never expose document/model text.
+    attempts = result.pop("quality_attempts")
+    result["quality_attempt_count"] = min(128, len(attempts)) if isinstance(attempts, list) else 0
+    latest = attempts[-1] if isinstance(attempts, list) and attempts else None
+    if isinstance(latest, dict):
+        def safe_count(value: object) -> int:
+            try:
+                return min(1_000_000, max(0, int(value)))
+            except (TypeError, ValueError, OverflowError):
+                return 0
+
+        scalar_names = (
+            "manual_retry_number", "attempt_number", "raw_count",
+            "grounded_count", "valid_count", "distinct_count", "accepted_count",
+            "missing_count", "rejected_count", "refill_rounds_used",
+            "uncertain_request_count",
+        )
+        round_names = (
+            "round", "raw_count", "grounded_count", "valid_count",
+            "distinct_count", "accepted_count", "missing_count",
+        )
+        rounds = latest.get("rounds")
+        rejections = latest.get("rejections")
+        summary = {name: safe_count(latest.get(name)) for name in scalar_names}
+        summary["rounds"] = [
+            {name: safe_count(item.get(name)) for name in round_names}
+            for item in (rounds[:10] if isinstance(rounds, list) else [])
+            if isinstance(item, dict)
+        ]
+        summary["rejections"] = {
+            name: safe_count(rejections.get(name))
+            for name in REJECTION_CATEGORIES
+        } if isinstance(rejections, dict) else {}
+        result["latest_attempt_quality_diagnostics"] = summary
+        result["latest_attempt_rejected_card_count"] = summary["rejected_count"]
+    else:
+        result["latest_attempt_quality_diagnostics"] = None
+        result["latest_attempt_rejected_card_count"] = 0
     if result["error_code"] is not None:
         result["error_code"] = safe_error_code(result["error_code"])
     for key, value in result.items():
@@ -250,6 +383,130 @@ async def job_diagnostics(db, job_id: UUID) -> dict | None:
             result[key] = str(value)
         elif hasattr(value, "isoformat"):
             result[key] = as_utc(value).isoformat()
+    return result
+
+
+async def answer_job_diagnostics(db, job_id: UUID) -> dict | None:
+    """Return bounded, content-free Ask stage and attempt diagnostics by opaque ID."""
+
+    from app.observability import safe_error_code
+
+    fields = (
+        "id", "request_id", "status", "attempt_count", "manual_retry_count",
+        "error_code", "error_retryable", "failed_stage", "provider_error_category",
+        "failure_reason",
+        "execution_uncertain", "ai_provider", "ai_model", "answer_policy_version",
+        "support_policy_version", "attempt_cost_microusd", "attempt_cost_unknown",
+        "estimated_input_tokens", "estimated_output_tokens",
+        "actual_input_tokens", "actual_output_tokens", "estimated_cost_microusd",
+        "actual_cost_microusd", "usage_estimated", "provider_request_count",
+        "provider_retry_count", "provider_rate_limit_wait_milliseconds",
+        "support_rejection_count", "created_at", "provider_call_started_at",
+        "retrieval_completed_at", "completed_at",
+    )
+    row = (await db.execute(select(*(getattr(RagAnswerJob, field) for field in fields))
+                            .where(RagAnswerJob.id == job_id))).first()
+    if row is None:
+        return None
+    result = dict(zip(fields, row))
+    if result["error_code"] is not None:
+        result["error_code"] = safe_error_code(result["error_code"])
+    safe_stages = {"query_embedding", "retrieval", "answer", "support", "local_support",
+                   "shutdown", "preflight", "worker_lease"}
+    if result["failed_stage"] not in safe_stages:
+        result["failed_stage"] = None
+    safe_categories = {"internal_failure", "retrieval_failed", "timeout",
+                       "shutdown", "cancelled", "lease_expired", "local_support_unavailable"}
+    safe_reasons = {
+        "transport_timeout", "transport_protocol", "transport_network",
+        "http_invalid_request", "http_authentication", "http_access_denied",
+        "http_model_missing", "http_rate_limited", "http_server_error",
+        "http_transient", "http_rejected", "sdk_unclassified",
+        "output_empty", "output_blocked", "output_unfinished", "json_invalid",
+        "schema_invalid", "citation_invalid", "answer_too_long",
+        "retrieval_failed", "retrieval_timeout", "local_support_unavailable",
+        "local_support_timeout", "rag_access_revoked", "rag_corpus_changed",
+        "internal_failure",
+    }
+    safe_finish_reasons = {
+        "FINISH_REASON_UNSPECIFIED", "STOP", "MAX_TOKENS", "SAFETY",
+        "RECITATION", "LANGUAGE", "OTHER", "BLOCKLIST",
+        "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+        "IMAGE_SAFETY", "UNEXPECTED_TOOL_CALL", "IMAGE_PROHIBITED_CONTENT",
+        "NO_IMAGE", "IMAGE_RECITATION", "IMAGE_OTHER",
+    }
+    safe_support_reasons = {
+        "supported", "missing_evidence", "entailment_rejected",
+        "question_relevance_rejected", "equivalence_rejected",
+        "contradiction_detected", "support_rejected",
+    }
+
+    def category(value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value if value in safe_categories else safe_error_code(value)
+
+    result["provider_error_category"] = category(result["provider_error_category"])
+    result["failure_reason"] = (
+        result["failure_reason"] if result["failure_reason"] in safe_reasons
+        else "internal_failure" if result["failure_reason"] else None
+    )
+    for key, value in result.items():
+        if isinstance(value, UUID):
+            result[key] = str(value)
+        elif hasattr(value, "isoformat"):
+            result[key] = as_utc(value).isoformat()
+
+    attempts = (await db.scalars(select(RagAnswerStageAttempt)
+                                 .where(RagAnswerStageAttempt.job_id == job_id)
+                                 .order_by(RagAnswerStageAttempt.manual_retry_number,
+                                           RagAnswerStageAttempt.worker_attempt_number,
+                                           RagAnswerStageAttempt.started_at,
+                                           RagAnswerStageAttempt.id)
+                                 .limit(400))).all()
+    def safe_ranks(value: object) -> list[dict[str, int | None]] | None:
+        if not isinstance(value, list) or len(value) > 5:
+            return None
+        ranks = []
+        for entry in value:
+            if not isinstance(entry, dict) or set(entry) != {"vector_rank", "lexical_rank"}:
+                return None
+            pair = {}
+            for key in ("vector_rank", "lexical_rank"):
+                rank = entry[key]
+                if rank is not None and (type(rank) is not int or not 1 <= rank <= 20):
+                    return None
+                pair[key] = rank
+            ranks.append(pair)
+        return ranks
+
+    result["stages"] = [
+        {
+            "manual_retry_number": item.manual_retry_number,
+            "worker_attempt_number": item.worker_attempt_number,
+            "stage": item.stage if item.stage in safe_stages else "unknown",
+            "started_at": as_utc(item.started_at).isoformat(),
+            "completed_at": as_utc(item.completed_at).isoformat() if item.completed_at else None,
+            "elapsed_milliseconds": item.elapsed_milliseconds,
+            "physical_request_count": item.physical_request_count,
+            "retry_count": item.retry_count,
+            "rate_limit_wait_milliseconds": item.rate_limit_wait_milliseconds,
+            "error_category": category(item.error_category),
+            "failure_reason": item.failure_reason if item.failure_reason in safe_reasons else "internal_failure" if item.failure_reason else None,
+            "provider_finish_reason": item.provider_finish_reason if item.provider_finish_reason in safe_finish_reasons else "OTHER" if item.provider_finish_reason else None,
+            "input_tokens": item.input_tokens,
+            "output_tokens": item.output_tokens,
+            "usage_estimated": item.usage_estimated,
+            "retrieval_ranks": safe_ranks(item.retrieval_ranks),
+            "support_reason": item.support_reason if item.support_reason in safe_support_reasons else None,
+            "support_entailment": item.support_entailment if item.support_entailment in {"pass", "fail", "not_run"} else None,
+            "support_question_relevance": item.support_question_relevance if item.support_question_relevance in {"pass", "fail", "not_run"} else None,
+            "support_equivalence": item.support_equivalence if item.support_equivalence in {"pass", "fail", "not_run", "not_required"} else None,
+            "support_contradiction": item.support_contradiction if item.support_contradiction in {"pass", "fail", "not_run"} else None,
+            "execution_uncertain": item.execution_uncertain,
+        }
+        for item in attempts
+    ]
     return result
 
 

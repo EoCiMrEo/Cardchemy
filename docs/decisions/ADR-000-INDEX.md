@@ -10,18 +10,28 @@ changing a decision. Code remains the implementation authority.
 | --- | --- | --- |
 | [001: Four-option cards](ADR-001-four-option-cards.md) | Accepted | Current card/product shape |
 | [002: Server-derived correctness](ADR-002-server-derived-correctness.md) | Accepted | Answer trust and scheduling |
-| [003: Completion and mastery](ADR-003-completion-and-mastery.md) | Accepted | Distinct progress metrics |
+| [003: Completion and mastery](ADR-003-completion-and-mastery.md) | Display/success decision superseded by ADR-016; API meanings retained | Attempted completion and mastery |
 | [004: Alembic schema ownership](ADR-004-alembic-schema-ownership.md) | Accepted | Schema migration/startup |
 | [005: Deletion cascades](ADR-005-deletion-cascades.md) | Accepted | Persisted ownership and dependent data |
-| [006: Grounded generation validation](ADR-006-grounded-generation-validation.md) | Accepted | Untrusted AI output before persistence |
+| [006: Grounded generation validation](ADR-006-grounded-generation-validation.md) | Accepted validation; pre-result candidate retention extended by ADR-020 | Untrusted AI output before persistence |
 | [007: Root configuration](ADR-007-root-configuration.md) | Accepted | File configuration and secret injection |
-| [008: PostgreSQL durable jobs](ADR-008-postgresql-durable-jobs.md) | Accepted | Bounded asynchronous generation |
+| [008: PostgreSQL durable jobs](ADR-008-postgresql-durable-jobs.md) | Accepted; private staged choice and exact-count finalization extended by ADR-020 | Bounded asynchronous generation |
 | [009: Session and role boundaries](ADR-009-session-and-role-boundaries.md) | Accepted | Tokens, sessions, signup and authorization |
 | [010: Transactional email](ADR-010-transactional-email.md) | Accepted | Atomic intent and SMTP ambiguity |
 | [011: Operational privacy controls](ADR-011-operational-privacy-controls.md) | Accepted | Content-free diagnostics/audits and operator-mediated lifecycle controls |
-| [012: Subject Knowledge and RAG boundaries](ADR-012-subject-knowledge-and-rag-boundaries.md) | Accepted design; implementation follows the RAG plan | Installation/privacy/versioning/model/worker contracts for Subject Knowledge |
+| [012: Subject Knowledge and RAG boundaries](ADR-012-subject-knowledge-and-rag-boundaries.md) | Accepted boundaries; provider and remote-support/retry choices superseded by ADR-014/015/019 | Installation/privacy/versioning/worker contracts for Subject Knowledge |
 | [013: Password hash compatibility](ADR-013-password-hash-compatibility.md) | Accepted | Direct bcrypt with unchanged v2 records and historic password verification |
-| [014: Native Gemini RAG profiles](ADR-014-native-gemini-rag-profiles.md) | Accepted; supersedes ADR-012 G5 provider selection | Native answer/embedding contracts and task-aware space migration |
+| [014: Native Gemini RAG profiles](ADR-014-native-gemini-rag-profiles.md) | Accepted 001 embedding contract; Ask retry/support choices superseded by ADR-019 and extended by ADR-018 | Native embedding and task-aware space migration |
+| [015: Ask pause and Gemini catalog](ADR-015-ask-pause-and-gemini-catalog.md) | Accepted catalog and historical fence; replacement completed by ADR-019 | Separate Ask shutdown, closed text catalog and historical snapshot retention |
+| [016: Study progress and option order](ADR-016-study-progress-and-option-order.md) | Accepted | Correct-card Progress, attempt accuracy, exact completion gate and presentation shuffle |
+| [017: Repeat Knowledge upload choice](ADR-017-repeat-knowledge-upload-choice.md) | Accepted; supersedes ADR-012 for distinct exact-byte repeats and reuse ownership; reviewed/published capture cancellation narrowed by ADR-020 | Durable same-Subject choice, revision no-op and upload/Knowledge accounting |
+| [018: Gemini Embedding 2 space](ADR-018-gemini-embedding-2-space.md) | Accepted optional staging profile; 001 remains default | Versioned model-2 formatting, isolation, staging and cutover |
+| [019: Two-request Ask with local support](ADR-019-two-request-local-support-ask.md) | Historical implementation; new-job answer execution superseded by ADR-022 | Former one-embedding/one-answer contract and manual retry consent |
+| [020: Validated-card choice](ADR-020-validated-card-choice.md) | Implemented in this checkout; final Lane 6 release gate pending; earlier pending/off status superseded by the [2026-10-04 local closure](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md) | Bounded private candidate staging, exact-count confirmation and Knowledge cancellation ownership |
+| [021: Related Knowledge excerpts](ADR-021-related-knowledge-excerpts.md) | Historical fallback; new-job default/two-excerpt cap superseded by ADR-022 | Former source-labeled browsing excerpt for failed/abstained Ask outcomes |
+| [022: Source-first related Knowledge Ask](ADR-022-related-knowledge-primary-ask.md) | Accepted source-only and access boundaries; runtime sufficiency gate and extracted-page-only viewer superseded by ADR-023 | One-embedding source browsing, distinct terminal result and no new answer generation |
+| [023: Original-PDF source navigation](ADR-023-original-pdf-source-navigation.md) | Accepted; remote-judge prohibition superseded for bounded visual source judging by ADR-024; release fence closed; earlier pending/off status superseded by the [2026-10-04 local closure](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md) | Automatic unverified related reading, original-PDF page viewer, local lexical fallback and durable encrypted archive |
+| [024: Gemini source-ID judging](ADR-024-gemini-source-id-judge.md) | Accepted direction; historical failed pilots remain failed. Matching v7/0032 retained cutover, technical and browser/security checks passed with Ask off; public calibration passed at 89.32% useful displayed cards. Complete heldout/private and spoken-accessibility release gates remain open; earlier pending/off status superseded by the [2026-10-04 local closure](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md) | At most one source-ID judgment after one raw-current-question embedding, immutable bounded literal subject for unresolved follow-ups, zero answer generation, locally derived exact references and public-first privacy/quality gates |
 
 ## Maintenance
 

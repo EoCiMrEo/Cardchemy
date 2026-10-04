@@ -11,7 +11,7 @@ import uuid
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, Column, DateTime, ForeignKey,
-    ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint,
+    ForeignKeyConstraint, Index, Integer, LargeBinary, String, Text, UniqueConstraint,
     func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -89,12 +89,18 @@ class RagEmbeddingSpace(Base):
         CheckConstraint(
             "length(identity_hash) = 64 AND provider IN ('openai_compatible','gemini') AND "
             "length(trim(base_url)) BETWEEN 1 AND 512 AND length(trim(model)) BETWEEN 1 AND 128 AND "
-            "length(trim(space_revision)) BETWEEN 1 AND 64 AND format_version = 'raw_text_v1' AND "
+            "length(trim(space_revision)) BETWEEN 1 AND 64 AND "
             "dimensions = 1536 AND representation = 'float32' AND metric = 'cosine' AND "
-            "((provider = 'openai_compatible' AND document_task_mode = 'shared_input' "
+            "((provider = 'openai_compatible' AND format_version = 'raw_text_v1' "
+            "AND document_task_mode = 'shared_input' "
             "AND query_task_mode = 'shared_input') OR "
-            "(provider = 'gemini' AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
-            "AND query_task_mode = 'QUESTION_ANSWERING'))",
+            "(provider = 'gemini' AND format_version = 'raw_text_v1' "
+            "AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
+            "AND query_task_mode = 'QUESTION_ANSWERING') OR "
+            "(provider = 'gemini' AND model = 'gemini-embedding-2' "
+            "AND format_version = 'gemini2_qa_section_v1' "
+            "AND document_task_mode = 'title_section_text_v1' "
+            "AND query_task_mode = 'question_answering_query_v1'))",
             name="ck_rag_embedding_spaces_identity",
         ),
         UniqueConstraint(
@@ -232,6 +238,54 @@ class SubjectDocumentPage(Base):
     )
 
 
+class SubjectDocumentPdf(Base):
+    """Immutable encrypted original belonging to exactly one content revision."""
+
+    __tablename__ = "subject_document_pdfs"
+    content_revision_id = Column(UUID(as_uuid=True), primary_key=True)
+    document_id = Column(UUID(as_uuid=True), nullable=False)
+    subject_id = Column(UUID(as_uuid=True), nullable=False)
+    uploader_id = Column(UUID(as_uuid=True), nullable=False)
+    source_sha256 = Column(String(64), nullable=False)
+    byte_size = Column(Integer, nullable=False)
+    page_count = Column(Integer, nullable=False)
+    block_count = Column(Integer, nullable=False)
+    key_version = Column(Integer, nullable=False, server_default=text("1"))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now())
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["content_revision_id", "document_id", "subject_id", "uploader_id"],
+            ["subject_document_content_revisions.id", "subject_document_content_revisions.document_id",
+             "subject_document_content_revisions.subject_id", "subject_document_content_revisions.uploader_id"],
+            ondelete="CASCADE", name="fk_knowledge_pdf_revision",
+        ),
+        CheckConstraint("length(source_sha256) = 64", name="ck_knowledge_pdf_hash"),
+        CheckConstraint("source_sha256 ~ '^[0-9a-f]{64}$'", name="ck_knowledge_pdf_hash_format").ddl_if(dialect="postgresql"),
+        CheckConstraint("byte_size BETWEEN 1 AND 104857600 AND page_count BETWEEN 1 AND 100 "
+                        "AND block_count = ((byte_size + 1048575) / 1048576) AND key_version = 1",
+                        name="ck_knowledge_pdf_bounds"),
+        Index("ix_knowledge_pdf_subject", "subject_id", "content_revision_id"),
+        Index("ix_knowledge_pdf_uploader", "uploader_id", "content_revision_id"),
+    )
+
+
+class SubjectDocumentPdfBlock(Base):
+    """Fixed-size independently authenticated blocks; no plaintext persists."""
+
+    __tablename__ = "subject_document_pdf_blocks"
+    content_revision_id = Column(UUID(as_uuid=True), ForeignKey("subject_document_pdfs.content_revision_id", ondelete="CASCADE", name="fk_knowledge_pdf_block_archive"), primary_key=True)
+    block_number = Column(Integer, primary_key=True)
+    plaintext_size = Column(Integer, nullable=False)
+    nonce = Column(LargeBinary, nullable=False)
+    payload = Column(LargeBinary, nullable=False)
+    __table_args__ = (
+        CheckConstraint("block_number BETWEEN 0 AND 99 AND plaintext_size BETWEEN 1 AND 1048576 "
+                        "AND length(nonce) = 12 AND length(payload) = plaintext_size + 16",
+                        name="ck_knowledge_pdf_block_bounds"),
+    )
+
+
 class SubjectDocumentIndexRevision(Base):
     __tablename__ = "subject_document_index_revisions"
 
@@ -290,10 +344,16 @@ class SubjectDocumentIndexRevision(Base):
             "length(trim(embedding_space_revision)) BETWEEN 1 AND 64 AND "
             "length(trim(embedding_format_version)) BETWEEN 1 AND 64 AND "
             "length(embedding_space_hash) = 64 AND "
-            "((embedding_provider = 'openai_compatible' AND document_task_mode = 'shared_input' "
+            "((embedding_provider = 'openai_compatible' AND embedding_format_version = 'raw_text_v1' "
+            "AND document_task_mode = 'shared_input' "
             "AND query_task_mode = 'shared_input') OR "
-            "(embedding_provider = 'gemini' AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
-            "AND query_task_mode = 'QUESTION_ANSWERING'))",
+            "(embedding_provider = 'gemini' AND embedding_format_version = 'raw_text_v1' "
+            "AND document_task_mode = 'RETRIEVAL_DOCUMENT' "
+            "AND query_task_mode = 'QUESTION_ANSWERING') OR "
+            "(embedding_provider = 'gemini' AND embedding_model = 'gemini-embedding-2' "
+            "AND embedding_format_version = 'gemini2_qa_section_v1' "
+            "AND document_task_mode = 'title_section_text_v1' "
+            "AND query_task_mode = 'question_answering_query_v1'))",
             name="ck_knowledge_index_identity",
         ),
         CheckConstraint(

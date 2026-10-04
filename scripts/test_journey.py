@@ -235,7 +235,12 @@ def write_pdf(target: Path) -> None:
                              NameObject("/BaseFont"): NameObject("/Helvetica")})
     page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})})
     stream = DecodedStreamObject()
-    stream.set_data(b"BT /F1 12 Tf 72 720 Td (Chlorophyll gives leaves their Green color. Photosynthesis converts light into chemical energy.) Tj ET")
+    stream.set_data(
+        b"BT /F1 12 Tf 72 720 Td "
+        b"(Chlorophyll is a green pigment in leaves.) Tj "
+        b"0 -20 Td (Chlorophyll gives leaves their Green color.) Tj "
+        b"0 -20 Td (Photosynthesis converts light into chemical energy.) Tj ET"
+    )
     page[NameObject("/Contents")] = writer._add_object(stream)
     output = BytesIO()
     writer.write(output)
@@ -248,19 +253,14 @@ def rag_environment(enabled: bool) -> dict[str, str]:
     if not enabled:
         return {
             "RAG_ENABLED": "false",
+            "RAG_ASK_ENABLED": "false",
             "RAG_AI_PROVIDER_ENABLED": "false",
             "RAG_EMBEDDING_PROVIDER_ENABLED": "false",
         }
     return {
         "RAG_ENABLED": "true",
-        "RAG_AI_PROVIDER_ENABLED": "true",
-        "RAG_AI_API_KEY": "journey-deterministic-no-network",
-        "RAG_AI_QUOTA_BUCKET": "journey-rag-answer",
-        "RAG_AI_MODEL": "journey-deterministic",
-        "RAG_AI_PROVIDER_MAX_RETRIES": "0",
-        "RAG_AI_CONCURRENCY": "1",
-        "RAG_AI_INPUT_COST_PER_MILLION_USD": "0.1",
-        "RAG_AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
+        "RAG_ASK_ENABLED": "true",
+        "RAG_AI_PROVIDER_ENABLED": "false",
         "RAG_EMBEDDING_PROVIDER_ENABLED": "true",
         "RAG_EMBEDDING_API_KEY": "journey-deterministic-no-network",
         "RAG_EMBEDDING_QUOTA_BUCKET": "journey-rag-embedding",
@@ -268,6 +268,10 @@ def rag_environment(enabled: bool) -> dict[str, str]:
         "RAG_EMBEDDING_PROVIDER_MAX_RETRIES": "0",
         "RAG_EMBEDDING_CONCURRENCY": "1",
         "RAG_EMBEDDING_INPUT_COST_PER_MILLION_USD": "0.01",
+        "RAG_SOURCE_JUDGE_PROVIDER_ENABLED": "true",
+        "RAG_SOURCE_JUDGE_API_KEY": "journey-deterministic-no-network",
+        "RAG_SOURCE_JUDGE_QUOTA_BUCKET": "journey-rag-source-judge",
+        "RAG_SOURCE_JUDGE_PROVIDER_MAX_RETRIES": "0",
     }
 
 
@@ -362,10 +366,11 @@ def main() -> int:
                 "DATABASE_URL": f"postgresql+asyncpg://qa:{password}@127.0.0.1:{database_port}/journey_test",
                 "SECRET_KEY": secrets.token_urlsafe(48),
                 "GENERATION_SOURCE_ENCRYPTION_KEY": secrets.token_urlsafe(32),
+                "KNOWLEDGE_PDF_ENCRYPTION_KEY": secrets.token_urlsafe(32),
                 "FRONTEND_BASE_URL": app_origin, "CORS_ORIGINS": app_origin,
                 "FLASHCARD_AI_PROVIDER_ENABLED": "true", "FLASHCARD_AI_API_KEY": "journey-deterministic-no-network",
                 "FLASHCARD_AI_QUOTA_BUCKET": "journey-deterministic",
-                "FLASHCARD_AI_MODEL": "journey-deterministic", "FLASHCARD_AI_REFILL_ROUNDS": "0",
+                "FLASHCARD_AI_MODEL": "gemini-3.5-flash", "FLASHCARD_AI_REFILL_ROUNDS": "0",
                 "FLASHCARD_AI_PROVIDER_MAX_RETRIES": "0", "FLASHCARD_AI_CONCURRENCY": "1",
                 "FLASHCARD_AI_INPUT_COST_PER_MILLION_USD": "0.1", "FLASHCARD_AI_OUTPUT_COST_PER_MILLION_USD": "0.1",
                 "GENERATION_WORKER_POLL_SECONDS": "0.1", "EMAIL_WORKER_POLL_SECONDS": "0.1",
@@ -392,7 +397,7 @@ def main() -> int:
                 processes.append(process)
                 return process
 
-            api = start("api", [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
+            api = start("api", [sys.executable, "-m", "uvicorn", "tests.support.journey_api:app", "--host", "127.0.0.1",
                                 "--port", str(api_port), "--no-access-log"], backend_environment, ROOT / "backend")
             wait_http(f"http://127.0.0.1:{api_port}/health/ready", api)
             worker_commands = {

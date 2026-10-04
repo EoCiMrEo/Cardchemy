@@ -35,6 +35,24 @@ export const knowledgeService = {
     return response.data
   },
 
+  async attachOriginalPdf(
+    subjectId: string,
+    documentId: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<KnowledgeDocument> {
+    const response = await api.post<KnowledgeDocument>(
+      `/subjects/${subjectId}/knowledge/documents/${documentId}/attach-original-pdf`,
+      file,
+      {
+        headers: { 'Content-Type': 'application/pdf' },
+        signal,
+        timeout: 120_000,
+      },
+    )
+    return response.data
+  },
+
   async reviewPublish(subjectId: string, documentId: string): Promise<KnowledgeDocument> {
     const response = await api.post<KnowledgeDocument>(
       `/subjects/${subjectId}/knowledge/documents/${documentId}/review-publish`,

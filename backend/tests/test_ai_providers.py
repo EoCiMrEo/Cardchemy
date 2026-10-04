@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -9,8 +10,10 @@ from app.ai.providers import (
     AIProviderError,
     AIProviderInvalidOutputError,
     GeminiProvider,
-    OpenAICompatibleProvider,
+    current_attempt_scope,
     get_ai_provider,
+    provider_attempt_scope,
+    _normalize_provider_error,
 )
 from app.config import Settings
 
@@ -45,6 +48,7 @@ class GeminiModels:
         errors=None,
         cached_input_tokens=0,
         thought_tokens=0,
+        finish_reason=None,
     ):
         self.text = text
         self.request = None
@@ -52,6 +56,7 @@ class GeminiModels:
         self.errors = list(errors or [])
         self.cached_input_tokens = cached_input_tokens
         self.thought_tokens = thought_tokens
+        self.finish_reason = finish_reason
 
     async def generate_content(self, **kwargs):
         self.request = kwargs
@@ -66,6 +71,7 @@ class GeminiModels:
                 cached_content_token_count=self.cached_input_tokens,
                 thoughts_token_count=self.thought_tokens,
             ),
+            candidates=[SimpleNamespace(finish_reason=self.finish_reason)] if self.finish_reason else [],
         )
 
 
@@ -73,6 +79,36 @@ def test_gemini_sdk_retry_layer_is_explicitly_disabled():
     provider = GeminiProvider(settings())
 
     assert provider._client._api_client._http_options.retry_options.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_attempt_scopes_isolate_concurrent_calls_on_one_provider():
+    owner = object()
+
+    async def measured(operation: str, attempts: int, wait: float):
+        async with provider_attempt_scope(owner) as scope:
+            for attempt in range(attempts):
+                current = current_attempt_scope(owner)
+                assert current is scope
+                current.record_request(
+                    operation,
+                    retry=attempt > 0,
+                    waited_seconds=wait if attempt == 0 else 0.0,
+                )
+                await asyncio.sleep(0)
+            return scope.snapshot()
+
+    first, second = await asyncio.gather(
+        measured("first", 1, 0.25),
+        measured("second", 3, 0.75),
+    )
+
+    assert (first.request_count, first.retry_count) == (1, 0)
+    assert first.request_counts_by_stage == {"first": 1}
+    assert first.rate_limit_wait_seconds == pytest.approx(0.25)
+    assert (second.request_count, second.retry_count) == (3, 2)
+    assert second.request_counts_by_stage == {"second": 3}
+    assert second.rate_limit_wait_seconds == pytest.approx(0.75)
 
 
 @pytest.mark.asyncio
@@ -370,51 +406,22 @@ async def test_retry_after_beyond_configured_max_stops_without_early_retry(monke
     assert delays == []
 
 
-@pytest.mark.asyncio
-async def test_openai_compatible_adapter_contract_and_estimator_fallback():
-    captured = {}
-
-    async def handler(request: httpx.Request):
-        captured.update(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": '{"value":"local"}'}}]},
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        response = await OpenAICompatibleProvider(
-            settings(flashcard_ai_provider="openai_compatible", flashcard_ai_base_url="http://model.internal/v1"),
-            client=client,
-        ).generate_structured(
-            response_model=Output,
-            system_prompt="system",
-            user_prompt="data",
-            max_output_tokens=100,
-            operation="card generation",
-        )
-
-    assert response.data.value == "local"
-    assert response.usage.estimated is True
-    assert captured["messages"][0] == {"role": "system", "content": "system"}
-    assert captured["response_format"]["json_schema"]["strict"] is True
+def test_legacy_text_provider_is_rejected_before_new_work():
+    with pytest.raises(ValidationError, match="flashcard_ai_provider"):
+        settings(flashcard_ai_provider="openai_compatible")
+    bypassed = settings().model_copy(update={"flashcard_ai_provider": "openai_compatible"})
+    with pytest.raises(AIProviderError, match="not supported"):
+        get_ai_provider(bypassed)
 
 
 @pytest.mark.asyncio
 async def test_answer_profile_is_independent_of_flashcard_model_key_and_card_controls():
-    captured = {}
-
-    async def handler(request: httpx.Request):
-        captured["url"] = str(request.url)
-        captured["authorization"] = request.headers.get("Authorization")
-        captured["payload"] = json.loads(request.content)
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"value":"answer"}'}}]})
-
     configured = settings(
-        flashcard_ai_provider="gemini", flashcard_ai_model="flashcard-model",
+        flashcard_ai_provider="gemini", flashcard_ai_model="gemini-3.8-flash",
         flashcard_ai_api_key="flashcard-secret", flashcard_ai_cards_per_request=17,
-        rag_enabled=True, rag_ai_provider_enabled=True, rag_ai_provider="openai_compatible",
-        rag_ai_model="answer-model", rag_ai_api_key="answer-secret",
-        rag_ai_base_url="https://answer.example.test/v1", rag_ai_max_output_tokens=128,
+        rag_enabled=True, rag_ai_provider_enabled=True, rag_ai_provider="gemini",
+        rag_ai_model="gemini-3.5-flash", rag_ai_api_key="answer-secret",
+        rag_ai_max_output_tokens=128,
         rag_ai_requests_per_minute=2, rag_ai_input_tokens_per_minute=100_000,
         rag_ai_quota_bucket="test-answer-account",
     )
@@ -422,22 +429,19 @@ async def test_answer_profile_is_independent_of_flashcard_model_key_and_card_con
     assert not hasattr(profile, "cards_per_request")
     assert "answer-secret" not in repr(profile)
     assert "flashcard-secret" not in repr(profile)
-    assert profile.model == "answer-model"
-
-    # The factory routes to the same adapter with answer-specific limits; use
-    # an injected no-network client to prove the wire payload and credential.
-    assert isinstance(get_ai_provider(configured, role="rag_answer"), OpenAICompatibleProvider)
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        adapter = OpenAICompatibleProvider(configured, client=client, role="rag_answer")
-        response = await adapter.generate_structured(
-            response_model=Output, system_prompt="trusted", user_prompt="untrusted",
-            max_output_tokens=512, operation="answer_test",
-        )
+    assert profile.model == "gemini-3.5-flash"
+    models = GeminiModels('{"value":"answer"}')
+    adapter = GeminiProvider(
+        configured, client=SimpleNamespace(aio=SimpleNamespace(models=models)), role="rag_answer"
+    )
+    response = await adapter.generate_structured(
+        response_model=Output, system_prompt="trusted", user_prompt="untrusted",
+        max_output_tokens=512, operation="answer_test",
+    )
     assert response.data.value == "answer"
-    assert captured["authorization"] == "Bearer answer-secret"
-    assert captured["url"] == "https://answer.example.test/v1/chat/completions"
-    assert captured["payload"]["model"] == "answer-model"
-    assert captured["payload"]["max_tokens"] == 128
+    assert adapter.profile.api_key_value == "answer-secret"
+    assert models.request["model"] == "gemini-3.5-flash"
+    assert models.request["config"]["max_output_tokens"] == 128
     assert adapter.rate_governor.requests_per_window == 1  # 2 RPM * 80% safety
 
 
@@ -446,7 +450,7 @@ async def test_native_gemini_answer_profile_uses_rag_role_model_key_and_limits()
     models = GeminiModels('{"value":"grounded"}')
     configured = settings(
         flashcard_ai_provider="gemini",
-        flashcard_ai_model="flashcard-model",
+        flashcard_ai_model="gemini-3.8-flash",
         flashcard_ai_api_key="flashcard-secret",
         rag_enabled=True,
         rag_ai_provider_enabled=True,
@@ -503,41 +507,57 @@ async def test_provider_rejects_extra_structured_fields():
 
 
 @pytest.mark.asyncio
-async def test_supported_provider_profiles_normalize_the_same_contract():
-    gemini_models = GeminiModels('{"value":"same"}')
-    gemini = await GeminiProvider(
-        settings(), client=SimpleNamespace(aio=SimpleNamespace(models=gemini_models))
-    ).generate_structured(
-        response_model=Output,
-        system_prompt="system",
-        user_prompt="data",
-        max_output_tokens=100,
-        operation="contract parity",
+@pytest.mark.parametrize(
+    "text_value,finish_reason,expected_reason",
+    [
+        ("", "STOP", "output_empty"),
+        ("{broken", "STOP", "json_invalid"),
+        ('{"value": 9}', "STOP", "schema_invalid"),
+        ('{"value":"ok"}', "MAX_TOKENS", "output_unfinished"),
+        ('{"value":"ok"}', "SAFETY", "output_blocked"),
+    ],
+)
+async def test_invalid_gemini_output_retains_safe_finish_and_billable_usage(
+    text_value, finish_reason, expected_reason
+):
+    models = GeminiModels(
+        text_value, thought_tokens=3,
+        finish_reason=SimpleNamespace(name=finish_reason),
     )
-
-    async def handler(_request: httpx.Request):
-        return httpx.Response(
-            200,
-            json={
-                "choices": [{"message": {"content": '{"value":"same"}'}}],
-                "usage": {"prompt_tokens": 11, "completion_tokens": 7},
-            },
+    adapter = GeminiProvider(
+        settings(rag_enabled=True, rag_ai_provider_enabled=True,
+                 rag_ai_api_key="test-answer-key", rag_ai_quota_bucket="test-answer"),
+        client=SimpleNamespace(aio=SimpleNamespace(models=models)),
+        role="rag_answer",
+    )
+    with pytest.raises(AIProviderInvalidOutputError) as rejected:
+        await adapter.generate_structured(
+            response_model=Output, system_prompt="trusted", user_prompt="private fixture",
+            max_output_tokens=100, operation="rag_answer",
         )
+    error = rejected.value
+    assert error.code == "invalid_ai_output"
+    assert error.reason_code == expected_reason
+    assert error.finish_reason == finish_reason
+    assert error.usage is not None
+    assert (error.usage.input_tokens, error.usage.output_tokens) == (11, 10)
+    assert error.usage.estimated is False
+    assert len(models.requests) == 1
+    assert (await adapter.rate_governor.snapshot()).actual_input_tokens == 11
+    assert "private fixture" not in str(error)
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        compatible = await OpenAICompatibleProvider(
-            settings(flashcard_ai_provider="openai_compatible", flashcard_ai_base_url="http://model.internal/v1"),
-            client=client,
-        ).generate_structured(
-            response_model=Output,
-            system_prompt="system",
-            user_prompt="data",
-            max_output_tokens=100,
-            operation="contract parity",
-        )
 
-    assert gemini.data.model_dump() == compatible.data.model_dump() == {"value": "same"}
-    assert gemini.usage == compatible.usage
+def test_provider_failure_subreasons_distinguish_transport_http_and_unknown_sdk():
+    request = httpx.Request("POST", "https://example.test/generate")
+    network = _normalize_provider_error(httpx.ConnectError("synthetic", request=request))
+    server = _normalize_provider_error(httpx.HTTPStatusError(
+        "synthetic", request=request,
+        response=httpx.Response(503, request=request),
+    ))
+    unknown = _normalize_provider_error(RuntimeError("synthetic SDK failure"))
+    assert (network.code, network.reason_code) == ("ai_provider_unavailable", "transport_network")
+    assert (server.code, server.reason_code) == ("ai_provider_unavailable", "http_server_error")
+    assert (unknown.code, unknown.reason_code) == ("ai_provider_unavailable", "sdk_unclassified")
 
 
 def test_ai_configuration_matrix_and_secret_repr():

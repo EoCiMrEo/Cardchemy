@@ -251,7 +251,15 @@ class KnowledgeIndexWorker:
             await self._mark_provider_boundary(job_id, token, estimated_total, estimated_cost)
             before = self.provider.telemetry_snapshot()
             try:
-                response = await self.provider.embed_documents([chunk.content for chunk in batch])
+                texts = [chunk.content for chunk in batch]
+                if self.settings.rag_embedding_model == "gemini-embedding-2":
+                    # Sections are rebuilt from immutable canonical pages. The
+                    # editable document title must not change indexed input.
+                    response = await self.provider.embed_documents(
+                        texts, titles=[chunk.section for chunk in batch]
+                    )
+                else:
+                    response = await self.provider.embed_documents(texts)
             except Exception:
                 after = self.provider.telemetry_snapshot()
                 await self._record_failed_attempt(

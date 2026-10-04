@@ -32,6 +32,8 @@ from app.time_utils import utcnow
 
 class GenerationJobStatus(str, enum.Enum):
     AWAITING_UPLOAD = "awaiting_upload"
+    AWAITING_CHOICE = "awaiting_choice"
+    AWAITING_CARD_CHOICE = "awaiting_card_choice"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -87,6 +89,22 @@ class GenerationJob(Base):
     knowledge_capture_started_at = Column(DateTime(timezone=True), nullable=True)
     knowledge_capture_completed_at = Column(DateTime(timezone=True), nullable=True)
     knowledge_capture_removed = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    knowledge_choice_candidate_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "subject_documents.id",
+            ondelete="SET NULL",
+            name="fk_generation_jobs_choice_candidate",
+        ),
+        nullable=True,
+    )
+    knowledge_choice_expires_at = Column(DateTime(timezone=True), nullable=True)
+    knowledge_choice_key_hash = Column(String(64), nullable=True)
+    knowledge_choice = Column(String(24), nullable=True)
+    knowledge_upload_outcome = Column(String(24), nullable=True)
+    card_choice_expires_at = Column(DateTime(timezone=True), nullable=True)
+    card_choice_key_hash = Column(String(64), nullable=True)
+    selected_card_count = Column(Integer, nullable=True)
 
     idempotency_key_hash = Column(String(64), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
@@ -136,6 +154,9 @@ class GenerationJob(Base):
     ai_model = Column(
         String(128), nullable=False, default="unconfigured", server_default=text("'unconfigured'")
     )
+    # Null only on jobs created before the Gemini capability catalog.
+    ai_catalog_version = Column(String(64), nullable=True)
+    ai_schema_policy_version = Column(String(64), nullable=True)
     estimated_input_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
     estimated_output_tokens = Column(Integer, nullable=False, default=0, server_default=text("0"))
     estimated_request_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
@@ -160,6 +181,12 @@ class GenerationJob(Base):
     rejected_card_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     limit_reason_code = Column(String(64), nullable=True)
     limit_reason_message = Column(String(500), nullable=True)
+    # Sanitized, bounded per-attempt counters only. No card, source, prompt or
+    # provider content is written to this metadata row.
+    quality_attempts = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False,
+        default=list, server_default=text("'[]'"),
+    )
 
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
@@ -179,11 +206,20 @@ class GenerationJob(Base):
         passive_deletes=True,
         lazy="raise",
     )
+    staged_candidates = relationship(
+        "GenerationCandidateStage", back_populates="job", uselist=False,
+        passive_deletes=True, lazy="raise",
+    )
     result_set = relationship(
         "FlashcardSet", back_populates="generation_job", uselist=False, passive_deletes=True
     )
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["knowledge_choice_candidate_id", "subject_id", "user_id"],
+            ["subject_documents.id", "subject_documents.subject_id", "subject_documents.uploader_id"],
+            name="fk_generation_jobs_choice_candidate_scope", deferrable=True, initially="DEFERRED",
+        ),
         ForeignKeyConstraint(
             ["document_id", "subject_id", "user_id"],
             ["subject_documents.id", "subject_documents.subject_id", "subject_documents.uploader_id"],
@@ -195,7 +231,7 @@ class GenerationJob(Base):
             name="ck_generation_jobs_kind",
         ),
         CheckConstraint(
-            "knowledge_capture_status IN ('not_requested', 'pending', 'captured', 'failed', 'removed')",
+            "knowledge_capture_status IN ('not_requested', 'pending', 'captured', 'failed', 'removed', 'reused', 'unchanged')",
             name="ck_generation_jobs_capture_status",
         ),
         CheckConstraint(
@@ -205,7 +241,7 @@ class GenerationJob(Base):
             name="ck_generation_jobs_capture_error_pair",
         ),
         CheckConstraint(
-            "knowledge_capture_status <> 'captured' OR "
+            "knowledge_capture_status NOT IN ('captured', 'reused', 'unchanged') OR "
             "(document_id IS NOT NULL AND knowledge_content_revision_id IS NOT NULL)",
             name="ck_generation_jobs_captured_revision",
         ),
@@ -214,8 +250,46 @@ class GenerationJob(Base):
             "user_id", "idempotency_key_hash", name="uq_generation_jobs_user_idempotency"
         ),
         CheckConstraint(
-            "status IN ('awaiting_upload', 'queued', 'running', 'completed', 'failed', 'cancelled')",
+            "status IN ('awaiting_upload', 'awaiting_choice', 'awaiting_card_choice', 'queued', 'running', 'completed', 'failed', 'cancelled')",
             name="ck_generation_jobs_status",
+        ),
+        CheckConstraint(
+            "status <> 'awaiting_card_choice' OR "
+            "(job_kind = 'flashcards' AND card_choice_expires_at IS NOT NULL "
+            "AND selected_card_count IS NULL AND generated_card_count IS NULL)",
+            name="ck_generation_jobs_card_choice_state",
+        ),
+        CheckConstraint(
+            "card_choice_key_hash IS NULL OR length(card_choice_key_hash) = 64",
+            name="ck_generation_jobs_card_choice_key",
+        ),
+        CheckConstraint(
+            "(card_choice_key_hash IS NULL AND selected_card_count IS NULL) OR "
+            "(card_choice_key_hash IS NOT NULL AND selected_card_count BETWEEN 1 AND requested_card_count)",
+            name="ck_generation_jobs_selected_card_count",
+        ),
+        CheckConstraint("knowledge_choice IS NULL OR knowledge_choice IN ('reuse', 'separate_copy')", name="ck_generation_jobs_choice"),
+        CheckConstraint("knowledge_choice_key_hash IS NULL OR length(knowledge_choice_key_hash) = 64", name="ck_generation_jobs_choice_key"),
+        CheckConstraint("knowledge_upload_outcome IS NULL OR knowledge_upload_outcome IN ('no_changes', 'reused', 'separate_copy')", name="ck_generation_jobs_upload_outcome"),
+        CheckConstraint(
+            "(knowledge_choice IS NULL AND knowledge_choice_key_hash IS NULL "
+            "AND (knowledge_upload_outcome IS NULL OR knowledge_upload_outcome = 'no_changes')) OR "
+            "(knowledge_choice IS NOT NULL AND knowledge_choice_key_hash IS NOT NULL "
+            "AND knowledge_upload_outcome IS NOT NULL AND "
+            "((knowledge_choice = 'reuse' AND knowledge_upload_outcome = 'reused') OR "
+            "(knowledge_choice = 'separate_copy' AND knowledge_upload_outcome = 'separate_copy')))",
+            name="ck_generation_jobs_choice_outcome",
+        ),
+        CheckConstraint(
+            "(knowledge_upload_outcome <> 'no_changes' OR knowledge_capture_status IN ('unchanged', 'removed')) "
+            "AND (knowledge_upload_outcome <> 'reused' OR knowledge_capture_status IN ('reused', 'removed'))",
+            name="ck_generation_jobs_outcome_capture",
+        ),
+        CheckConstraint(
+            "status <> 'awaiting_choice' OR (knowledge_choice_expires_at IS NOT NULL "
+            "AND knowledge_choice IS NULL AND knowledge_upload_outcome IS NULL "
+            "AND knowledge_capture_status = 'pending')",
+            name="ck_generation_jobs_awaiting_choice",
         ),
         CheckConstraint("progress BETWEEN 0 AND 100", name="ck_generation_jobs_progress"),
         CheckConstraint(
@@ -305,7 +379,11 @@ class GenerationJob(Base):
             "ix_generation_jobs_user_active",
             "user_id",
             "status",
-            postgresql_where=text("status IN ('awaiting_upload', 'queued', 'running')"),
+            postgresql_where=text("status IN ('awaiting_upload', 'awaiting_choice', 'awaiting_card_choice', 'queued', 'running')"),
+        ),
+        Index(
+            "ix_generation_jobs_card_choice_expiry", "card_choice_expires_at", "id",
+            postgresql_where=text("status = 'awaiting_card_choice'"),
         ),
     )
 
@@ -339,6 +417,42 @@ class GenerationJobSource(Base):
             "expires_at",
             postgresql_where=text("expires_at IS NOT NULL"),
         ),
+    )
+
+
+class GenerationCandidateStage(Base):
+    """Short-lived AEAD-encrypted, fully validated candidate cards."""
+
+    __tablename__ = "generation_candidate_stages"
+
+    job_id = Column(
+        UUID(as_uuid=True), ForeignKey("generation_jobs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    nonce = Column(LargeBinary, nullable=False)
+    payload = Column(LargeBinary, nullable=False)
+    candidate_count = Column(Integer, nullable=False)
+    attempt_number = Column(Integer, nullable=False)
+    manual_retry_number = Column(Integer, nullable=False)
+    validation_policy_version = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+    job = relationship("GenerationJob", back_populates="staged_candidates")
+
+    __table_args__ = (
+        CheckConstraint("key_version = 1", name="ck_generation_candidate_stage_key_version"),
+        CheckConstraint("length(nonce) = 12", name="ck_generation_candidate_stage_nonce_length"),
+        CheckConstraint("length(payload) BETWEEN 17 AND 16777216", name="ck_generation_candidate_stage_payload_length"),
+        CheckConstraint("candidate_count BETWEEN 1 AND 500", name="ck_generation_candidate_stage_count"),
+        CheckConstraint(
+            "attempt_number >= 1 AND manual_retry_number >= 0",
+            name="ck_generation_candidate_stage_attempt",
+        ),
+        Index("ix_generation_candidate_stage_expires_at", "expires_at", "job_id"),
     )
 
 

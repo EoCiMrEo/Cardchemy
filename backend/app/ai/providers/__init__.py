@@ -8,18 +8,21 @@ usage, and bounded public errors.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 import re
-from typing import Any, Generic, Literal, Protocol, TypeVar, runtime_checkable
+from typing import Any, AsyncIterator, Generic, Literal, Protocol, TypeVar, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.ai.chunking import estimate_tokens as estimate_text_tokens
+from app.ai.gemini_catalog import GeminiCatalogError, resolve_text_model
 from app.ai.rate_limit import ProviderRateGovernor, ProviderRateLimitExceeded
 from app.config import Settings
 
@@ -52,10 +55,59 @@ class ProviderAttemptTelemetry:
     request_counts_by_stage: dict[str, int]
 
 
+class ProviderAttemptScope:
+    """One invocation's physical attempts, isolated from concurrent jobs."""
+
+    def __init__(self, owner: object) -> None:
+        self._owner = owner
+        self._request_count = 0
+        self._retry_count = 0
+        self._wait_seconds = 0.0
+        self._by_stage: dict[str, int] = {}
+
+    def record_request(self, operation: str, *, retry: bool, waited_seconds: float) -> None:
+        self._request_count += 1
+        self._retry_count += int(retry)
+        self._wait_seconds += waited_seconds
+        self._by_stage[operation] = self._by_stage.get(operation, 0) + 1
+
+    def record_retry_wait(self, seconds: float) -> None:
+        self._wait_seconds += seconds
+
+    def snapshot(self) -> ProviderAttemptTelemetry:
+        return ProviderAttemptTelemetry(
+            request_count=self._request_count,
+            retry_count=self._retry_count,
+            rate_limit_wait_seconds=self._wait_seconds,
+            request_counts_by_stage=dict(self._by_stage),
+        )
+
+
+_CURRENT_ATTEMPT_SCOPE: ContextVar[ProviderAttemptScope | None] = ContextVar(
+    "current_provider_attempt_scope", default=None
+)
+
+
+def current_attempt_scope(owner: object) -> ProviderAttemptScope | None:
+    scope = _CURRENT_ATTEMPT_SCOPE.get()
+    return scope if scope is not None and scope._owner is owner else None
+
+
+@asynccontextmanager
+async def provider_attempt_scope(owner: object) -> AsyncIterator[ProviderAttemptScope]:
+    scope = ProviderAttemptScope(owner)
+    token = _CURRENT_ATTEMPT_SCOPE.set(scope)
+    try:
+        yield scope
+    finally:
+        _CURRENT_ATTEMPT_SCOPE.reset(token)
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderResponse(Generic[T]):
     data: T
     usage: ProviderUsage
+    finish_reason: str | None = None
 
 
 class AIProviderError(RuntimeError):
@@ -68,12 +120,21 @@ class AIProviderError(RuntimeError):
         *,
         retryable: bool,
         retry_after_seconds: float | None = None,
+        reason_code: str | None = None,
+        usage: ProviderUsage | None = None,
+        finish_reason: str | None = None,
     ) -> None:
         super().__init__(safe_message)
         self.code = code
         self.safe_message = safe_message
         self.retryable = retryable
         self.retry_after_seconds = retry_after_seconds
+        # These fixed metadata fields contain no provider response, prompt or
+        # exception text. A returned response can carry billable usage even
+        # when strict local parsing rejects its output.
+        self.reason_code = reason_code
+        self.usage = usage
+        self.finish_reason = finish_reason
 
 
 class AIProviderConfigurationError(AIProviderError):
@@ -82,11 +143,20 @@ class AIProviderConfigurationError(AIProviderError):
 
 
 class AIProviderInvalidOutputError(AIProviderError):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        reason_code: str = "schema_invalid",
+        *,
+        usage: ProviderUsage | None = None,
+        finish_reason: str | None = None,
+    ) -> None:
         super().__init__(
             "invalid_ai_output",
             "The AI provider returned output that did not match the required schema.",
             retryable=False,
+            reason_code=reason_code,
+            usage=usage,
+            finish_reason=finish_reason,
         )
 
 
@@ -150,7 +220,10 @@ def _gemini_schema(model: type[BaseModel]) -> dict[str, Any]:
                 return simplify(target)
 
         result: dict[str, Any] = {}
-        for keyword in ("type", "format", "enum"):
+        # The app keeps formats such as UUID and string constraints in its
+        # strict Pydantic validator.  The smaller wire subset avoids passing
+        # model-specific format annotations that Gemini may reject with 400.
+        for keyword in ("type", "enum"):
             if keyword in node:
                 result[keyword] = deepcopy(node[keyword])
         if "properties" in node:
@@ -171,9 +244,41 @@ def _gemini_schema(model: type[BaseModel]) -> dict[str, Any]:
 
 def _strict_validate(response_model: type[T], raw_text: str) -> T:
     try:
+        json.loads(raw_text)
+    except (ValueError, TypeError) as exc:
+        raise AIProviderInvalidOutputError("json_invalid") from exc
+    try:
         return response_model.model_validate_json(raw_text, strict=True)
     except (ValidationError, ValueError, TypeError) as exc:
-        raise AIProviderInvalidOutputError() from exc
+        raise AIProviderInvalidOutputError("schema_invalid") from exc
+
+
+_FINISH_REASONS = frozenset({
+    "FINISH_REASON_UNSPECIFIED", "STOP", "MAX_TOKENS", "SAFETY",
+    "RECITATION", "LANGUAGE", "OTHER", "BLOCKLIST",
+    "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+    "IMAGE_SAFETY", "UNEXPECTED_TOOL_CALL", "IMAGE_PROHIBITED_CONTENT",
+    "NO_IMAGE", "IMAGE_RECITATION", "IMAGE_OTHER",
+})
+_BLOCKED_FINISH_REASONS = frozenset({
+    "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII",
+    "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION",
+})
+
+
+def _safe_finish_reason(response: Any) -> str | None:
+    candidates = getattr(response, "candidates", None)
+    if not candidates:
+        return None
+    reason = getattr(candidates[0], "finish_reason", None)
+    if reason is None:
+        return None
+    name = getattr(reason, "name", None)
+    if not isinstance(name, str):
+        name = str(reason)
+        if "." in name:
+            name = name.rsplit(".", 1)[-1]
+    return name if name in _FINISH_REASONS else "OTHER"
 
 
 def _read_usage(
@@ -265,12 +370,21 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
             "ai_provider_timeout",
             "The AI provider did not respond before the configured timeout.",
             retryable=True,
+            reason_code="transport_timeout",
         )
-    if isinstance(exc, (httpx.NetworkError, httpx.RemoteProtocolError)):
+    if isinstance(exc, httpx.RemoteProtocolError):
         return AIProviderError(
             "ai_provider_unavailable",
             "The AI provider is temporarily unavailable.",
             retryable=True,
+            reason_code="transport_protocol",
+        )
+    if isinstance(exc, httpx.NetworkError):
+        return AIProviderError(
+            "ai_provider_unavailable",
+            "The AI provider is temporarily unavailable.",
+            retryable=True,
+            reason_code="transport_network",
         )
 
     status_code: int | None = None
@@ -286,24 +400,28 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
             "ai_provider_invalid_request",
             "The configured AI model rejected the request format. Check the selected model compatibility.",
             retryable=False,
+            reason_code="http_invalid_request",
         )
     if status_code == 401:
         return AIProviderError(
             "ai_provider_authentication_failed",
             "The AI provider rejected its credentials. Update the provider API key.",
             retryable=False,
+            reason_code="http_authentication",
         )
     if status_code == 403:
         return AIProviderError(
             "ai_provider_access_denied",
             "The AI provider denied access. Check API-key restrictions and project permissions.",
             retryable=False,
+            reason_code="http_access_denied",
         )
     if status_code == 404:
         return AIProviderError(
             "ai_model_unavailable",
             "The configured AI model is unavailable. Update the selected model and create a new job.",
             retryable=False,
+            reason_code="http_model_missing",
         )
     if status_code == 429:
         return AIProviderError(
@@ -311,6 +429,7 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
             "The AI provider rate limit was reached. Wait before retrying the job.",
             retryable=True,
             retry_after_seconds=_provider_retry_after(exc),
+            reason_code="http_rate_limited",
         )
     if status_code is not None:
         retryable = status_code in {408, 409, 425} or status_code >= 500
@@ -323,12 +442,17 @@ def _normalize_provider_error(exc: Exception) -> AIProviderError:
             ),
             retryable=retryable,
             retry_after_seconds=_provider_retry_after(exc) if retryable else None,
+            reason_code=(
+                "http_server_error" if status_code >= 500 else
+                "http_transient" if retryable else "http_rejected"
+            ),
         )
 
     return AIProviderError(
         "ai_provider_unavailable",
         "The AI provider is temporarily unavailable.",
         retryable=True,
+        reason_code="sdk_unclassified",
     )
 
 
@@ -356,6 +480,9 @@ class _RetryingProvider:
             request_counts_by_stage=dict(self._request_counts_by_stage),
         )
 
+    def attempt_scope(self):
+        return provider_attempt_scope(self)
+
     async def _run_with_retries(
         self,
         call: Any,
@@ -364,6 +491,7 @@ class _RetryingProvider:
         operation: str,
     ) -> ProviderResponse[Any]:
         for attempt in range(self.profile.max_retries + 1):
+            reservation = None
             try:
                 reservation = await self.rate_governor.reserve(
                     estimated_input_tokens,
@@ -379,6 +507,13 @@ class _RetryingProvider:
                 self._request_counts_by_stage[operation] = (
                     self._request_counts_by_stage.get(operation, 0) + 1
                 )
+                scope = current_attempt_scope(self)
+                if scope is not None:
+                    scope.record_request(
+                        operation,
+                        retry=attempt > 0,
+                        waited_seconds=float(getattr(reservation, "waited_seconds", 0.0)),
+                    )
                 async with asyncio.timeout(self.profile.timeout_seconds):
                     response = await call()
                 await reservation.commit(response.usage.input_tokens)
@@ -393,6 +528,8 @@ class _RetryingProvider:
                 ) from exc
             except Exception as exc:
                 normalized = _normalize_provider_error(exc)
+                if reservation is not None and normalized.usage is not None:
+                    await reservation.commit(normalized.usage.input_tokens)
                 if not normalized.retryable or attempt >= self.profile.max_retries:
                     raise normalized from exc
                 delay = max(
@@ -405,6 +542,9 @@ class _RetryingProvider:
                     # for a later manual job retry instead.
                     raise normalized from exc
                 self._rate_limit_wait_seconds += delay
+                scope = current_attempt_scope(self)
+                if scope is not None:
+                    scope.record_retry_wait(delay)
                 await asyncio.sleep(delay)
         raise AssertionError("provider retry loop exhausted unexpectedly")
 
@@ -423,6 +563,17 @@ class GeminiProvider(_RetryingProvider):
             raise AIProviderConfigurationError(
                 "The selected profile is not configured for the Gemini provider."
             )
+        prefix = "flashcard_ai" if role == "flashcard" else "rag_ai"
+        try:
+            self.capability = resolve_text_model(
+                self.profile.model,
+                role=role,
+                thinking_level=self.profile.thinking_level,
+                context_window_tokens=getattr(settings, f"{prefix}_context_window_tokens"),
+                max_output_tokens=self.profile.max_output_tokens,
+            )
+        except GeminiCatalogError as exc:
+            raise AIProviderError(exc.code, str(exc), retryable=False) from exc
         api_key = self.profile.api_key_value
         if client is None:
             if not api_key:
@@ -454,32 +605,41 @@ class GeminiProvider(_RetryingProvider):
         output_limit = min(max_output_tokens, self.profile.max_output_tokens)
         if output_limit < 1:
             raise AIProviderConfigurationError("The AI output-token limit must be positive.")
+        if output_limit > self.capability.max_output_tokens:
+            raise AIProviderError(
+                "ai_model_output_incompatible",
+                "The requested output budget exceeds the selected Gemini model limit.",
+                retryable=False,
+            )
+        schema = _gemini_schema(response_model)
+        if schema.get("type") != "object":
+            raise AIProviderError(
+                "ai_model_schema_incompatible",
+                "The response schema is incompatible with the selected Gemini model policy.",
+                retryable=False,
+            )
 
         async def call() -> ProviderResponse[T]:
             config: dict[str, Any] = {
                 "system_instruction": system_prompt,
                 "max_output_tokens": output_limit,
                 "response_mime_type": "application/json",
-                "response_json_schema": _gemini_schema(response_model),
+                "response_json_schema": schema,
             }
-            if self.profile.model.casefold().split("/")[-1].startswith("gemini-3"):
-                # Gemini 3 is tuned for provider-default sampling. Pin an
-                # explicit effort level so latency, output usage, and cost do
-                # not silently drift with provider defaults.
-                config["thinking_config"] = {
-                    "thinking_level": self.profile.thinking_level,
-                }
-            else:
-                config["temperature"] = self.profile.temperature
+            # The catalog pins provider-default sampling and validated thinking
+            # for each Gemini 3 selection; the Settings temperature is retained
+            # only for historical configuration readback.
+            config["thinking_config"] = {"thinking_level": self.profile.thinking_level}
             response = await self._client.aio.models.generate_content(
                 model=self.profile.model,
                 contents=user_prompt,
                 config=config,
             )
-            output_text = getattr(response, "text", None)
-            if not isinstance(output_text, str) or not output_text.strip():
-                raise AIProviderInvalidOutputError()
-            parsed = _strict_validate(response_model, output_text)
+            finish_reason = _safe_finish_reason(response)
+            try:
+                output_text = getattr(response, "text", None)
+            except Exception:
+                output_text = None
             usage_metadata = getattr(response, "usage_metadata", None)
             candidate_tokens = getattr(
                 usage_metadata, "candidates_token_count", None
@@ -504,9 +664,28 @@ class GeminiProvider(_RetryingProvider):
                 ),
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                output_text=output_text,
+                output_text=output_text if isinstance(output_text, str) else "",
             )
-            return ProviderResponse(data=parsed, usage=usage)
+            if finish_reason is not None and finish_reason != "STOP":
+                raise AIProviderInvalidOutputError(
+                    "output_blocked" if finish_reason in _BLOCKED_FINISH_REASONS
+                    else "output_unfinished",
+                    usage=usage,
+                    finish_reason=finish_reason,
+                )
+            if not isinstance(output_text, str) or not output_text.strip():
+                raise AIProviderInvalidOutputError(
+                    "output_empty", usage=usage, finish_reason=finish_reason
+                )
+            try:
+                parsed = _strict_validate(response_model, output_text)
+            except AIProviderInvalidOutputError as exc:
+                raise AIProviderInvalidOutputError(
+                    exc.reason_code or "schema_invalid",
+                    usage=usage,
+                    finish_reason=finish_reason,
+                ) from exc
+            return ProviderResponse(data=parsed, usage=usage, finish_reason=finish_reason)
 
         return await self._run_with_retries(
             call,
@@ -620,8 +799,6 @@ def get_ai_provider(
     profile = settings.text_provider_profile(role)
     if profile.provider == "gemini":
         return GeminiProvider(settings, rate_governor=rate_governor, role=role)
-    if profile.provider == "openai_compatible":
-        return OpenAICompatibleProvider(settings, rate_governor=rate_governor, role=role)
     raise AIProviderConfigurationError("The configured AI provider is not supported.")
 
 
@@ -633,7 +810,10 @@ __all__ = [
     "GeminiProvider",
     "OpenAICompatibleProvider",
     "ProviderAttemptTelemetry",
+    "ProviderAttemptScope",
     "ProviderResponse",
     "ProviderUsage",
+    "current_attempt_scope",
     "get_ai_provider",
+    "provider_attempt_scope",
 ]

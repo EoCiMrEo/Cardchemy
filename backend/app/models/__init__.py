@@ -10,6 +10,7 @@ from app.models.flashcard import (
     StudyProgress,
 )
 from app.models.generation import (
+    GenerationCandidateStage,
     GenerationJob,
     GenerationJobKind,
     GenerationJobSource,
@@ -26,12 +27,17 @@ from app.models.knowledge import (
     SubjectDocument,
     SubjectDocumentContentRevision,
     SubjectDocumentPage,
+    SubjectDocumentPdf,
+    SubjectDocumentPdfBlock,
     SubjectDocumentIndexRevision,
     SubjectDocumentChunk,
     SubjectDocumentIndexJob,
 )
 from app.models.rag import (
     RagAnswerJob,
+    RagAnswerQuestionContext,
+    RagRelatedEvidence,
+    RagAnswerStageAttempt,
     RagAnswerQuotaEvent,
     RagMessage,
     RagMessageSource,
@@ -53,6 +59,7 @@ __all__ = [
     "CardStatus",
     "CardType",
     "GenerationJob",
+    "GenerationCandidateStage",
     "GenerationJobKind",
     "GenerationJobSource",
     "GenerationJobStatus",
@@ -70,6 +77,8 @@ __all__ = [
     "SubjectDocument",
     "SubjectDocumentContentRevision",
     "SubjectDocumentPage",
+    "SubjectDocumentPdf",
+    "SubjectDocumentPdfBlock",
     "SubjectDocumentIndexRevision",
     "SubjectDocumentChunk",
     "SubjectDocumentIndexJob",
@@ -77,5 +86,8 @@ __all__ = [
     "RagMessage",
     "RagMessageSource",
     "RagAnswerJob",
+    "RagAnswerQuestionContext",
+    "RagRelatedEvidence",
+    "RagAnswerStageAttempt",
     "RagAnswerQuotaEvent",
 ]

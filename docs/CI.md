@@ -109,11 +109,17 @@ offline report. Frontend component floors live in `frontend/vitest.config.ts`.
 Coverage reports expose remaining gaps; raising floors should follow new
 behavioral coverage, rather than excluding production code.
 
-After Phase 9 lazy route loading the production build measured **120,400 bytes initial
+The historical Phase 9 lazy-route build measured **120,400 bytes initial
 JavaScript gzip**, **360,202 bytes largest JavaScript asset uncompressed**, and
-**222,704 bytes total JavaScript gzip**. `.github/bundle-budget.json` limits
-these to 130,000, 400,000 and 240,000 bytes. `check_bundle.mjs` measures emitted
-assets and follows static imports/module-preload links; dynamic route assets
+**222,704 bytes total JavaScript gzip**. The current
+[bundle budgets](../.github/bundle-budget.json) are **130,000 initial gzip**,
+**1,350,000 largest raw** and **780,000 total gzip** bytes. Lane 6's
+[operator-approved PDF.js amendment](../.agent/logs/2026-09-27/2026-09-27-source-navigation-pdf-implementation.md)
+kept the initial budget while accounting for the deferred original-PDF viewer
+and `.mjs` worker. The [completed local build](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md)
+measured **123,457 initial gzip**, **1,265,413 largest raw** and **756,476 total
+gzip** bytes. `check_bundle.mjs` counts emitted `.js` and `.mjs` assets and
+follows static imports/module-preload links; dynamic route and worker assets
 count toward total bytes. The Vite warning threshold remains unchanged. Budget
 changes require an explanation and a measured before/after build.
 

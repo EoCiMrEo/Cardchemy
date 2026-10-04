@@ -20,3 +20,12 @@ Before adding another language:
 Backend error details remain server-owned English diagnostics for v1. The
 frontend presents them through the bounded API error parser and uses catalog
 fallbacks whenever a response is absent or unsafe.
+
+The duplicate Knowledge choice, no-changes outcome and whole-job cancellation
+wording also belong in the typed English catalog. Keep the server-provided
+document title as data; do not compose a translated action from that title.
+
+The validated-card choice, observed count, expiry and additional-cost Retry
+wording use the same typed catalog. Ask AI's safe `abstention_kind` and
+`failure_kind` codes map to separate English messages there; private evidence,
+provider exceptions and diagnostic identifiers must not become UI copy.

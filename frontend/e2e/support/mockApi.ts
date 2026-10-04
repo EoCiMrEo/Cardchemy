@@ -23,6 +23,8 @@ export interface ApiCall {
 export interface MockResponse {
   status?: number
   json?: unknown
+  body?: string | Buffer
+  contentType?: string
   headers?: Record<string, string>
   delayMs?: number
 }
@@ -84,6 +86,9 @@ function defaultResponse(call: ApiCall, auth: MockApiOptions['auth']): MockRespo
   if (call.method === 'GET' && /^\/subjects\/[^/]+\/knowledge\/documents$/.test(call.path)) {
     return { json: { documents: [] } }
   }
+  if (call.method === 'GET' && /^\/subjects\/[^/]+\/published-knowledge\/documents$/.test(call.path)) {
+    return { json: { documents: [] } }
+  }
   if (call.method === 'GET' && /^\/subjects\/[^/]+\/rag\/threads$/.test(call.path)) {
     return { json: { threads: [] } }
   }
@@ -91,12 +96,26 @@ function defaultResponse(call: ApiCall, auth: MockApiOptions['auth']): MockRespo
     return {
       json: {
         rag_enabled: true,
-        answer_available: true,
-        answer_provider: 'gemini',
-        answer_model: 'gemini-3.5-flash',
+        ask_enabled: true,
+        ask_policy: 'related_knowledge_navigation_v8',
+        ask_available: true,
+        answer_available: false,
+        answer_provider: null,
+        answer_model: null,
         embedding_available: true,
         embedding_provider: 'gemini',
         embedding_model: 'gemini-embedding-001',
+        active_embedding_provider: 'gemini',
+        active_embedding_model: 'gemini-embedding-001',
+        active_embedding_space_matches: true,
+        source_judge_available: true,
+        source_judge_provider: 'gemini',
+        source_judge_model: 'example-source-judge',
+        source_judge_transfers_published_content: true,
+        source_judge_thinking_level: 'HIGH',
+        source_judge_transfers_page_images: true,
+        source_judge_contract_version: 'visual_source_id_v5',
+        source_judge_transfers_literal_subject_context: true,
         chat_retention_days: 90,
       },
     }
@@ -115,9 +134,9 @@ async function fulfill(route: Route, response: MockResponse): Promise<void> {
   try {
     await route.fulfill({
       status: response.status ?? 200,
-      contentType: 'application/json',
+      contentType: response.contentType ?? 'application/json',
       headers: response.headers,
-      body: JSON.stringify(response.json ?? {}),
+      body: response.body ?? JSON.stringify(response.json ?? {}),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -198,6 +217,9 @@ export const fixtures = {
     document_id: null,
     knowledge_content_revision_id: null,
     knowledge_capture_status: 'not_requested',
+    knowledge_upload_outcome: null,
+    duplicate_candidate: null,
+    choice_expires_at: null,
     knowledge_capture_error_code: null,
     knowledge_capture_error_message: null,
     flashcard_set_id: 'set-1',
@@ -206,6 +228,14 @@ export const fixtures = {
     stage: 'completed',
     requested_card_count: 2,
     generated_card_count: 2,
+    valid_candidate_count: 0,
+    card_choice_expires_at: null,
+    selected_card_count: null,
+    can_accept_smaller_target: false,
+    latest_attempt_rejected_card_count: 0,
+    latest_attempt_quality_diagnostics: null,
+    retry_estimated_additional_cost_microusd: null,
+    previous_attempt_cost_unknown: false,
     ai_provider: 'test-provider',
     ai_model: 'test-model',
     estimated_input_tokens: 20_000,
@@ -276,7 +306,12 @@ export const fixtures = {
     review: 1,
     mastered: 0,
     studied: 2,
+    attempted_count: 2,
+    attempted_percentage: 50,
     correct_count: 1,
+    ever_correct_count: 1,
+    progress_percentage: 25,
+    accuracy_percentage: 50,
     // Deliberate sentinel values prove the client renders the server fields instead
     // of silently recomputing them from the counters above.
     completion_percentage: 37,

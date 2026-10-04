@@ -5,6 +5,10 @@ import { API_ORIGIN, APP_ORIGIN } from './e2e/support/constants'
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // PDF.js decodes and renders in a separate browser worker. Eight parallel
+  // Chromium contexts stalled its lazy load in the full suite; two passed the
+  // same PDF and attachment assertions without changing their timeouts.
+  workers: 2,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',

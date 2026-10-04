@@ -23,6 +23,8 @@ diagnostics survive an API/worker restart while job history remains retained:
 ```text
 docker compose exec backend python -m app.cli operations-status
 docker compose exec backend python -m app.cli operations-status --job-id JOB_UUID
+docker compose exec backend python -m app.cli operations-status --answer-job-id ANSWER_JOB_UUID
+docker compose exec backend python -m app.cli provider-migration-inventory
 docker compose exec backend python -m app.cli audit-status --target-id RESOURCE_UUID --limit 20
 docker compose logs worker
 docker compose logs index-worker
@@ -30,7 +32,30 @@ docker compose logs answer-worker
 ```
 
 Look up the job's stage, safe failure code, attempt count, timestamps, provider
-request/retry/wait counters and token/cost usage. Use the safe code to follow
+request/retry/wait counters and token/cost usage. Ask diagnostics also report
+safe failure category, uncertainty and bounded per-stage/per-attempt timing and
+physical-call counts. Historical Ask jobs predate these fields and have no
+stage rows; absence of a row does not establish that no external call occurred.
+Historical answer-policy stage rows retain allowlisted answer/output/support
+failure reasons and verdicts; they do not prove the new source-only mode.
+An uncertain remote execution keeps cost unknown. Retrieval reports at most
+five rank pairs without source identifiers or text, including for v2's up-to-
+twenty candidate pool. These durable pairs describe only the first five fused
+candidates; they cannot reconstruct the full candidate set. The allowlisted
+`knowledge_source_selection` event separately records the fixed selection
+policy/status, candidate and examined chunk/page/token counts, neighbor radius,
+selected count, neighbor-selected count and selected candidates beyond the
+first five. Those log counters contain no source identities or text and are
+not durable per-candidate evidence. Source-only Ask attempts
+use `query_embedding` and `retrieval`; the worker performs exact related-
+excerpt selection locally and makes no `answer` or `local_support` call. The
+policy allows at most one physical embedding request and zero retries. An attempt
+cost can be known, unavailable because current prices are absent, or unknown
+because remote execution ended ambiguously. Never render either unavailable or
+unknown as zero cost.
+The provider migration inventory reports only configured provider identities
+and grouped job/source/space counts, without credentials or private content.
+Use the safe code to follow
 [provider recovery](AI_PROVIDERS.md) or [PDF recovery](PDF_GENERATION.md).
 Do not collect the source PDF or request body merely to diagnose an ID.
 
@@ -44,8 +69,11 @@ counts; capture/index/answer duration samples; retrieval duration; answer versus
 abstention outcomes; support-rejection counts; and per-provider/model physical
 requests, retries, rate-limit waits, tokens and estimated/actual cost for index
 and answer lanes. Micro-USD values
-are millionths of a US dollar. Zero configured prices mean estimates are
-unavailable; these are not a complete billing ledger.
+are millionths of a US dollar. Current Ask admission requires nonzero prices,
+but historical zero-priced and uncertain jobs remain possible; these counters
+are not a complete billing ledger. Ask defaults off. Use the
+[maintenance procedure](ASK_AI_SHUTDOWN.md) for enablement, old-job resolution
+and monitoring.
 
 Request diagnostics are bounded best effort and must not fail business
 transactions. Logs remain available if their database write fails; missed
@@ -57,6 +85,12 @@ be absent from durable counters; manual retry accumulates provider usage, while
 timestamps describe the latest recorded attempt. Do not infer exactly one
 remote execution from one committed set. CLI output is private operational
 data and must not be published automatically.
+Generation owner responses distinguish latest-attempt raw/grounded/valid/
+distinct/accepted/missing and fixed rejection-category counts from cumulative
+rejected cards and cards actually persisted in a set. A pending smaller-target
+choice exposes only the observed valid count and expiry, never staged content.
+Operator diagnostics follow the same bounded field allowlist; a count is not
+proof of what a private page says or what the provider billed.
 
 ## Health
 

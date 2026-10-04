@@ -8,8 +8,52 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 
 GenerationStatus = Literal[
-    "awaiting_upload", "queued", "running", "completed", "failed", "cancelled"
+    "awaiting_upload", "awaiting_choice", "awaiting_card_choice", "queued", "running", "completed", "failed", "cancelled"
 ]
+
+
+class KnowledgeChoiceRequest(BaseModel):
+    choice: Literal["reuse", "separate_copy"]
+
+
+class CardChoiceRequest(BaseModel):
+    card_count: int = Field(ge=1, le=500)
+
+
+class GenerationRetryRequest(BaseModel):
+    acknowledge_additional_cost: bool = False
+
+
+class GenerationQualityRound(BaseModel):
+    round: int = Field(ge=0)
+    raw_count: int = Field(ge=0)
+    grounded_count: int = Field(ge=0)
+    valid_count: int = Field(ge=0)
+    distinct_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    missing_count: int = Field(ge=0)
+
+
+class GenerationQualityDiagnostics(BaseModel):
+    manual_retry_number: int = Field(ge=0)
+    attempt_number: int = Field(ge=1)
+    raw_count: int = Field(ge=0)
+    grounded_count: int = Field(ge=0)
+    valid_count: int = Field(ge=0)
+    distinct_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    missing_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    refill_rounds_used: int = Field(ge=0)
+    uncertain_request_count: int = Field(ge=0)
+    rounds: list[GenerationQualityRound]
+    rejections: dict[str, Annotated[int, Field(ge=0)]]
+
+
+class KnowledgeDuplicateCandidate(BaseModel):
+    document_id: UUID
+    title: str
+    can_reuse: bool
 
 
 class GenerationLimitReason(BaseModel):
@@ -19,6 +63,7 @@ class GenerationLimitReason(BaseModel):
 
 class GenerationJobCreate(BaseModel):
     subject_id: UUID
+    document_id: UUID | None = None
     set_title: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
     ]
@@ -82,8 +127,11 @@ class GenerationJobResponse(BaseModel):
     document_id: UUID | None
     knowledge_content_revision_id: UUID | None
     knowledge_capture_status: Literal[
-        "not_requested", "pending", "captured", "failed", "removed"
+        "not_requested", "pending", "captured", "failed", "removed", "reused", "unchanged"
     ]
+    duplicate_candidate: KnowledgeDuplicateCandidate | None = None
+    choice_expires_at: datetime | None = None
+    knowledge_upload_outcome: Literal["no_changes", "reused", "separate_copy"] | None = None
     knowledge_capture_error_code: str | None
     knowledge_capture_error_message: str | None
     flashcard_set_id: UUID | None
@@ -109,6 +157,14 @@ class GenerationJobResponse(BaseModel):
     usage_estimated: bool
     accepted_card_count: int = Field(ge=0)
     rejected_card_count: int = Field(ge=0)
+    valid_candidate_count: int = Field(default=0, ge=0)
+    card_choice_expires_at: datetime | None = None
+    selected_card_count: int | None = Field(default=None, ge=1)
+    can_accept_smaller_target: bool = False
+    latest_attempt_rejected_card_count: int = Field(default=0, ge=0)
+    latest_attempt_quality_diagnostics: GenerationQualityDiagnostics | None = None
+    retry_estimated_additional_cost_microusd: int | None = Field(default=None, ge=0)
+    previous_attempt_cost_unknown: bool = False
     limit_reason_code: str | None
     limit_reason_message: str | None
     source_pdf_name: str

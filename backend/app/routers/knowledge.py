@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -12,6 +12,9 @@ from app.models.user import User
 from app.routers.auth import get_current_instructor
 from app.schemas.knowledge import KnowledgeDocumentListResponse, KnowledgeDocumentResponse
 from app.services.knowledge_management import KnowledgeManagementService
+from app.services.generation import read_bounded_pdf_body
+from app.services.pdf_processor import PDFProcessingError, PDFProcessor
+from app.services.rate_limit import limit_pdf_upload
 
 
 router = APIRouter(prefix="/subjects/{subject_id}/knowledge", tags=["Subject Knowledge"])
@@ -82,6 +85,42 @@ async def review_publish_document(
         document_id=document_id,
         user=user,
     )
+
+
+@router.post(
+    "/documents/{document_id}/attach-original-pdf", response_model=KnowledgeDocumentResponse,
+    dependencies=[Depends(limit_pdf_upload)],
+)
+async def attach_original_pdf(
+    subject_id: UUID, document_id: UUID, request: Request,
+    user: User = Depends(get_current_instructor), db: AsyncSession = Depends(get_db),
+) -> KnowledgeDocumentResponse:
+    """Reattach only the original matching the active revision's exact SHA."""
+    from app.services.knowledge_management import knowledge_http_error
+    _subject, document = await knowledge._owned_document(
+        db, subject_id=subject_id, document_id=document_id, user=user,
+    )
+    response = await knowledge.get_document_response(
+        db, subject_id=subject_id, document_id=document.id, user=user,
+    )
+    revision = response.content_revision
+    if revision is None or not revision.is_active or revision.status != "ready":
+        raise knowledge_http_error(409, "knowledge_not_ready", "Knowledge must be ready before attaching its original PDF.")
+    expected_revision_id = revision.id
+    try:
+        PDFProcessor.validate_media_type(request.headers.get("content-type"))
+        content = await read_bounded_pdf_body(request, knowledge.settings.pdf_max_upload_bytes)
+        PDFProcessor.validate_signature(content)
+    except PDFProcessingError as exc:
+        code = 415 if exc.code == "unsupported_media_type" else 422
+        raise knowledge_http_error(code, exc.code, exc.safe_message) from None
+    await _prepare_mutation(db, user)
+    async with db.begin():
+        await knowledge.attach_original_pdf(
+            db, subject_id=subject_id, document_id=document_id, user=user,
+            expected_revision_id=expected_revision_id, content=content,
+        )
+    return await knowledge.get_document_response(db, subject_id=subject_id, document_id=document_id, user=user)
 
 
 @router.post("/documents/{document_id}/unpublish", response_model=KnowledgeDocumentResponse)

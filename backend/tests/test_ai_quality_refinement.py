@@ -4,7 +4,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.ai.chunking import estimate_tokens
+from app.ai.chunking import allocate_adaptive_card_targets, estimate_tokens
 from app.ai.contracts import CandidateBatch, DocumentChunk, GeneratedCardCandidate, SummaryOutput, ValidatedCard
 from app.ai.grounding import REJECTION_CATEGORIES, append_if_distinct, inspect_grounded_candidate, normalize_evidence
 from app.ai.pipeline import CardRequestBatch, FlashcardGenerationPipeline, PipelineError
@@ -81,9 +81,38 @@ async def test_refill_exclusions_are_untrusted_and_usage_includes_rendered_conte
     assert result["estimated_input_tokens"] >= result["actual_input_tokens"] == provider.usage_input
     assert result["actual_output_tokens"] == provider.usage_output
     assert result["quality_diagnostics"]["rounds"] == [
-        {"round": 0, "raw_count": 1, "grounded_count": 1, "distinct_count": 1, "accepted_count": 1, "missing_count": 1},
-        {"round": 1, "raw_count": 1, "grounded_count": 1, "distinct_count": 1, "accepted_count": 2, "missing_count": 0},
+        {"round": 0, "raw_count": 1, "grounded_count": 1, "valid_count": 1, "distinct_count": 1, "accepted_count": 1, "missing_count": 1},
+        {"round": 1, "raw_count": 1, "grounded_count": 1, "valid_count": 1, "distinct_count": 1, "accepted_count": 2, "missing_count": 0},
     ]
+
+
+def test_adaptive_allocation_reaches_untried_week3_shaped_chunks():
+    chunks = [DocumentChunk(
+        chunk_id=f"chunk-{index:04d}-p{index}", text=f"Evidence {index}",
+        page_number=index, token_count=1000 if index <= 20 else 20,
+    ) for index in range(1, 40)]
+    first = allocate_adaptive_card_targets(
+        chunks, 20, requested_by_chunk_id={}, accepted_by_chunk_id={},
+    )
+    requested = {key: value for key, value in first.items() if value}
+    second = allocate_adaptive_card_targets(
+        chunks, 20, requested_by_chunk_id=requested,
+        accepted_by_chunk_id={},
+    )
+    assert sum(first.values()) == sum(second.values()) == 20
+    assert sum(first[key] > 0 for key in first) == 20
+    assert all(first[key] or second[key] for key in first)
+    assert len({key for key in first if first[key] or second[key]}) == 39
+
+
+async def test_same_chunk_split_batches_use_validated_exclusions_before_fanout():
+    case = next(case for case in MANIFEST["cases"] if case["id"] == "feasible_same_chunk_split_batches")
+    provider = AuthoredUnderproducingProvider(MANIFEST["facts"][:3])
+    pipeline = FlashcardGenerationPipeline(replay_settings(case), provider)
+    result = await pipeline.run(replay_document(case), 3)
+    assert len(result["final_cards"]) == 3
+    assert len(provider.calls) >= 3
+    assert any(call.get("untrusted_accepted_exclusions") for call in provider.calls[1:])
 
 
 def test_exclusion_limit_counts_escaping_unicode_and_full_list_overhead():

@@ -43,21 +43,21 @@ async def make_space(connection, identity=IDENTITY):
     return values
 
 
-async def make_document(connection, values):
-    values = {**values, 'document': uuid4()}
+async def make_document(connection, values, *, source_sha256='a' * 64):
+    values = {**values, 'document': uuid4(), 'source_sha256': source_sha256}
     await connection.execute(text('''INSERT INTO subject_documents(id,subject_id,uploader_id,title,source_pdf_name,source_sha256)
-        VALUES(:document,:subject,:owner,'Fixture','fixture.pdf',repeat('a',64))'''),values)
+        VALUES(:document,:subject,:owner,'Fixture','fixture.pdf',:source_sha256)'''),values)
     return values
 
 
-async def make_ready(connection, owner_values):
-    values = await make_document(connection, owner_values)
+async def make_ready(connection, owner_values, *, source_sha256='a' * 64):
+    values = await make_document(connection, owner_values, source_sha256=source_sha256)
     values.update(await make_space(connection))
     values.update(content_revision=uuid4(),index_revision=uuid4(),chunk=uuid4(),content=CONTENT,
                   chars=len(CONTENT),bytes=len(CONTENT.encode()),charged=len(CONTENT.encode())+6408)
     await connection.execute(text('''INSERT INTO subject_document_content_revisions(id,document_id,subject_id,uploader_id,revision_no,
         source_sha256,extraction_version,reserved_page_count,reserved_page_chars,reserved_page_bytes)
-        VALUES(:content_revision,:document,:subject,:owner,1,repeat('a',64),'canonical_v1',2,:chars,:bytes)'''),values)
+        VALUES(:content_revision,:document,:subject,:owner,1,:source_sha256,'canonical_v1',2,:chars,:bytes)'''),values)
     await connection.execute(text('''INSERT INTO subject_document_pages(content_revision_id,document_id,subject_id,uploader_id,page_number,content)
         VALUES(:content_revision,:document,:subject,:owner,1,:content),(:content_revision,:document,:subject,:owner,2,'')'''),values)
     await connection.execute(text("UPDATE subject_document_content_revisions SET status='pending_index' WHERE id=:content_revision"),values)

@@ -17,6 +17,7 @@ BASE_SETTINGS = {
     "database_url": "postgresql+asyncpg://user:password@database/app",
     "secret_key": "a-test-secret-with-real-entropy-1234567890",
     "generation_source_encryption_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "knowledge_pdf_encryption_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
 }
 
 
@@ -49,54 +50,66 @@ def test_ai_admission_uses_non_secret_flag_and_worker_validates_credentials():
     assert enabled_with_key.flashcard_ai_provider_configured is True
     assert enabled_with_key.require_generation_worker_config() is enabled_with_key
 
-    enabled_keyless_local_endpoint = make_settings(
-        flashcard_ai_provider_enabled=True,
-        flashcard_ai_provider="openai_compatible",
-        flashcard_ai_base_url="http://model:11434/v1",
-        flashcard_ai_api_key=None,
-        flashcard_ai_quota_bucket="test-flashcards",
-    )
-    assert (
-        enabled_keyless_local_endpoint.require_generation_worker_config()
-        is enabled_keyless_local_endpoint
-    )
+    with pytest.raises(ValueError):
+        make_settings(
+            flashcard_ai_provider_enabled=True,
+            flashcard_ai_provider="openai_compatible",
+            flashcard_ai_base_url="http://model:11434/v1",
+            flashcard_ai_api_key=None,
+            flashcard_ai_quota_bucket="test-flashcards",
+        )
 
 
-@pytest.mark.parametrize("rag_enabled,answer_enabled,embedding_enabled", [
-    (rag, answer, embedding)
-    for rag in (False, True) for answer in (False, True) for embedding in (False, True)
+@pytest.mark.parametrize("rag_enabled,ask_enabled,answer_enabled,embedding_enabled,local_enabled", [
+    (rag, ask, answer, embedding, local)
+    for rag in (False, True) for ask in (False, True)
+    for answer in (False, True) for embedding in (False, True) for local in (False, True)
 ])
-def test_rag_flag_matrix_suspends_only_affected_roles(rag_enabled, answer_enabled, embedding_enabled):
+def test_rag_flag_matrix_suspends_only_affected_roles(
+    rag_enabled, ask_enabled, answer_enabled, embedding_enabled, local_enabled, monkeypatch
+):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "related_knowledge_navigation_v8")
     configured = make_settings(
         rag_enabled=rag_enabled,
+        rag_ask_enabled=ask_enabled,
         rag_ai_provider_enabled=answer_enabled,
         rag_embedding_provider_enabled=embedding_enabled,
+        rag_source_judge_provider_enabled=True,
+        rag_local_support_enabled=local_enabled,
     )
     assert configured.rag_index_available is (rag_enabled and embedding_enabled)
-    assert configured.rag_answer_available is (rag_enabled and answer_enabled and embedding_enabled)
+    expected_answer = rag_enabled and ask_enabled and embedding_enabled
+    assert configured.rag_answer_available is expected_answer
+    assert configured.rag_source_only_available is expected_answer
     # Disabled roles require no key/bucket and never enable a different role.
     if not rag_enabled or not embedding_enabled:
         assert configured.require_rag_index_worker_config() is configured
     else:
         with pytest.raises(ValueError, match="RAG_EMBEDDING_API_KEY"):
             configured.require_rag_index_worker_config()
-    if not rag_enabled or not answer_enabled:
+    if not rag_enabled or not ask_enabled:
         assert configured.require_rag_answer_worker_config() is configured
     elif not embedding_enabled:
         with pytest.raises(ValueError, match="RAG_EMBEDDING_PROVIDER_ENABLED"):
             configured.require_rag_answer_worker_config()
     else:
-        with pytest.raises(ValueError, match="RAG_AI_API_KEY"):
+        with pytest.raises(ValueError, match="RAG_EMBEDDING_API_KEY"):
             configured.require_rag_answer_worker_config()
 
 
-def test_enabled_role_keys_and_explicit_quota_buckets_are_independent():
+def test_enabled_role_keys_and_explicit_quota_buckets_are_independent(monkeypatch):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "related_knowledge_navigation_v8")
     configured = make_settings(
         flashcard_ai_provider_enabled=True, flashcard_ai_api_key="flashcard-key",
         flashcard_ai_quota_bucket="flashcard-budget",
-        rag_enabled=True, rag_ai_provider_enabled=True, rag_embedding_provider_enabled=True,
+        rag_enabled=True, rag_ask_enabled=True,
+        rag_ai_provider_enabled=True, rag_embedding_provider_enabled=True,
+        rag_source_judge_provider_enabled=True,
+        rag_local_support_enabled=True, rag_local_support_model_dir="C:/models/local-support",
         rag_ai_api_key="answer-key", rag_embedding_api_key="embedding-key",
+        rag_source_judge_api_key="source-judge-key",
         rag_ai_quota_bucket="answer-budget", rag_embedding_quota_bucket="embedding-budget",
+        rag_source_judge_quota_bucket="source-judge-budget",
     )
     assert configured.require_generation_worker_config() is configured
     assert configured.require_rag_index_worker_config() is configured
@@ -105,8 +118,10 @@ def test_enabled_role_keys_and_explicit_quota_buckets_are_independent():
         ("flashcard", {"flashcard_ai_quota_bucket": ""}, "FLASHCARD_AI_QUOTA_BUCKET"),
         ("index", {"rag_embedding_api_key": None}, "RAG_EMBEDDING_API_KEY"),
         ("index", {"rag_embedding_quota_bucket": ""}, "RAG_EMBEDDING_QUOTA_BUCKET"),
-        ("answer", {"rag_ai_api_key": None}, "RAG_AI_API_KEY"),
-        ("answer", {"rag_ai_quota_bucket": ""}, "RAG_AI_QUOTA_BUCKET"),
+        ("answer", {"rag_embedding_api_key": None}, "RAG_EMBEDDING_API_KEY"),
+        ("answer", {"rag_embedding_quota_bucket": ""}, "RAG_EMBEDDING_QUOTA_BUCKET"),
+        ("answer", {"rag_source_judge_api_key": None}, "RAG_SOURCE_JUDGE_API_KEY"),
+        ("answer", {"rag_source_judge_quota_bucket": ""}, "RAG_SOURCE_JUDGE_QUOTA_BUCKET"),
     ):
         changed = configured.model_copy(update=changes)
         method = {
@@ -124,7 +139,30 @@ def test_enabled_role_keys_and_explicit_quota_buckets_are_independent():
         missing_query.require_rag_answer_worker_config()
     assert "answer-key" not in repr(configured)
     assert "embedding-key" not in repr(configured)
+    assert "source-judge-key" not in repr(configured)
     assert "flashcard-key" not in repr(configured)
+
+    source_only = configured.model_copy(update={
+        "rag_ai_provider_enabled": False,
+        "rag_ai_api_key": None,
+        "rag_ai_quota_bucket": "",
+        "rag_local_support_enabled": False,
+        "rag_local_support_model_dir": None,
+    })
+    assert source_only.rag_source_only_available
+    assert source_only.require_rag_answer_worker_config() is source_only
+
+
+def test_source_only_ask_remains_fenced_until_release(monkeypatch):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "two_request_local_support_v1")
+    configured = make_settings(
+        rag_enabled=True, rag_ask_enabled=True,
+        rag_embedding_provider_enabled=True,
+        rag_embedding_api_key="embedding-key",
+        rag_embedding_quota_bucket="embedding-budget",
+    )
+    assert configured.rag_ask_effective_enabled is False
+    assert configured.rag_source_only_available is False
 
 
 @pytest.mark.parametrize(

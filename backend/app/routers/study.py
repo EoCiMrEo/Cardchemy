@@ -155,6 +155,9 @@ async def get_set_progress(
         - review: Cards in review phase
         - mastered: Cards mastered
         - completion_percentage: Percentage attempted at least once
+        - attempted_count/attempted_percentage: Explicit attempted-card coverage
+        - ever_correct_count/progress_percentage: Cards answered correctly at least once
+        - accuracy_percentage: Correct attempts divided by all attempts
         - mastery_percentage: Percentage in review or mastered
     """
     # Verify access

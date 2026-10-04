@@ -14,7 +14,7 @@
       "offline_retrieval_p95_milliseconds_max": 2000,
       "minimum_indexed_chunks_per_second": 1.0,
       "maximum_history_context_messages": 8,
-      "maximum_provider_calls_per_answer": 3
+      "maximum_provider_calls_per_answer": 2
     },
     "decisions": {
       "ann": "not_applicable_no_ann_index_ships",

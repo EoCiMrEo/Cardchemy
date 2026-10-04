@@ -41,6 +41,25 @@ def test_process_values_override_empty_file_without_exposing_values(tmp_path):
     assert PREFLIGHT["removed_names"](env_file, environment={}) == ()
 
 
+def test_gemini_only_preflight_reports_legacy_provider_and_endpoint_names(tmp_path):
+    env_file = tmp_path / ".env"
+    sentinel = "PRIVATE_LEGACY_ENDPOINT_VALUE"
+    env_file.write_text(
+        "FLASHCARD_AI_PROVIDER=gemini\n"
+        "RAG_AI_PROVIDER='openai_compatible'\n"
+        f"RAG_EMBEDDING_BASE_URL=https://{sentinel}.example.test/v1\n"
+        "FLASHCARD_AI_BASE_URL=\n",
+        encoding="utf-8",
+    )
+    assert PREFLIGHT["removed_names"](env_file, environment={}) == (
+        "RAG_AI_PROVIDER", "RAG_EMBEDDING_BASE_URL"
+    )
+    with pytest.raises(PREFLIGHT["ConfigMigrationError"]) as failure:
+        PREFLIGHT["ensure_no_legacy_configuration"](env_file, environment={})
+    assert sentinel not in str(failure.value)
+    assert "RAG_AI_PROVIDER" in str(failure.value)
+
+
 def test_compose_guard_is_single_pass_name_only_and_complete():
     compose = (SCRIPTS.parent / "docker-compose.yml").read_text(encoding="utf-8")
     guard = next(
@@ -49,6 +68,11 @@ def test_compose_guard_is_single_pass_name_only_and_complete():
     )
     assert "CARDCH_LEGACY_AI_CONFIGURATION_ERROR" not in guard
     for name in PREFLIGHT["REMOVED_AI_NAMES"]:
+        assert "${" + name + ":+-" + name + "}" in guard
+    for name in (
+        PREFLIGHT["RETIRED_ENDPOINT_NAMES"]
+        | PREFLIGHT["RETIRED_TASK_MODE_NAMES"]
+    ):
         assert "${" + name + ":+-" + name + "}" in guard
     assert "scale: *removed-ai-name-guard" in compose
 

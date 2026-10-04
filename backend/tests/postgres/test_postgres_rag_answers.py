@@ -1,91 +1,84 @@
-"""Phase 17 durable, private and grounded Subject Ask AI acceptance."""
+"""Disposable PostgreSQL fixtures and guards for source-only Subject Ask AI."""
 
-import asyncio
 from datetime import timedelta
+import json
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
-from app.ai.answering import ClaimSupportOutput, GroundedAnswerOutput
-from app.ai.providers import ProviderAttemptTelemetry, ProviderResponse, ProviderUsage
+from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION
 from app.models.flashcard import Enrollment
 from app.models.generation import GenerationJob
 from app.models.knowledge import SubjectDocumentChunk, SubjectDocumentContentRevision
-from app.models.rag import RagAnswerJob, RagAnswerQuotaEvent, RagMessage, RagMessageSource
+from app.models.rag import (
+    RagAnswerJob,
+    RagAnswerQuotaEvent,
+    RagAnswerStageAttempt,
+    RagMessage,
+    RagThread,
+)
 from app.models.user import AuthSession, User, UserRole
 from app.schemas.rag import RagQuestionCreate
-from app.services.knowledge_indexing import (
-    cutover_subject_embedding_space,
-    enqueue_subject_reindex,
-)
-from app.services.knowledge_management import KnowledgeManagementService
+from app.services.knowledge_indexing import cutover_subject_embedding_space
+from app.services.knowledge_retrieval import KnowledgeRetriever
+from app.services.generation import hash_operation_key
+from app.services import rag_answers as rag_answer_module
 from app.services.rag_answers import RagAnswerService
 from app.time_utils import utcnow
 from app.workers.knowledge_index import KnowledgeIndexWorker
-from app.workers.rag_answer import AnswerLeaseLost, RagAnswerWorker
+from app.workers.rag_answer import AnswerProfileMismatch, RagAnswerWorker
+from app.workers.rag_answer import _JudgeResponse
 from tests.postgres.test_postgres_rag_pipeline import (
     FakeEmbeddingProvider,
     seed_capture,
     settings as index_settings,
 )
+from tests.test_pdf_processor import pdf_bytes
 
 
 pytestmark = pytest.mark.postgres
 
 
-class FakeAnswerProvider:
-    def __init__(self, chunk_id, quote: str) -> None:
-        self.chunk_id = chunk_id
-        self.quote = quote
-        self.requests = 0
-
-    async def generate_structured(self, *, response_model, **kwargs):
-        self.requests += 1
-        if response_model is GroundedAnswerOutput:
-            data = GroundedAnswerOutput(
-                outcome="answer",
-                answer="Alpha is the first course concept.",
-                claims=[{
-                    "statement": "Alpha is the first course concept.",
-                    "source_chunk_id": self.chunk_id,
-                    "source_quote": self.quote,
-                }],
-            )
-        elif response_model is ClaimSupportOutput:
-            data = ClaimSupportOutput(decisions=[{
-                "claim_index": 0,
-                "entailed_by_quote": True,
-                "relevant_to_question": True,
-                "not_contradicted": True,
-            }])
-        else:  # pragma: no cover - a contract regression should identify the unexpected model
-            raise AssertionError("unexpected answer model")
-        return ProviderResponse(
-            data=data,
-            usage=ProviderUsage(input_tokens=20, output_tokens=8, estimated=False),
-        )
-
-    def telemetry_snapshot(self):
-        return ProviderAttemptTelemetry(
-            request_count=self.requests,
-            retry_count=0,
-            rate_limit_wait_seconds=0,
-            request_counts_by_stage={"rag": self.requests},
-        )
+@pytest.fixture(autouse=True)
+def source_only_policy(monkeypatch):
+    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", ASK_REQUIRED_RELEASE_POLICY_VERSION)
 
 
 def _answer_settings(database_url: str):
     return index_settings(database_url).model_copy(update={
-        "rag_ai_provider_enabled": True,
-        "rag_ai_api_key": "test-only-answer-key",
-        "rag_ai_quota_bucket": "disposable-answer-tests",
-        "rag_ai_provider_max_retries": 0,
+        "rag_ask_enabled": True,
+        "rag_source_judge_provider_enabled": True,
+        "rag_source_judge_api_key": "test-only-source-judge-key",
+        "rag_source_judge_quota_bucket": "disposable-test-project",
         "rag_answer_max_active_jobs_per_user": 1,
         "rag_answer_max_active_jobs_deployment": 10,
     })
+
+
+class FakeSourceJudge:
+    """Offline categorical visual verdict for current-policy worker tests."""
+
+    def __init__(self, selected_ids=("S01",)):
+        self.selected_ids = selected_ids
+        self.calls = 0
+
+    async def judge(self, wire, *, before_dispatch=None):
+        if before_dispatch is not None:
+            await before_dispatch()
+        self.calls += 1
+        parts = wire["contents"][0]["parts"]
+        candidates = {json.loads(part["text"])["id"] for part in parts[1:] if "text" in part}
+        assert sum("inline_data" in part for part in parts) == len(candidates)
+        assert set(self.selected_ids).issubset(candidates)
+        return _JudgeResponse(
+            json.dumps({"question_status": "clear", "pages": [
+                {"id": sid, "usefulness": "direct" if sid in self.selected_ids else "unrelated",
+                 "cue_locates": sid in self.selected_ids} for sid in sorted(candidates)]}),
+            "STOP", 100, 8, 0,
+        )
 
 
 async def _ready_course(postgres_engine, session_factory):
@@ -94,6 +87,7 @@ async def _ready_course(postgres_engine, session_factory):
         session_factory,
         configured,
         page_texts=("Foundations\n\nAlpha is the first concept in this course.",),
+        original_pdf=pdf_bytes(pages=1, text="Foundations Alpha is the first concept in this course."),
     )
     indexer = KnowledgeIndexWorker(
         settings=configured,
@@ -148,7 +142,78 @@ async def _ready_course(postgres_engine, session_factory):
     return configured, owner.id, subject.id, captured.content_revision_id, chunk.id
 
 
-async def _student_and_job(session_factory, configured, subject_id, *, key: str):
+async def _student_and_job(
+    session_factory, configured, subject_id, *, key: str,
+    policy_version: str = "related_knowledge_navigation_v3",
+):
+    """Seed an immutable v3 job for historical storage and read contracts.
+
+    The current API intentionally cannot admit this retired policy.
+    """
+    student_id = uuid4()
+    data = RagQuestionCreate(question="What does the course say about alpha?")
+    async with session_factory() as db:
+        async with db.begin():
+            student = User(
+                id=student_id,
+                email=f"rag-student-{student_id.hex}@example.test",
+                hashed_password="fixture",
+                role=UserRole.STUDENT,
+            )
+            db.add(student)
+            await db.flush()
+            db.add(Enrollment(student_id=student.id, subject_id=subject_id))
+            auth = AuthSession(
+                user_id=student.id,
+                refresh_jti_hash=uuid4().hex * 2,
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+            db.add(auth)
+            await db.flush()
+            now = utcnow()
+            thread = RagThread(user_id=student.id, subject_id=subject_id,
+                               created_at=now, updated_at=now)
+            db.add(thread)
+            await db.flush()
+            policy = rag_answer_module.SOURCE_NAVIGATION_RETRIEVAL_POLICY
+            retriever = await KnowledgeRetriever.authorize(
+                db, principal=student, subject_id=subject_id, query=data.question,
+                document_ids=data.document_ids, limit=policy.max_results, policy=policy,
+            )
+            question = RagMessage(
+                thread_id=thread.id, user_id=student.id, subject_id=subject_id,
+                role="user", content=data.question, source_count=0,
+                created_at=now, expires_at=now + timedelta(days=configured.rag_chat_retention_days),
+            )
+            db.add(question)
+            await db.flush()
+            job = RagAnswerJob(
+                thread_id=thread.id, question_message_id=question.id,
+                auth_session_id=auth.id, user_id=student.id, subject_id=subject_id,
+                status="queued", operation_key_hash=hash_operation_key(key),
+                request_fingerprint=rag_answer_module.question_fingerprint(thread.id, data),
+                document_ids=[], corpus_revision=retriever.scope.corpus_revision,
+                retrieval_policy=policy.policy_id,
+                embedding_space_hash=retriever.scope.embedding_space_hash,
+                embedding_provider=configured.rag_embedding_provider,
+                embedding_base_url=configured.rag_embedding_endpoint_identity,
+                embedding_model=configured.rag_embedding_model,
+                answer_policy_version=policy_version,
+                max_attempts=configured.rag_answer_max_attempts,
+                available_at=now + timedelta(minutes=30),
+                deadline_at=now + timedelta(hours=1),
+                created_at=now, updated_at=now,
+            )
+            db.add(job)
+            await db.flush()
+            db.add(RagAnswerQuotaEvent(
+                user_id=student.id, job_id=job.id,
+                operation_key_hash=hash_operation_key(key), job_units=1, created_at=now,
+            ))
+        return student.id, auth.id, thread.id, job.id
+
+
+async def _student_and_current_job(session_factory, configured, subject_id, *, key: str):
     service = RagAnswerService(configured)
     student_id = uuid4()
     async with session_factory() as db:
@@ -182,90 +247,89 @@ async def _student_and_job(session_factory, configured, subject_id, *, key: str)
         return student.id, auth.id, thread.id, job.id
 
 
-async def test_answer_worker_persists_atomic_grounded_result_and_g2_hides_revoked_sources(
-    postgres_engine, postgres_session_factory
+async def test_source_only_stage_guard_rejects_answer_and_second_embedding(
+    postgres_engine, postgres_session_factory,
 ):
-    configured, owner_id, subject_id, content_id, chunk_id = await _ready_course(
-        postgres_engine, postgres_session_factory
+    settings, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
+        postgres_engine, postgres_session_factory,
     )
-    student_id, _auth_id, thread_id, job_id = await _student_and_job(
-        postgres_session_factory, configured, subject_id, key="postgres-answer-happy-0001"
+    _student_id, _auth_id, _thread_id, job_id = await _student_and_current_job(
+        postgres_session_factory, settings, subject_id, key=f"source-stage-{uuid4().hex}",
     )
-    answer_provider = FakeAnswerProvider(chunk_id, "Alpha is the first concept")
-    worker = RagAnswerWorker(
-        settings=configured,
-        session_factory=postgres_session_factory,
-        answer_provider=answer_provider,
-        embedding_provider=FakeEmbeddingProvider(),
-        worker_id="answer-happy-worker",
-    )
-    claim = await worker.claim_next()
-    assert claim and claim[0] == job_id
-    await worker.process_claim(*claim)
-
-    service = RagAnswerService(configured)
-    async with postgres_session_factory() as db:
-        job = await db.get(RagAnswerJob, job_id)
-        assert job.status == "completed" and job.answer_message_id is not None
-        assert job.provider_request_count == 3
-        assert job.actual_input_tokens and job.actual_output_tokens
-        assert await db.scalar(select(func.count(RagMessageSource.id)).where(
-            RagMessageSource.message_id == job.answer_message_id
-        )) == 1
-        student = await db.get(User, student_id)
-        history = await service.history(
-            db, subject_id=subject_id, thread_id=thread_id, user=student, limit=100
-        )
-        assert history.messages[-1].content == "Alpha is the first course concept."
-        assert history.messages[-1].sources[0].chunk_id == chunk_id
-        owner = await db.get(User, owner_id)
-        with pytest.raises(HTTPException) as private:
-            await service.history(
-                db, subject_id=subject_id, thread_id=thread_id, user=owner, limit=100
-            )
-        assert private.value.status_code == 404
-
-    # G2: persisted private history remains, but publication revocation hides
-    # both answer text and citations immediately.
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            content = await db.get(SubjectDocumentContentRevision, content_id, with_for_update=True)
-            content.published_at = None
-    async with postgres_session_factory() as db:
-        student = await db.get(User, student_id)
-        hidden = await service.history(
-            db, subject_id=subject_id, thread_id=thread_id, user=student, limit=100
-        )
-        assert hidden.messages[-1].hidden is True
-        assert hidden.messages[-1].content is None
-        with pytest.raises(HTTPException) as unavailable:
-            await service.message_sources(
-                db,
-                subject_id=subject_id,
-                thread_id=thread_id,
-                message_id=hidden.messages[-1].id,
-                user=student,
-            )
-        assert unavailable.value.detail["code"] == "rag_sources_unavailable"
-
-
-async def test_access_revocation_blocks_provider_use_and_dead_leases_never_replay_remote_work(
-    postgres_engine, postgres_session_factory
-):
-    configured, _owner_id, subject_id, _content_id, chunk_id = await _ready_course(
-        postgres_engine, postgres_session_factory
-    )
-    student_id, _auth_id, _thread_id, job_id = await _student_and_job(
-        postgres_session_factory, configured, subject_id, key="postgres-answer-revoked-0001"
-    )
-    provider = FakeAnswerProvider(chunk_id, "Alpha is the first concept")
     embedding = FakeEmbeddingProvider()
     worker = RagAnswerWorker(
-        settings=configured,
-        session_factory=postgres_session_factory,
-        answer_provider=provider,
-        embedding_provider=embedding,
-        worker_id="answer-revocation-worker",
+        settings=settings, session_factory=postgres_session_factory,
+        embedding_provider=embedding, worker_id=f"stage-{uuid4().hex}",
+    )
+    claim = await worker.claim_next()
+    assert claim is not None and claim[0] == job_id
+    stage_id = await worker._begin_stage(job_id, claim[1], "query_embedding", remote=True)
+    assert stage_id is not None
+    with pytest.raises(AnswerProfileMismatch):
+        await worker._begin_stage(job_id, claim[1], "query_embedding", remote=True)
+    with pytest.raises(AnswerProfileMismatch):
+        await worker._begin_stage(job_id, claim[1], "answer", remote=True)
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    db.add(RagAnswerStageAttempt(
+                        job_id=job_id, manual_retry_number=0, worker_attempt_number=1,
+                        stage="answer", answer_policy_version=ASK_REQUIRED_RELEASE_POLICY_VERSION,
+                        execution_uncertain=True,
+                    ))
+                    await db.flush()
+
+
+async def test_source_stage_cannot_disguise_parent_policy_or_attempt_identity(
+    postgres_engine, postgres_session_factory,
+):
+    settings, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
+        postgres_engine, postgres_session_factory,
+    )
+    _student_id, _auth_id, _thread_id, job_id = await _student_and_current_job(
+        postgres_session_factory, settings, subject_id, key=f"source-parent-{uuid4().hex}",
+    )
+    embedding = FakeEmbeddingProvider()
+    worker = RagAnswerWorker(settings=settings, session_factory=postgres_session_factory,
+                             embedding_provider=embedding, worker_id=f"parent-{uuid4().hex}")
+    claim = await worker.claim_next()
+    assert claim is not None and claim[0] == job_id
+    await worker._begin_stage(job_id, claim[1], "query_embedding", remote=True)
+    async with postgres_session_factory() as db:
+        async with db.begin():
+            for overrides in (
+                {"answer_policy_version": None, "stage": "answer"},
+                {"answer_policy_version": "two_request_local_support_v1", "stage": "answer"},
+                {"answer_policy_version": None, "worker_attempt_number": 2},
+                {"manual_retry_number": 1},
+                {"worker_attempt_number": 2},
+            ):
+                with pytest.raises(DBAPIError):
+                    async with db.begin_nested():
+                        db.add(RagAnswerStageAttempt(**(dict(
+                            job_id=job_id, manual_retry_number=0, worker_attempt_number=1,
+                            stage="query_embedding", answer_policy_version=ASK_REQUIRED_RELEASE_POLICY_VERSION,
+                            physical_request_count=1, retry_count=0,
+                        ) | overrides)))
+                        await db.flush()
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    stage = await db.scalar(select(RagAnswerStageAttempt).where(RagAnswerStageAttempt.job_id == job_id))
+                    assert stage is not None
+                    stage.answer_policy_version = None
+                    await db.flush()
+    assert embedding.requests == 0
+
+
+async def test_revoked_enrollment_fails_queued_job_before_embedding(
+    postgres_engine, postgres_session_factory,
+):
+    settings, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
+        postgres_engine, postgres_session_factory,
+    )
+    student_id, _auth_id, _thread_id, job_id = await _student_and_current_job(
+        postgres_session_factory, settings, subject_id, key=f"source-revoked-{uuid4().hex}",
     )
     async with postgres_session_factory() as db:
         async with db.begin():
@@ -273,302 +337,86 @@ async def test_access_revocation_blocks_provider_use_and_dead_leases_never_repla
                 Enrollment.student_id == student_id,
                 Enrollment.subject_id == subject_id,
             ).with_for_update())
+            assert enrollment is not None
             await db.delete(enrollment)
-    claim = await worker.claim_next()
-    assert claim and claim[0] == job_id
-    await worker.process_claim(*claim)
-    async with postgres_session_factory() as db:
-        revoked = await db.get(RagAnswerJob, job_id)
-        assert revoked.status == "failed" and revoked.error_code == "rag_access_revoked"
-        assert provider.requests == 0 and embedding.requests == 0
-
-    # A separate instructor job exercises infrastructure recovery. Before the
-    # provider boundary it can be requeued; after that boundary it is terminal
-    # and the stale claim cannot commit.
-    service = RagAnswerService(configured)
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            from app.models.subject import Subject
-            subject = await db.get(Subject, subject_id)
-            owner = await db.get(User, subject.instructor_id)
-            auth = AuthSession(
-                user_id=owner.id,
-                refresh_jti_hash=uuid4().hex * 2,
-                expires_at=utcnow() + timedelta(hours=1),
-            )
-            db.add(auth)
-            await db.flush()
-            setattr(owner, "_auth_session_id", auth.id)
-            thread = await service.create_thread(db, subject_id=subject_id, user=owner)
-            durable = await service.enqueue(
-                db,
-                subject_id=subject_id,
-                thread_id=thread.id,
-                user=owner,
-                data=RagQuestionCreate(question="Explain alpha from the course."),
-                idempotency_key="postgres-answer-recovery-0001",
-            )
-            owner_id, owner_auth_id, owner_thread_id = owner.id, auth.id, thread.id
-    first_claim = await worker.claim_next()
-    assert first_claim and first_claim[0] == durable.id
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            row = await db.get(RagAnswerJob, durable.id, with_for_update=True)
-            row.lease_expires_at = utcnow() - timedelta(seconds=1)
-            row.heartbeat_at = row.lease_expires_at
-    await worker.recover_expired()
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            row = await db.get(RagAnswerJob, durable.id, with_for_update=True)
-            assert row.status == "queued"
-            row.available_at = utcnow()
-    second_claim = await worker.claim_next()
-    assert second_claim and second_claim[0] == durable.id
-    await worker._mark_provider_boundary(durable.id, second_claim[1])
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            row = await db.get(RagAnswerJob, durable.id, with_for_update=True)
-            row.lease_expires_at = utcnow() - timedelta(seconds=1)
-            row.heartbeat_at = row.lease_expires_at
-    await worker.recover_expired()
-    async with postgres_session_factory() as db:
-        row = await db.get(RagAnswerJob, durable.id)
-        assert row.status == "failed" and row.error_code == "rag_answer_lease_expired"
-    with pytest.raises(AnswerLeaseLost):
-        await worker._complete(durable.id, second_claim[1], answer=None, claims=())
-
-    # Database completion is all-or-nothing: an answer claiming one source but
-    # persisting none is rejected, and the running job/message remain unchanged.
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            owner = await db.get(User, owner_id)
-            setattr(owner, "_auth_session_id", owner_auth_id)
-            atomic = await service.enqueue(
-                db,
-                subject_id=subject_id,
-                thread_id=owner_thread_id,
-                user=owner,
-                data=RagQuestionCreate(question="Atomic answer fixture."),
-                idempotency_key="postgres-answer-atomic-0001",
-            )
-    atomic_claim = await worker.claim_next()
-    assert atomic_claim and atomic_claim[0] == atomic.id
-    bad_message_id = None
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            with pytest.raises(DBAPIError) as rejected:
-                async with db.begin_nested():
-                    row = await db.get(RagAnswerJob, atomic.id, with_for_update=True)
-                    now = utcnow()
-                    bad = RagMessage(
-                        thread_id=row.thread_id,
-                        user_id=row.user_id,
-                        subject_id=row.subject_id,
-                        role="assistant",
-                        outcome="answer",
-                        content="Unbacked answer.",
-                        source_count=1,
-                        corpus_revision=row.corpus_revision,
-                        embedding_space_hash=row.embedding_space_hash,
-                        created_at=now,
-                        expires_at=now + timedelta(days=90),
-                    )
-                    db.add(bad)
-                    await db.flush()
-                    bad_message_id = bad.id
-                    row.status = "completed"
-                    row.answer_message_id = bad.id
-                    row.completed_at = now
-                    row.worker_id = None
-                    row.claim_token = None
-                    row.heartbeat_at = None
-                    row.lease_expires_at = None
-                    await db.flush()
-            assert rejected.value.orig.sqlstate == "23514"
-    async with postgres_session_factory() as db:
-        assert await db.get(RagMessage, bad_message_id) is None
-        row = await db.get(RagAnswerJob, atomic.id)
-        assert row.status == "running" and row.answer_message_id is None
-
-    # A running cancellation is a user-requested terminal transition and does
-    # not cross either provider boundary.
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            owner = await db.get(User, owner_id)
-            await service.cancel(
-                db,
-                subject_id=subject_id,
-                thread_id=owner_thread_id,
-                job_id=atomic.id,
-                user=owner,
-            )
-    await worker.process_claim(*atomic_claim)
-    async with postgres_session_factory() as db:
-        row = await db.get(RagAnswerJob, atomic.id)
-        assert row.status == "cancelled" and row.error_code == "rag_answer_cancelled"
-        assert provider.requests == 0 and embedding.requests == 0
-
-
-@pytest.mark.parametrize("change_kind,change_while", [
-    ("unpublish", "queued"),
-    # Active answer work now blocks document deletion; the separate lifecycle
-    # contract covers that refusal. A queued receipt is safe to delete beneath
-    # and must fail closed when the worker later claims it.
-    ("delete", "queued"),
-    ("reindex", "running"),
-])
-async def test_document_lifecycle_changes_fail_queued_or_running_answers_closed(
-    postgres_engine,
-    postgres_session_factory,
-    change_kind,
-    change_while,
-):
-    configured, owner_id, subject_id, content_id, chunk_id = await _ready_course(
-        postgres_engine, postgres_session_factory
-    )
-    _student_id, _auth_id, _thread_id, job_id = await _student_and_job(
-        postgres_session_factory,
-        configured,
-        subject_id,
-        key=f"postgres-answer-{change_kind}-0001",
-    )
-    answer_provider = FakeAnswerProvider(chunk_id, "Alpha is the first concept")
-    embedding_provider = FakeEmbeddingProvider()
+    embedding = FakeEmbeddingProvider()
     worker = RagAnswerWorker(
-        settings=configured,
-        session_factory=postgres_session_factory,
-        answer_provider=answer_provider,
-        embedding_provider=embedding_provider,
-        worker_id=f"answer-{change_kind}-worker",
+        settings=settings, session_factory=postgres_session_factory,
+        embedding_provider=embedding, worker_id=f"revoked-{uuid4().hex}",
     )
-    claim = await worker.claim_next() if change_while == "running" else None
-    if change_while == "running":
-        assert claim and claim[0] == job_id
-
-    reindex_settings = None
-    async with postgres_session_factory() as db:
-        async with db.begin():
-            owner = await db.get(User, owner_id)
-            if change_kind == "unpublish":
-                content = await db.get(
-                    SubjectDocumentContentRevision, content_id, with_for_update=True
-                )
-                await KnowledgeManagementService(configured).unpublish(
-                    db,
-                    subject_id=subject_id,
-                    document_id=content.document_id,
-                    user=owner,
-                )
-            elif change_kind == "delete":
-                content = await db.get(
-                    SubjectDocumentContentRevision, content_id, with_for_update=True
-                )
-                await KnowledgeManagementService(configured).remove(
-                    db,
-                    subject_id=subject_id,
-                    document_id=content.document_id,
-                    user=owner,
-                )
-            else:
-                reindex_settings = configured.model_copy(update={
-                    "rag_embedding_space_revision": "v2",
-                })
-                created = await enqueue_subject_reindex(
-                    db,
-                    subject_id=subject_id,
-                    owner_id=owner_id,
-                    settings=reindex_settings,
-                )
-                assert created == 1
-
-    if claim is None:
-        claim = await worker.claim_next()
-        assert claim and claim[0] == job_id
+    claim = await worker.claim_next()
+    assert claim is not None and claim[0] == job_id
     await worker.process_claim(*claim)
-
     async with postgres_session_factory() as db:
         job = await db.get(RagAnswerJob, job_id)
-        assert job.status == "failed"
-        assert job.error_code == "rag_corpus_changed"
-    assert answer_provider.requests == 0
-    assert embedding_provider.requests == 0
-    if reindex_settings is not None:
-        # Leave the shared disposable service database with no queued work so
-        # later worker-ordering tests cannot claim this scenario's staged job.
-        reindex_worker = KnowledgeIndexWorker(
-            settings=reindex_settings,
-            session_factory=postgres_session_factory,
-            provider=FakeEmbeddingProvider(),
-            worker_id="answer-reindex-cleanup-worker",
-        )
-        reindex_claim = await reindex_worker.claim_next()
-        assert reindex_claim is not None
-        await reindex_worker.process_claim(*reindex_claim)
+        assert job is not None and job.status == "failed"
+        assert job.provider_request_count == 0
+    assert embedding.requests == 0
 
 
-async def test_concurrent_idempotency_and_capacity_are_serialized(
-    postgres_engine, postgres_session_factory
+async def test_expired_remote_boundary_never_replays_embedding(
+    postgres_engine, postgres_session_factory,
 ):
-    configured, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
-        postgres_engine, postgres_session_factory
+    settings, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
+        postgres_engine, postgres_session_factory,
     )
-    student_id, auth_id, thread_id, first_job_id = await _student_and_job(
-        postgres_session_factory, configured, subject_id, key="postgres-race-seed-0001"
+    _student_id, _auth_id, _thread_id, job_id = await _student_and_current_job(
+        postgres_session_factory, settings, subject_id, key=f"source-lease-{uuid4().hex}",
     )
-    service = RagAnswerService(configured)
+    embedding = FakeEmbeddingProvider()
+    worker = RagAnswerWorker(
+        settings=settings, session_factory=postgres_session_factory,
+        embedding_provider=embedding, worker_id=f"lease-{uuid4().hex}",
+    )
+    claim = await worker.claim_next()
+    assert claim is not None and claim[0] == job_id
+    await worker._mark_provider_boundary(job_id, claim[1])
+    await worker._begin_stage(job_id, claim[1], "query_embedding", remote=True)
     async with postgres_session_factory() as db:
         async with db.begin():
-            student = await db.get(User, student_id)
-            setattr(student, "_auth_session_id", auth_id)
-            await service.cancel(
-                db,
-                subject_id=subject_id,
-                thread_id=thread_id,
-                job_id=first_job_id,
-                user=student,
-            )
+            job = await db.get(RagAnswerJob, job_id, with_for_update=True)
+            assert job is not None
+            job.lease_expires_at = utcnow() - timedelta(seconds=1)
+            job.heartbeat_at = job.lease_expires_at
+    await worker.recover_expired()
+    async with postgres_session_factory() as db:
+        job = await db.get(RagAnswerJob, job_id)
+        assert job is not None and job.status == "failed"
+        assert job.execution_uncertain and job.attempt_cost_unknown
+        assert await worker.claim_next() is None
+    assert embedding.requests == 0
 
-    async def submit(key: str):
-        async with postgres_session_factory() as db:
-            async with db.begin():
-                student = await db.get(User, student_id)
-                setattr(student, "_auth_session_id", auth_id)
-                return await service.enqueue(
-                    db,
-                    subject_id=subject_id,
-                    thread_id=thread_id,
-                    user=student,
-                    data=RagQuestionCreate(question="What is alpha?"),
-                    idempotency_key=key,
+
+async def test_active_capacity_and_idempotency_do_not_create_extra_questions(
+    postgres_engine, postgres_session_factory,
+):
+    settings, _owner_id, subject_id, _content_id, _chunk_id = await _ready_course(
+        postgres_engine, postgres_session_factory,
+    )
+    student_id, auth_id, thread_id, job_id = await _student_and_current_job(
+        postgres_session_factory, settings, subject_id, key="source-capacity-first",
+    )
+    service = RagAnswerService(settings)
+    async with postgres_session_factory() as db:
+        student = await db.get(User, student_id)
+        assert student is not None
+        setattr(student, "_auth_session_id", auth_id)
+        async with db.begin_nested():
+            repeated = await service.enqueue(
+                db, subject_id=subject_id, thread_id=thread_id, user=student,
+                data=RagQuestionCreate(question="What does the course say about alpha?"),
+                idempotency_key="source-capacity-first",
+            )
+            assert repeated.id == job_id
+        with pytest.raises(HTTPException) as busy:
+            async with db.begin_nested():
+                await service.enqueue(
+                    db, subject_id=subject_id, thread_id=thread_id, user=student,
+                    data=RagQuestionCreate(question="What is beta?"),
+                    idempotency_key="source-capacity-second",
                 )
-
-    same = await asyncio.gather(
-        submit("postgres-idempotent-race-0001"),
-        submit("postgres-idempotent-race-0001"),
-    )
-    assert same[0].id == same[1].id
-    async with postgres_session_factory() as db:
-        assert await db.scalar(select(func.count(RagAnswerQuotaEvent.id)).where(
-            RagAnswerQuotaEvent.job_id == same[0].id
-        )) == 1
-        await db.commit()
-        async with db.begin():
-            student = await db.get(User, student_id)
-            setattr(student, "_auth_session_id", auth_id)
-            await service.cancel(
-                db,
-                subject_id=subject_id,
-                thread_id=thread_id,
-                job_id=same[0].id,
-                user=student,
-            )
-
-    results = await asyncio.gather(
-        submit("postgres-capacity-race-0001"),
-        submit("postgres-capacity-race-0002"),
-        return_exceptions=True,
-    )
-    accepted = [result for result in results if isinstance(result, RagAnswerJob)]
-    rejected = [result for result in results if isinstance(result, HTTPException)]
-    assert len(accepted) == 1 and len(rejected) == 1
-    assert rejected[0].detail["code"] == "rag_user_active_limit"
+        assert busy.value.status_code in (409, 429)
+        messages = (await db.scalars(select(RagMessage).where(
+            RagMessage.thread_id == thread_id,
+        ))).all()
+        assert len(messages) == 1 and messages[0].role == "user"

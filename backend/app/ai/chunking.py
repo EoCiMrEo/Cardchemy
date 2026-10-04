@@ -239,6 +239,54 @@ def allocate_card_targets(
     return {chunk.chunk_id: allocations[index] for index, chunk in enumerate(chunks)}
 
 
+def allocate_adaptive_card_targets(
+    chunks: list[DocumentChunk],
+    target_count: int,
+    *,
+    requested_by_chunk_id: dict[str, int],
+    accepted_by_chunk_id: dict[str, int],
+) -> dict[str, int]:
+    """Spend the next bounded card target on new evidence before repeating it.
+
+    Page round-robin prevents a long slide/page from taking every initial slot.
+    Previously productive chunks receive remaining slots after unseen evidence;
+    ties are stable, so an offline replay and a worker make the same decisions.
+    This is an allocation of requests, not a claim that the source has that many
+    distinct facts.
+    """
+
+    if target_count < 1 or not chunks:
+        raise ValueError("a positive target and non-empty chunks are required")
+    pages: dict[int, list[tuple[int, DocumentChunk]]] = {}
+    for index, chunk in enumerate(chunks):
+        pages.setdefault(chunk.page_number, []).append((index, chunk))
+    for page_chunks in pages.values():
+        page_chunks.sort(key=lambda item: (requested_by_chunk_id.get(item[1].chunk_id, 0), item[0]))
+    page_order = sorted(pages)
+    ordered: list[DocumentChunk] = []
+    while any(pages.values()):
+        for page in page_order:
+            if pages[page]:
+                ordered.append(pages[page].pop(0)[1])
+
+    unseen = [chunk for chunk in ordered if requested_by_chunk_id.get(chunk.chunk_id, 0) == 0]
+    seen = [chunk for chunk in ordered if requested_by_chunk_id.get(chunk.chunk_id, 0) > 0]
+    order_index = {chunk.chunk_id: index for index, chunk in enumerate(ordered)}
+    seen.sort(key=lambda chunk: (
+        -accepted_by_chunk_id.get(chunk.chunk_id, 0),
+        requested_by_chunk_id.get(chunk.chunk_id, 0),
+        order_index[chunk.chunk_id],
+    ))
+    priorities = [*unseen, *seen]
+    allocation = {chunk.chunk_id: 0 for chunk in chunks}
+    for chunk in priorities[:target_count]:
+        allocation[chunk.chunk_id] += 1
+    for extra in range(max(0, target_count - len(priorities))):
+        chunk = priorities[extra % len(priorities)]
+        allocation[chunk.chunk_id] += 1
+    return allocation
+
+
 def pack_chunks_for_requests(
     chunks: list[DocumentChunk],
     *,

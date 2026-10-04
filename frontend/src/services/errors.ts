@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-import { copy } from '@/i18n/en'
+import { coreCopy } from '@/i18n/enCore'
 
 const MAX_MESSAGE_LENGTH = 500
 const MAX_VALIDATION_ISSUES = 5
@@ -50,9 +50,9 @@ function detailMessage(detail: unknown): string | null {
 }
 
 export function apiErrorMessage(error: unknown, fallback: string): string {
-  const safeFallback = boundedText(fallback) ?? copy.common.unexpectedError
+  const safeFallback = boundedText(fallback) ?? coreCopy.common.unexpectedError
   if (!axios.isAxiosError(error)) return safeFallback
-  if (error.code === 'ERR_CANCELED') return copy.common.requestCancelled
+  if (error.code === 'ERR_CANCELED') return coreCopy.common.requestCancelled
 
   const responseData: unknown = error.response?.data
   if (!isRecord(responseData)) return safeFallback

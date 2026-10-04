@@ -19,11 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.graph import create_flashcard_graph
 from app.ai.chunking import prepare_document
+from app.ai.gemini_catalog import CATALOG_VERSION, SCHEMA_POLICY_VERSION
 from app.ai.pipeline import PipelineError
+from app.ai.grounding import REJECTION_CATEGORIES
 from app.ai.rate_limit import ProviderRateGovernor
 from app.config import Settings, get_settings
 from app.database import async_session_maker
 from app.models.generation import (
+    GenerationCandidateStage,
     GenerationJob,
     GenerationJobKind,
     GenerationJobSource,
@@ -44,6 +47,9 @@ from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.services.operations import pulse_worker
 from app.services.pdf_processor import PDFProcessingError, PDFProcessor
 from app.services.source_storage import SourceStorage, SourceStorageError
+from app.services.candidate_storage import (
+    CandidateStorageError, VALIDATION_POLICY_VERSION, encrypt_candidates,
+)
 from app.services.subject import SubjectService
 from app.time_utils import as_utc, utcnow
 from app.workers.shutdown import drain_active_tasks
@@ -393,6 +399,39 @@ class GenerationWorker:
                 auto_retry=False,
             )
         except PipelineError as exc:
+            telemetry = {
+                "estimated_input_tokens": exc.estimated_input_tokens,
+                "estimated_output_tokens": exc.estimated_output_tokens,
+                "estimated_cost_microusd": exc.estimated_cost_microusd,
+                "actual_input_tokens": exc.actual_input_tokens,
+                "actual_output_tokens": exc.actual_output_tokens,
+                "actual_cost_microusd": exc.actual_cost_microusd,
+                "usage_estimated": exc.usage_estimated,
+                "rejected_card_count": exc.rejected_card_count,
+                "estimated_request_count": exc.estimated_request_count,
+                "provider_request_count": exc.provider_request_count,
+                "provider_retry_count": exc.provider_retry_count,
+                "provider_rate_limit_wait_milliseconds": exc.provider_rate_limit_wait_milliseconds,
+                "cached_input_tokens": exc.cached_input_tokens,
+                "provider_request_counts_by_stage": exc.provider_request_counts_by_stage,
+                "quality_diagnostics": exc.quality_diagnostics,
+            }
+            if exc.code == "insufficient_grounded_cards" and exc.validated_cards:
+                try:
+                    await self._finish_card_choice(
+                        job_id, claim_token, exc.validated_cards, telemetry,
+                    )
+                except JobCancellationRequested:
+                    await self._finish_cancelled(job_id, claim_token)
+                except LeaseLost:
+                    logger.warning("generation_lease_lost")
+                except CandidateStorageError:
+                    await self._finish_failure(
+                        job_id, claim_token, code=exc.code,
+                        message=exc.safe_message, retryable=exc.retryable,
+                        auto_retry=False, telemetry=telemetry,
+                    )
+                return
             await self._finish_failure(
                 job_id,
                 claim_token,
@@ -400,26 +439,7 @@ class GenerationWorker:
                 message=exc.safe_message,
                 retryable=exc.retryable,
                 auto_retry=False,
-                telemetry={
-                    "estimated_input_tokens": exc.estimated_input_tokens,
-                    "estimated_output_tokens": exc.estimated_output_tokens,
-                    "estimated_cost_microusd": exc.estimated_cost_microusd,
-                    "actual_input_tokens": exc.actual_input_tokens,
-                    "actual_output_tokens": exc.actual_output_tokens,
-                    "actual_cost_microusd": exc.actual_cost_microusd,
-                    "usage_estimated": exc.usage_estimated,
-                    "rejected_card_count": exc.rejected_card_count,
-                    "estimated_request_count": exc.estimated_request_count,
-                    "provider_request_count": exc.provider_request_count,
-                    "provider_retry_count": exc.provider_retry_count,
-                    "provider_rate_limit_wait_milliseconds": (
-                        exc.provider_rate_limit_wait_milliseconds
-                    ),
-                    "cached_input_tokens": exc.cached_input_tokens,
-                    "provider_request_counts_by_stage": (
-                        exc.provider_request_counts_by_stage
-                    ),
-                },
+                telemetry=telemetry,
             )
         except (KeyError, TypeError, ValueError, ValidationError):
             await self._finish_failure(
@@ -474,8 +494,20 @@ class GenerationWorker:
                 fingerprint = job.request_fingerprint
                 requested_card_count = job.requested_card_count
                 job_kind = job.job_kind
+                knowledge_capture_status = job.knowledge_capture_status
                 job_provider = job.ai_provider
                 job_model = job.ai_model
+                if job_kind == GenerationJobKind.FLASHCARDS.value and (
+                    job_provider != "gemini"
+                    or job_model != self.settings.flashcard_ai_model
+                    or job.ai_catalog_version != CATALOG_VERSION
+                    or job.ai_schema_policy_version != SCHEMA_POLICY_VERSION
+                ):
+                    raise PipelineError(
+                        "ai_model_policy_changed",
+                        "The queued model policy changed. Create a new generation job.",
+                        retryable=False,
+                    )
 
             source_bytes = SourceStorage.decrypt(
                 encrypted_nonce, encrypted_payload, fingerprint
@@ -494,17 +526,13 @@ class GenerationWorker:
                 ocr_page_timeout_seconds=self.settings.pdf_ocr_page_timeout_seconds,
             )
             document = await asyncio.to_thread(extract)
-            del source_bytes
 
             prepared = prepare_document(
                 document,
                 max_tokens=self.settings.flashcard_ai_chunk_input_tokens,
                 overlap_tokens=self.settings.flashcard_ai_chunk_overlap_tokens,
             )
-            capture_requested = (
-                job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value
-                or self.settings.rag_enabled
-            )
+            capture_requested = knowledge_capture_status == "pending"
             if capture_requested:
                 await self._update_stage(job_id, claim_token, "capturing_knowledge", 32)
                 try:
@@ -515,6 +543,7 @@ class GenerationWorker:
                         worker_id=self.worker_id,
                         claim_token=claim_token,
                         prepared=prepared,
+                        original_pdf=source_bytes,
                     )
                 except KnowledgeCaptureFailure as exc:
                     await record_capture_failure(
@@ -550,6 +579,7 @@ class GenerationWorker:
                     if job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
                         raise failure
 
+            del source_bytes
             if job_kind == GenerationJobKind.KNOWLEDGE_ONLY.value:
                 await self._finish_knowledge_success(job_id, claim_token)
                 return
@@ -625,6 +655,80 @@ class GenerationWorker:
                 job.updated_at = now
 
         logger.info("generation_completed", extra={"job_id": job_id, "card_count": len(created_cards), "input_tokens": int((telemetry or {}).get("actual_input_tokens") or 0), "output_tokens": int((telemetry or {}).get("actual_output_tokens") or 0), "cost_microusd": int((telemetry or {}).get("actual_cost_microusd") or 0)})
+
+    async def _finish_card_choice(
+        self,
+        job_id: UUID,
+        claim_token: str,
+        cards: tuple,
+        telemetry: dict,
+    ) -> None:
+        """Fence and encrypt only locally validated cards; never create a set."""
+
+        if not 0 < len(cards) <= 500:
+            raise CandidateStorageError("Validated candidate count is out of bounds")
+        async with self.session_factory() as db:
+            async with db.begin():
+                await self.job_service._lock_admission(db)
+                job = await self._claimed_job(db, job_id, claim_token, for_update=True)
+                if len(cards) >= job.requested_card_count:
+                    raise CandidateStorageError("Candidate count does not require a smaller choice")
+                source = await db.scalar(select(GenerationJobSource).where(
+                    GenerationJobSource.job_id == job.id,
+                ).with_for_update())
+                if source is None:
+                    raise CandidateStorageError("Temporary source is unavailable")
+                nonce, payload = encrypt_candidates(
+                    self.settings, job_id=job.id,
+                    fingerprint=job.request_fingerprint,
+                    manual_retry_number=job.manual_retry_count,
+                    attempt_number=job.attempt_count,
+                    cards=cards,
+                    duplicate_similarity_threshold=self.settings.flashcard_ai_duplicate_similarity_threshold,
+                )
+                size = len(payload)
+                if size > self.settings.generation_candidate_choice_max_bytes_per_job:
+                    raise CandidateStorageError("Validated candidates exceed per-job storage limit")
+                user_bytes = int(await db.scalar(
+                    select(func.coalesce(func.sum(func.length(GenerationCandidateStage.payload)), 0))
+                    .join(GenerationJob, GenerationJob.id == GenerationCandidateStage.job_id)
+                    .where(GenerationJob.user_id == job.user_id)
+                ) or 0)
+                deployment_bytes = int(await db.scalar(select(
+                    func.coalesce(func.sum(func.length(GenerationCandidateStage.payload)), 0)
+                )) or 0)
+                if (
+                    user_bytes + size > self.settings.generation_candidate_choice_max_bytes_per_user
+                    or deployment_bytes + size > self.settings.generation_candidate_choice_max_bytes_deployment
+                ):
+                    raise CandidateStorageError("Validated candidate storage is at capacity")
+                now = utcnow()
+                expires = now + timedelta(hours=self.settings.generation_candidate_choice_retention_hours)
+                db.add(GenerationCandidateStage(
+                    job_id=job.id, nonce=nonce, payload=payload,
+                    candidate_count=len(cards), attempt_number=job.attempt_count,
+                    manual_retry_number=job.manual_retry_count,
+                    validation_policy_version=VALIDATION_POLICY_VERSION,
+                    expires_at=expires,
+                ))
+                source.expires_at = expires
+                self._apply_telemetry(job, telemetry)
+                job.status = GenerationJobStatus.AWAITING_CARD_CHOICE.value
+                job.stage = "awaiting_card_choice"
+                job.progress = 100
+                job.card_choice_expires_at = expires
+                job.error_code = "insufficient_grounded_cards"
+                job.error_message = "Fewer validated cards are available than requested."
+                job.error_retryable = True
+                job.limit_reason_code = "insufficient_grounded_cards"
+                job.limit_reason_message = job.error_message
+                job.lease_expires_at = None
+                job.worker_id = None
+                job.claim_token = None
+                job.updated_at = now
+        logger.info("generation_awaiting_card_choice", extra={
+            "job_id": job_id, "candidate_count": len(cards),
+        })
 
     async def _finish_knowledge_success(self, job_id: UUID, claim_token: str) -> None:
         async with self.session_factory() as db:
@@ -774,6 +878,45 @@ class GenerationWorker:
 
     @staticmethod
     def _apply_telemetry(job: GenerationJob, telemetry: dict) -> None:
+        quality = telemetry.get("quality_diagnostics")
+        if isinstance(quality, dict):
+            def bounded_count(value: object) -> int:
+                try:
+                    return min(1_000_000, max(0, int(value)))
+                except (TypeError, ValueError, OverflowError):
+                    return 0
+
+            rounds = []
+            for raw_round in quality.get("rounds", [])[:10]:
+                if not isinstance(raw_round, dict):
+                    continue
+                rounds.append({name: bounded_count(raw_round.get(name)) for name in (
+                    "round", "raw_count", "grounded_count", "valid_count",
+                    "distinct_count", "accepted_count", "missing_count",
+                )})
+            rejections = quality.get("rejections") if isinstance(quality.get("rejections"), dict) else {}
+            safe_rejections = {
+                name: bounded_count(rejections.get(name)) for name in REJECTION_CATEGORIES
+            }
+            latest = rounds[-1] if rounds else {}
+            attempt = {
+                "manual_retry_number": bounded_count(job.manual_retry_count),
+                "attempt_number": max(1, bounded_count(job.attempt_count)),
+                "raw_count": sum(item["raw_count"] for item in rounds),
+                "grounded_count": sum(item["grounded_count"] for item in rounds),
+                "valid_count": sum(item["valid_count"] for item in rounds),
+                "distinct_count": sum(item["distinct_count"] for item in rounds),
+                "accepted_count": latest.get("accepted_count", 0),
+                "missing_count": latest.get("missing_count", 0),
+                "rejected_count": bounded_count(telemetry.get("rejected_card_count")),
+                "refill_rounds_used": bounded_count(quality.get("refill_rounds_used")),
+                "uncertain_request_count": bounded_count(quality.get("uncertain_request_count")),
+                "rounds": rounds,
+                "rejections": safe_rejections,
+            }
+            # Versioned, content-free summaries remain bounded even after many
+            # explicit manual retries and infrastructure attempts.
+            job.quality_attempts = [*(job.quality_attempts or [])[-127:], attempt]
         job.estimated_input_tokens = max(
             job.estimated_input_tokens, int(telemetry.get("estimated_input_tokens") or 0)
         )
@@ -858,6 +1001,45 @@ class GenerationWorker:
                     job.completed_at = now
                     job.error_code = "upload_reservation_expired"
                     job.error_message = "The PDF upload reservation expired."
+                    job.error_retryable = False
+                    job.updated_at = now
+
+                awaiting_choice = list((await db.scalars(
+                    select(GenerationJob).where(
+                        GenerationJob.status == GenerationJobStatus.AWAITING_CHOICE.value,
+                        GenerationJob.knowledge_choice_expires_at <= now,
+                    ).with_for_update().limit(100)
+                )).all())
+                for job in awaiting_choice:
+                    await db.execute(delete(GenerationJobSource).where(GenerationJobSource.job_id == job.id))
+                    job.status = GenerationJobStatus.CANCELLED.value
+                    job.stage = "choice_expired"
+                    job.progress = 100
+                    job.completed_at = now
+                    job.error_code = "knowledge_choice_expired"
+                    job.error_message = "The Knowledge choice expired. Start a new upload."
+                    job.error_retryable = False
+                    job.updated_at = now
+
+                card_choices = list((await db.scalars(
+                    select(GenerationJob).where(
+                        GenerationJob.status == GenerationJobStatus.AWAITING_CARD_CHOICE.value,
+                        GenerationJob.card_choice_expires_at <= now,
+                    ).with_for_update().limit(100)
+                )).all())
+                for job in card_choices:
+                    await db.execute(delete(GenerationCandidateStage).where(
+                        GenerationCandidateStage.job_id == job.id
+                    ))
+                    await db.execute(delete(GenerationJobSource).where(
+                        GenerationJobSource.job_id == job.id
+                    ))
+                    job.status = GenerationJobStatus.FAILED.value
+                    job.stage = "card_choice_expired"
+                    job.progress = 100
+                    job.completed_at = now
+                    job.error_code = "card_choice_expired"
+                    job.error_message = "The validated-card choice expired. Start a new job."
                     job.error_retryable = False
                     job.updated_at = now
 

@@ -294,14 +294,12 @@ class Stack:
         )) or "RAG_EMBEDDING_API_KEY" not in services["index-worker"]["environment"]:
             raise RehearsalError("credential_isolation")
         if any(key in services["answer-worker"]["environment"] for key in (
-            "FLASHCARD_AI_API_KEY", "SMTP_PASSWORD"
-        )) or any(key not in services["answer-worker"]["environment"] for key in (
-            "RAG_AI_API_KEY", "RAG_EMBEDDING_API_KEY"
-        )):
+            "FLASHCARD_AI_API_KEY", "RAG_AI_API_KEY", "SMTP_PASSWORD"
+        )) or "RAG_EMBEDDING_API_KEY" not in services["answer-worker"]["environment"]:
             raise RehearsalError("credential_isolation")
         for name in ("backend", "worker", "index-worker", "answer-worker"):
             values = services[name]["environment"]
-            if values["RAG_ENABLED"] != "false" or values["RAG_AI_PROVIDER_ENABLED"] != "false" \
+            if values["RAG_ENABLED"] != "false" or values.get("RAG_AI_PROVIDER_ENABLED", "false") != "false" \
                     or values["RAG_EMBEDDING_PROVIDER_ENABLED"] != "false":
                 raise RehearsalError("rehearsal_ai_must_be_disabled")
         return document

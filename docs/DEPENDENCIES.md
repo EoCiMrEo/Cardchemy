@@ -7,6 +7,22 @@ hashes in `backend/requirements.txt`; test and lock tools are in
 file and regenerate locks with `backend/scripts/lock_dependencies.ps1`, then
 verify the supported Python versions in [RUNTIMES.md](RUNTIMES.md).
 
+Source-only Ask reuses the canonical backend runtime and production lock.
+Its former dedicated ONNX image and dependency superset have been removed
+from active builds, audits and release inventory. The backend image probe
+checks that NumPy, ONNX Runtime, tokenizers and local model artifacts are
+absent. Historical local-model research scripts are outside the shipped
+Ask path; they do not require or enable an answer verifier in the application.
+
+The frontend original-page viewer pins `pdfjs-dist`
+6.3.289 (Apache-2.0), lazy-loads its display code and worker on source open,
+and retains the existing no-iframe/object CSP. Its upstream Apache-2.0 text
+is redistributed with the frontend legal files. The 2026-09-27 measured
+budget approval keeps initial JS gzip at 130,000 bytes and sets total JS gzip
+at 780,000 and largest raw JS at 1,350,000; the checker includes both `.js`
+and `.mjs` worker assets. Review final emitted bytes, dependency audit and
+browser compatibility together before release.
+
 The backend uses FastAPI, SQLAlchemy, PostgreSQL through `asyncpg`, and Alembic
 for schema migrations. PyJWT handles purpose-scoped HS256 tokens; token
 claims, issuer/audience, clock skew, and session verification remain enforced.
@@ -15,8 +31,9 @@ password record formats and full-password v2 prehash. Historic v1 and raw
 bcrypt verification is covered by independent known vectors and fixtures from
 the prior runtime; see [password compatibility](decisions/ADR-013-password-hash-compatibility.md).
 The production lock excludes python-jose and its unfixable ECDSA dependency. `cryptography` protects temporary PDF source data with
-AES-256-GCM. Gemini uses the direct `google-genai` SDK; an OpenAI-compatible
-endpoint uses `httpx`. AI orchestration and grounding are typed application
+AES-256-GCM. New AI work uses the direct `google-genai` SDK. `httpx` remains a
+general HTTP dependency and the historical adapter is unavailable from new-job
+factories. AI orchestration and grounding are typed application
 code, without an AI framework. Subject Knowledge uses the hash-locked Python
 `pgvector` integration and PostgreSQL 16's pgvector 0.8.6 server extension;
 [`runtime-artifacts.json`](../runtime-artifacts.json) pins the reviewed local
@@ -36,6 +53,16 @@ The direct server/auth extras remain declared in the `.in` inputs. Windows lock
 generation evaluates their platform markers, omits Linux-only `uvloop` and keeps
 the portable standard-server dependencies. Locks strip extras while retaining
 explicit resolved packages and hashes.
+
+Local-support model files are runtime artifacts, not Python packages or source
+assets. `scripts/install_local_support_models.py` pins immutable upstream
+revisions, exact sizes and SHA-256 digests for the Apache-2.0
+`cross-encoder/nli-deberta-v3-xsmall` NLI graph/tokenizer and the CC-BY-4.0
+`onnx-community/tinyroberta-squad2-ONNX` QA graph/tokenizer. The installer
+refuses an unknown existing bundle; the worker verifies all digests again,
+rejects symlinks and runs offline. Review both model licenses and the deployment
+audience before redistribution. The approximately 181.7 MB verified bundle is
+ignored by Git and mounted read-only at runtime.
 
 The frontend uses React and Redux Toolkit for study-session state. Radix
 packages support the shared UI controls. Build dependencies include Vite,

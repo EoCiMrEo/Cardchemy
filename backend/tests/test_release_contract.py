@@ -178,6 +178,12 @@ def test_package_inventory_and_immutable_linkage(package):
     release.verify_package(package, VERSION, SHA, signed=False)
 
 
+def test_backend_ocr_inventory_is_required(package):
+    (package / "backend-ocr.sbom.json").unlink()
+    with pytest.raises(release.ReleaseContractError, match="incomplete"):
+        release.verify_package(package, VERSION, SHA, signed=False)
+
+
 def test_downloaded_package_rejects_unlisted_files(package):
     (package / "SHA256SUMS.sigstore.json").write_text("signed bundle", encoding="utf-8")
     release.verify_package(package, VERSION, SHA)
@@ -430,3 +436,18 @@ def test_workflow_permissions_and_signer_cannot_be_broadened(mutation):
         else: step["with"]["cosign-release"] = "v0.0.0"
     with pytest.raises(SystemExit):
         ci.validate_workflow(document, filename)
+
+
+@pytest.mark.parametrize("step_name", [
+    "Build and verify every final Linux runtime",
+    "Audit remaining runtimes and inventory all exact images",
+    "Publish unique release tags and verify keyless image signatures",
+    "Final main/CI/registry-tag guard before creating the signed draft",
+])
+def test_signed_release_cannot_omit_backend_ocr_in_any_image_loop(step_name):
+    document = yaml.load((REPO / ".github/workflows/release-sbom.yml").read_text(), Loader=yaml.BaseLoader)
+    step = next(step for step in document["jobs"]["release"]["steps"] if step.get("name") == step_name)
+    assert "backend-ocr" in step["run"]
+    step["run"] = step["run"].replace(" backend-ocr", "", 1)
+    with pytest.raises(SystemExit):
+        ci.validate_workflow(document, "release-sbom.yml")

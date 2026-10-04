@@ -136,6 +136,31 @@ def test_configured_named_third_party_sink_is_sanitized():
         logger.propagate = True
 
 
+def test_source_selection_logs_preserve_only_fixed_status_and_counts():
+    record = logging.LogRecord("test", logging.INFO, "", 1, "knowledge_source_selection", (), None)
+    record.selection_status = "explicit_relation_candidate"
+    record.selection_policy = "source_relation_units_v5"
+    for key, value in {"anchor_chunks": 20, "examined_chunks": 30, "examined_pages": 12,
+                       "examined_tokens": 8192, "neighbor_radius": 2, "selected_chunks": 3,
+                       "selected_neighbor_chunks": 1, "selected_beyond_top5": 1}.items():
+        setattr(record, key, value)
+    record.quote = PRIVATE
+    record.question = PRIVATE
+    record.chunk_id = PRIVATE
+    output = SafeJsonFormatter().format(record)
+    row = json.loads(output)
+    assert PRIVATE not in output
+    assert row["event"] == "knowledge_source_selection"
+    assert row["selection_policy"] == "source_relation_units_v5"
+    assert row["selection_status"] == "explicit_relation_candidate"
+    assert row["selected_beyond_top5"] == row["selected_neighbor_chunks"] == 1
+    assert row["examined_pages"] == 12 and row["examined_tokens"] == 8192
+    record.selection_status = PRIVATE
+    record.selection_policy = PRIVATE
+    record.selected_chunks = PRIVATE
+    assert PRIVATE not in SafeJsonFormatter().format(record)
+
+
 async def test_concurrent_job_contexts_are_isolated_and_restored():
     pairs = [(uuid4(), uuid4()), (uuid4(), uuid4())]
     outputs = []
@@ -291,6 +316,18 @@ async def test_retained_metrics_and_job_diagnostics_use_safe_columns(session_fac
             job.started_at = now - timedelta(seconds=2)
             job.completed_at = now
             job.generated_card_count = 1
+            job.accepted_card_count = 1
+            job.rejected_card_count = 7
+            job.quality_attempts = [{
+                "manual_retry_number": 0, "attempt_number": 1,
+                "raw_count": 5, "grounded_count": 4, "valid_count": 3,
+                "distinct_count": 2, "accepted_count": 1,
+                "missing_count": 1, "rejected_count": 7,
+                "refill_rounds_used": 1, "uncertain_request_count": 0,
+                "rounds": [{"round": 0, "raw_count": 5, "prompt": PRIVATE}],
+                "rejections": {"near_duplicate": 2, "private_reason": PRIVATE},
+                "raw_response": PRIVATE,
+            }]
             job.estimated_input_tokens = 100
             job.estimated_output_tokens = 50
             job.estimated_cost_microusd = 42
@@ -305,6 +342,11 @@ async def test_retained_metrics_and_job_diagnostics_use_safe_columns(session_fac
     assert metrics["generation"]["duration_milliseconds_average"] == 2000
     assert PRIVATE not in json.dumps(metrics) + json.dumps(diagnostic)
     assert "source_pdf_name" not in diagnostic["job"]
+    assert diagnostic["job"]["accepted_card_count"] == 1
+    assert diagnostic["job"]["rejected_card_count"] == 7
+    assert diagnostic["job"]["quality_attempt_count"] == 1
+    assert diagnostic["job"]["latest_attempt_rejected_card_count"] == 7
+    assert diagnostic["job"]["latest_attempt_quality_diagnostics"]["rounds"][0]["raw_count"] == 5
     payload = operations.telemetry_snapshot(metrics)
     assert all(type(value) in {int, float} for value in payload.values())
     assert payload["estimated_cost_microusd"] == 42
@@ -340,6 +382,10 @@ def test_pdf_child_initializes_redaction_before_parser_warnings_and_sanitizes_pi
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     logger = logging.getLogger("pypdf.test.private-warning")
+    # Other tests may configure the pypdf parent logger. Keep this warning
+    # enabled so the assertion exercises child-process redaction in any order.
+    monkeypatch.setattr(logger, "level", logging.WARNING)
+    monkeypatch.setattr(logger, "disabled", False)
     logger.addHandler(handler)
     logger.propagate = False
     def parse(*args, **kwargs):

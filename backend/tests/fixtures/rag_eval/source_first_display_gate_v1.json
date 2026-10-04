@@ -1,0 +1,41 @@
+{
+  "version": "source_first_display_gate_v1",
+  "status": "candidate_preregistration_unobserved",
+  "description": "Content-free case roster and proposed source-navigation thresholds. Reviewed source pairs are not labels for windows displayed by the future selector.",
+  "seed": {
+    "direct": ["D01", "D02", "D03", "D04", "D05", "D06"],
+    "paraphrase": ["P01", "P02", "P03", "P04"],
+    "followup": ["H01"]
+  },
+  "holdout": {
+    "direct": ["T01", "T02", "T03", "T04"],
+    "paraphrase": ["T05", "T06", "T07", "T08"],
+    "followup": ["T09", "T10", "T11", "T12"],
+    "required_distinct_pages": 12,
+    "minimum_distinct_documents": 2,
+    "must_be_disjoint_from_seed_pages": true
+  },
+  "controls": {
+    "N12": "source_navigation_positive_no_wrong_claim",
+    "U01": "true_source_but_question_irrelevant_negative"
+  },
+  "thresholds": {
+    "seed_useful_hit_at_3_min": 10,
+    "seed_followup_useful_required": true,
+    "seed_first_window_relevant_min": 9,
+    "holdout_useful_hit_at_3_min": 10,
+    "holdout_useful_per_category_min": 3,
+    "holdout_first_window_relevant_min": 9,
+    "irrelevant_window_rate_max": 0.1,
+    "displayed_windows_per_case_max": 3,
+    "displayed_window_chars_max": 480,
+    "embedding_calls_per_case_max": 1,
+    "answer_calls_per_case_max": 0,
+    "automatic_retries_per_case_max": 0,
+    "source_integrity_failures_max": 0,
+    "page_open_failures_max": 0,
+    "unauthorized_or_stale_exposures_max": 0,
+    "unverified_answer_assertions_max": 0,
+    "known_irrelevant_u01_windows_max": 0
+  }
+}

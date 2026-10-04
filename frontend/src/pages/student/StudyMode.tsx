@@ -14,6 +14,7 @@ import { studyService } from '@/services/study'
 import type { StudyAnswerResponse, StudyCard, StudySessionMode } from '@/services/types'
 import type { AppDispatch, RootState } from '@/store'
 import { answerCard, nextCard, startSession } from '@/store/slices/studySlice'
+import { shuffleStudyOptions } from './studyOptions'
 
 interface StudyCardViewProps {
   card: StudyCard
@@ -32,6 +33,7 @@ interface LogicalSubmission {
 }
 
 function StudyCardView({ card, current, total, timeLimit, onAnswered, onNext, onLeave }: StudyCardViewProps) {
+  const [options] = useState(() => shuffleStudyOptions(Array.isArray(card.options) ? card.options : []))
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [attempted, setAttempted] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
@@ -124,7 +126,6 @@ function StudyCardView({ card, current, total, timeLimit, onAnswered, onNext, on
   }, [answerResult, attempted, saveError, submitAnswer, timeLimit])
 
   const progressValue = timeLimit && timeLeft !== null ? (timeLeft / timeLimit) * 100 : 100
-  const options = Array.isArray(card.options) ? card.options : []
   const hasAnswerOptions = card.card_type === 'multiple_choice' && options.length > 0
   const flipTransition = reduceMotion ? { duration: 0 } : { duration: 0.35 }
 
@@ -341,8 +342,8 @@ function StudySessionContent() {
     const values = Object.values(results)
     const correct = values.filter(Boolean).length
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-green-50 p-4 text-center">
-        <h1 ref={completionHeadingRef} tabIndex={-1} className="mb-4 text-3xl font-bold text-green-900 focus:outline-none">{copy.study.sessionComplete}</h1>
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-slate-50 p-4 text-center">
+        <h1 ref={completionHeadingRef} tabIndex={-1} className="mb-4 text-3xl font-bold text-slate-900 focus:outline-none">{copy.study.sessionComplete}</h1>
         <div className="mb-8 flex flex-wrap justify-center gap-8">
           <div><div className="text-4xl font-bold text-green-800">{correct}</div><div className="text-sm font-bold text-green-900">{copy.study.correctLabel}</div></div>
           <div><div className="text-4xl font-bold text-orange-800">{values.length - correct}</div><div className="text-sm font-bold text-orange-900">{copy.study.wrongLabel}</div></div>

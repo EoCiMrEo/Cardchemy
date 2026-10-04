@@ -9,17 +9,15 @@ import argparse
 import asyncio
 import json
 import os
-from uuid import UUID
-
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 
-from app.ai.answering import ClaimSupportOutput, GroundedAnswerOutput
 from app.ai.contracts import CandidateBatch
 from app.ai.embeddings import EmbeddingResponse
 from app.ai.pipeline import FlashcardGenerationPipeline
 from app.ai.providers import ProviderAttemptTelemetry, ProviderResponse, ProviderUsage
 from app.config import get_settings
+from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION
 from app.database import async_session_maker, close_database, engine, verify_database_revision
 from app.models.email import EmailOutboxMessage
 from app.models.flashcard import Enrollment, Flashcard, StudyAnswerSubmission, StudyProgress
@@ -37,12 +35,16 @@ from app.models.knowledge import (
     SubjectDocumentIndexJob,
     SubjectDocumentIndexRevision,
     SubjectDocumentPage,
+    SubjectDocumentPdf,
+    SubjectDocumentPdfBlock,
 )
 from app.models.rag import (
     RagAnswerJob,
     RagAnswerQuotaEvent,
     RagMessage,
     RagMessageSource,
+    RagRelatedEvidence,
+    RagAnswerStageAttempt,
     RagThread,
 )
 from app.models.subject import FlashcardSet, Subject
@@ -56,6 +58,9 @@ FACTS = (
 
 
 async def require_disposable_database() -> None:
+    if os.getenv("JOURNEY_RAG_MODE") == "rag-on":
+        from tests.support.journey_api import enable_disposable_source_policy
+        enable_disposable_source_policy()
     settings = get_settings()
     url = make_url(settings.database_url)
     journey_mode = os.getenv("JOURNEY_RAG_MODE")
@@ -63,6 +68,8 @@ async def require_disposable_database() -> None:
         os.getenv("RUN_JOURNEY_TESTS") != "1"
         or journey_mode not in {"rag-off", "rag-on"}
         or settings.rag_enabled != (journey_mode == "rag-on")
+        or settings.rag_ask_effective_enabled != (journey_mode == "rag-on")
+        or settings.rag_answer_available != (journey_mode == "rag-on")
         or settings.environment != "test"
         or url.database != "journey_test"
         or url.host not in {"127.0.0.1", "localhost", "::1"}
@@ -73,6 +80,29 @@ async def require_disposable_database() -> None:
         if await connection.scalar(text("SELECT current_database()")) != "journey_test":
             raise RuntimeError("Disposable journey database identity changed")
     await verify_database_revision()
+
+
+class JourneySourceJudge:
+    """Deterministic ID-only source choice for the guarded disposable journey."""
+
+    async def judge(self, wire: dict):
+        from app.workers.rag_answer import _JudgeResponse
+
+        parts = wire["contents"][0]["parts"]
+        question = json.loads(parts[0]["text"])["question"]
+        candidates = [json.loads(part["text"]) for part in parts[1:] if "text" in part]
+        if sum("inline_data" in part for part in parts) != len(candidates):
+            raise RuntimeError("Journey visual source slate is incomplete")
+        selected = [] if "Neptune" in question else [candidates[0]["id"]]
+        return _JudgeResponse(
+            raw_json=json.dumps({"question_status": "clear", "pages": [
+                {"id": candidate["id"], "usefulness": "direct" if candidate["id"] in selected else "unrelated",
+                 "cue_locates": candidate["id"] in selected} for candidate in candidates]}),
+            finish_reason="STOP",
+            input_tokens=128,
+            candidate_tokens=12,
+            thinking_tokens=0,
+        )
 
 
 class JourneyProvider:
@@ -135,53 +165,6 @@ class JourneyEmbeddingProvider:
         )
 
 
-class JourneyAnswerProvider:
-    """Return a grounded authored answer and affirmative separate support review."""
-
-    def __init__(self) -> None:
-        self.requests = 0
-
-    async def generate_structured(self, **arguments):
-        self.requests += 1
-        payload = json.loads(arguments["user_prompt"])
-        response_model = arguments["response_model"]
-        if response_model is GroundedAnswerOutput:
-            evidence = payload["evidence_untrusted"]
-            if len(evidence) != 1:
-                raise RuntimeError("Journey answer requires exactly one bounded source")
-            quote = evidence[0]["content"]
-            statement = "Chlorophyll gives leaves their Green color."
-            data = GroundedAnswerOutput.model_validate({
-                "outcome": "answer",
-                "answer": statement,
-                "claims": [{
-                    "statement": statement,
-                    "source_chunk_id": UUID(evidence[0]["source_chunk_id"]),
-                    "source_quote": quote,
-                }],
-            })
-        elif response_model is ClaimSupportOutput:
-            data = ClaimSupportOutput.model_validate({
-                "decisions": [{
-                    "claim_index": claim["claim_index"],
-                    "entailed_by_quote": True,
-                    "relevant_to_question": True,
-                    "not_contradicted": True,
-                } for claim in payload["claims_untrusted"]],
-            })
-        else:
-            raise RuntimeError("Journey answer provider received an unexpected contract")
-        return ProviderResponse(data, ProviderUsage(50, 20, False))
-
-    def telemetry_snapshot(self):
-        return ProviderAttemptTelemetry(
-            request_count=self.requests,
-            retry_count=0,
-            rate_limit_wait_seconds=0,
-            request_counts_by_stage={"journey_answer": self.requests},
-        )
-
-
 async def seed_instructor() -> None:
     from app import cli
 
@@ -204,8 +187,10 @@ async def verify_records() -> None:
                        SubjectDocument: 1, SubjectDocumentContentRevision: 1,
                        SubjectDocumentPage: 1, SubjectDocumentIndexRevision: 1,
                        SubjectDocumentChunk: 1, SubjectDocumentIndexJob: 1,
-                       RagThread: 3, RagMessage: 2, RagAnswerJob: 1,
-                       RagMessageSource: 1}
+                       SubjectDocumentPdf: 1, SubjectDocumentPdfBlock: 1,
+                       RagThread: 1, RagMessage: 2, RagAnswerJob: 2,
+                       RagAnswerQuotaEvent: 2, RagMessageSource: 0,
+                       RagRelatedEvidence: 1}
     async with async_session_maker() as session:
         for model, count in expected_counts.items():
             if await session.scalar(select(func.count()).select_from(model)) != count:
@@ -240,11 +225,25 @@ async def verify_records() -> None:
         delivered = await session.scalar(select(func.count()).select_from(EmailOutboxMessage).where(EmailOutboxMessage.status == "sent"))
         if delivered != 1:
             raise RuntimeError("Journey invitation was not delivered through the email worker")
-        answer_job = await session.scalar(select(RagAnswerJob))
-        answer = await session.scalar(select(RagMessage).where(RagMessage.role == "assistant"))
-        if answer_job.status != "completed" or answer is None or answer.outcome != "answer" or answer.source_count != 1:
-            raise RuntimeError("Journey grounded Ask AI answer did not persist atomically")
-    print("Journey database proof passed: generation, independent Knowledge index/review/publication, enrollment, grounded Ask AI citation, email, cards and progress.")
+        searches = list((await session.scalars(select(RagAnswerJob))).all())
+        stages = list((await session.scalars(select(RagAnswerStageAttempt))).all())
+        judgment_stages = [stage for stage in stages if stage.stage == "source_judgment"]
+        if (
+            {search.result_kind for search in searches} != {"related_knowledge", "no_match"}
+            or len(judgment_stages) != 2
+            or any(stage.physical_request_count != 1 or stage.retry_count != 0
+                   for stage in judgment_stages)
+            or any(search.status != "completed" or search.provider_request_count != 2
+                   or search.answer_message_id is not None or search.ai_model is not None
+                   or search.answer_policy_version != ASK_REQUIRED_RELEASE_POLICY_VERSION for search in searches)
+            or await session.scalar(select(func.count()).select_from(RagMessage).where(RagMessage.role == "assistant"))
+        ):
+            raise RuntimeError("Journey source-only request/result invariant failed")
+    print(
+        "Journey database proof passed: generation, independent Knowledge "
+        "index/review/publication, source-only Ask/page references, enrollment, email, "
+        "cards and progress."
+    )
 
 
 async def verify_rag_disabled_records() -> None:
@@ -350,9 +349,12 @@ async def main(action: str) -> None:
         else:
             from app.workers.rag_answer import RagAnswerWorker
 
+            from tests.support.visual_renderer import fake_render
+            from app.services import source_visual_preparation
+            source_visual_preparation._render = fake_render
             await RagAnswerWorker(
-                answer_provider=JourneyAnswerProvider(),
                 embedding_provider=JourneyEmbeddingProvider(),
+                source_judge=JourneySourceJudge(),
                 worker_id="journey-answer-worker",
             ).run(asyncio.Event())
     finally:

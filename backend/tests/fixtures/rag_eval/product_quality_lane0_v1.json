@@ -1,0 +1,64 @@
+{
+  "version": "product_quality_lane0_v1",
+  "description": "Synthetic repeated-question retrieval baseline plus measured local-support candidate cases.",
+  "local_support_measurement": {
+    "policy_version": "local_nli_qa_v1",
+    "release_evaluator_fixture": "product_quality_lane5_local_support_v1",
+    "method": "The same pinned offline Lane 5 verifier evaluated each exact Lane 0 candidate claim three times; question-only cases have no generated claim to verify.",
+    "repetitions_per_candidate": 3
+  },
+  "cases": [
+    {
+      "id": "direct-first",
+      "question": "What is perihelion?",
+      "expected_pages": ["p1"],
+      "expected_answer_outcome": "answer",
+      "future_expected_local_support": "accept",
+      "baseline_local_support_verdict": "not_evaluated_no_candidate_claim"
+    },
+    {
+      "id": "direct-repeat",
+      "question": "What is perihelion?",
+      "expected_pages": ["p1"],
+      "expected_answer_outcome": "answer",
+      "future_expected_local_support": "accept",
+      "baseline_local_support_verdict": "not_evaluated_no_candidate_claim"
+    },
+    {
+      "id": "paraphrase-first",
+      "question": "Which orbital point is nearest the Sun?",
+      "expected_pages": ["p1"],
+      "expected_answer_outcome": "answer",
+      "future_expected_local_support": "accept",
+      "baseline_local_support_verdict": "not_evaluated_no_candidate_claim"
+    },
+    {
+      "id": "paraphrase-repeat",
+      "question": "Where is an orbiting body nearest the Sun?",
+      "expected_pages": ["p1"],
+      "expected_answer_outcome": "answer",
+      "future_expected_local_support": "accept",
+      "baseline_local_support_verdict": "not_evaluated_no_candidate_claim"
+    },
+    {
+      "id": "semantic-support-false-rejection",
+      "question": "At what point is the orbiting body nearest the Sun?",
+      "expected_pages": ["p1"],
+      "candidate_claim": "The body is closest to the Sun at perihelion.",
+      "source_quote": "Perihelion is nearest the Sun.",
+      "expected_answer_outcome": "answer",
+      "future_expected_local_support": "accept",
+      "baseline_local_support_verdict": "accept"
+    },
+    {
+      "id": "contradiction-control",
+      "question": "At what point is the orbiting body nearest the Sun?",
+      "expected_pages": ["p1"],
+      "candidate_claim": "The body is farthest from the Sun at perihelion.",
+      "source_quote": "Perihelion is nearest the Sun.",
+      "expected_answer_outcome": "reject",
+      "future_expected_local_support": "reject",
+      "baseline_local_support_verdict": "reject"
+    }
+  ]
+}
