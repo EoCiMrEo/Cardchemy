@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # Build native wheels and the virtual environment away from the runtime image.
-FROM python:3.11.16-alpine3.24@sha256:0495f5559318affa673172ec7e35cd0a5213e4aaf4c76d0a66554c0af97b157e AS dependency-builder
+FROM python:3.11.16-alpine3.24@sha256:cd04730b8511def3fbf14204d66a0c1536f290b8e896ed5a94cd64cb15ac1356 AS dependency-builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -20,7 +20,7 @@ RUN python -m venv /opt/venv \
 # PDF rendering (Poppler/fonts) is available independently of OCR. OCR is
 # opt-in and is intentionally installed here because its executables are needed
 # while jobs run, not while Python dependencies build.
-FROM python:3.11.16-alpine3.24@sha256:0495f5559318affa673172ec7e35cd0a5213e4aaf4c76d0a66554c0af97b157e AS runtime
+FROM python:3.11.16-alpine3.24@sha256:cd04730b8511def3fbf14204d66a0c1536f290b8e896ed5a94cd64cb15ac1356 AS runtime
 
 ARG INSTALL_OCR=false
 
