@@ -1,6 +1,6 @@
 # Cardchemy public roadmap
 
-This page records completed delivery, the current release and uncommitted ideas.
+This page records completed delivery, the published release and uncommitted ideas.
 [Current state](docs/development/CURRENT-STATE.md) owns milestone evidence;
 [accepted ADRs](docs/decisions/ADR-000-INDEX.md) own durable decisions.
 Completed trackers are preserved in the [archive](docs/archive/README.md).
@@ -50,9 +50,10 @@ The separate v1.0 readiness gate passed clean-machine production-profile
 deployment/recovery, actual local encrypted SMTP delivery/recovery, complete
 release evidence and a reported human spoken assistive-technology check. See
 [gate evidence](.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
-Release 0.2.0 is being prepared through the protected publication flow. Each
-operator still verifies provider quality, external SMTP/DNS/mailbox delivery
-and their own hosting/recovery goals.
+Release [0.2.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0) was
+published on 2026-10-05 through the protected publication flow. Each operator
+still verifies provider quality, external SMTP/DNS/mailbox delivery and their
+own hosting/recovery goals.
 
 
 ## Product quality and final Lane 7
@@ -76,13 +77,20 @@ historical tracker summaries:
 - [x] Refresh the README and current documents and provide a comprehensive
   [Mermaid architecture guide](docs/diagrams/README.md), including current
   generation models, source-only Ask and its bounded lexical fallback.
-- [ ] Publish the latest source through protected GitHub checks, resolve the
-  remaining pull requests and publish the verified 0.2.0 release.
+- [x] Publish the latest source through protected GitHub checks, resolve the
+  remaining pull requests and publish the verified 0.2.0 release. [PR 44](https://github.com/EoCiMrEo/Cardchemy/pull/44)
+  merged as `7f326e833c586d7008b18daf85d3a425623d3e72`; the
+  [exact-main CI](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37395995321)
+  and [signed release workflow](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37396275822)
+  passed. Existing PRs 38, 42 and 43 were closed.
 
 The [archived product-quality tracker](docs/archive/PRODUCT-QUALITY-REMEDIATION-PLAN.md)
-preserves the original chronology. Lane 7 is the final delivery lane; there is
-no additional accepted implementation plan. Its final publication item will be
-recorded as complete only after the remote merge/release results exist.
+preserves the original chronology. **Lane 7 is 3/3 complete. All approved
+delivery plans are complete; no active implementation plan remains.** The
+[Lane 7 release record](.agent/logs/2026-10-05/2026-10-05-lane7-release.md)
+contains actual publication, signed-artifact/image verification, fresh-clone
+startup and preservation evidence. This is a self-hosted project release;
+operators own their deployments.
 
 ## Uncommitted future ideas
 
@@ -93,4 +101,4 @@ a concrete user need, privacy/data design, operating costs and compatibility
 before accepting a proposal. Discuss new work in a feature issue; archived
 toolkit affiliation and early brainstorming do not define current architecture.
 
-The inherited source was published through [PR 41](https://github.com/EoCiMrEo/Cardchemy/pull/41), merged as `61b34eb`; see [publication evidence](.agent/logs/2026-10-04/2026-10-04-github-publication.md). Current Lane 7 publication is a separate release event. Dated local activation is historical evidence, not a current container-health claim.
+The inherited source was published through [PR 41](https://github.com/EoCiMrEo/Cardchemy/pull/41), merged as `61b34eb`; see [publication evidence](.agent/logs/2026-10-04/2026-10-04-github-publication.md). Lane 7's protected publication and 0.2.0 release are recorded separately. Dated local activation is historical evidence, not a current container-health claim.

@@ -8,8 +8,8 @@ The project uses [Semantic Versioning](https://semver.org/):
 
 Until 1.0, a minor release may contain breaking changes. Each release aligns
 the root changelog, frontend package and lock root version, API default version,
-root `.env.example` version and `vMAJOR.MINOR.PATCH` tag. The current release candidate
-version is **0.2.0**. A source version alone does not establish a published
+root `.env.example` version and `vMAJOR.MINOR.PATCH` tag. The current published
+version is [**0.2.0**](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0). A source version alone does not establish a published
 release; inspect [GitHub Releases](https://github.com/EoCiMrEo/Cardchemy/releases)
 and [release evidence](../../.agent/logs/README.md). Changes for a later release
 remain in Unreleased until that release is intentionally prepared.

@@ -5,7 +5,9 @@
 > the maintained [public roadmap](../../ROADMAP.md), and the
 > [dated log index](../../.agent/logs/README.md). All remediation phases and the
 > separate v1.0 operational-readiness gate were complete when this tracker was
-> archived; the published product version remains 0.1.0.
+> archived; the published product version at that closure was 0.1.0. The current
+> [public release is 0.2.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0);
+> use current state for subsequent completed work.
 
 This document tracks the work required to turn the current MVP into a secure,
 reliable, self-hostable open-source product. Complete phases in order unless an
