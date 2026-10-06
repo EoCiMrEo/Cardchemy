@@ -11,10 +11,11 @@ server-recorded answers and spaced repetition, and track completion, accuracy
 and mastery. Published lecture PDFs are also available for related reading
 through source-only Ask AI. Cardchemy is a standalone self-hosted project.
 
-The **0.2.0** release candidate brings together the completed product-quality
-work, repository cleanup and current architecture documentation. Publication
-status and verified artifacts belong to the [release page](https://github.com/EoCiMrEo/Cardchemy/releases)
-and [current state](docs/development/CURRENT-STATE.md).
+The published [**0.2.0 release**](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0)
+brings together the completed product-quality work, repository cleanup and
+current architecture documentation. All approved delivery plans are complete,
+including the final Lane 7 rollout. Verified artifacts and completion evidence
+belong to the release and [current state](docs/development/CURRENT-STATE.md).
 
 [Start Here](docs/00-START-HERE.md) explains the product;
 [the public roadmap](ROADMAP.md) separates implemented features from proposals.

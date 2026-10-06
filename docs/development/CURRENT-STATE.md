@@ -1,9 +1,10 @@
 # Current development state
 
-Updated 2026-10-05. The **0.2.0** release candidate includes Phases 0–21,
-product-quality Lanes 0–6 and the verified repository cleanup. The operator
-defined Lane 7 as that cleanup, current documents/diagrams and final GitHub
-rollout; documentation is ready and protected publication is in progress.
+Updated 2026-10-05. [**0.2.0 is published**](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0).
+Phases 0–21 and product-quality Lanes 0–7 are complete in their recorded scope.
+The final Lane 7 is **3/3**: verified repository cleanup, current documentation/
+architecture diagrams and protected GitHub rollout. All approved delivery
+plans are complete; no active implementation plan remains.
 The separate v1.0 operational-readiness gate passed; it did not publish v1.0.
 
 ## Current source-only Ask
@@ -127,9 +128,21 @@ The operator's 2026-10-05 final Lane 7 definition supersedes the archived
 tracker's older incomplete summaries: clean stale/unused project files,
 refresh release/current documentation with comprehensive architecture diagrams,
 then publish all latest source and release 0.2.0 through the protected GitHub
-flow while resolving the remaining pull requests. Cleanup and documentation
-are complete; the external rollout remains in progress until its actual
-merge, exact-main CI and verified release evidence are recorded.
+flow while resolving the remaining pull requests. All three items are complete.
+
+| Lane 7 publication evidence | Actual result |
+| --- | --- |
+| Protected source merge | [PR 44](https://github.com/EoCiMrEo/Cardchemy/pull/44), source `7f326e833c586d7008b18daf85d3a425623d3e72`; required protection matched and no unresolved review threads |
+| Required CI | [PR run 37395611138](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37395611138) and [exact-main run 37395995321](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37395995321) passed |
+| Signed release | [Workflow 37396275822](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37396275822) passed; the 17-asset signed inventory, source/package/tag bindings and all three Linux/amd64 image signatures verified, including anonymous public downloads/pulls |
+| Public version | [v0.2.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0), published 2026-10-05 operator local date (2026-10-06T01:02:11Z) |
+| Remaining pull requests | Existing PRs 38, 42 and 43 closed |
+| GitHub fresh-clone startup | Eight core services healthy, migration exit 0, head/drift, API readiness and SPA checks passed without source edits |
+
+The [Lane 7 release record](../../.agent/logs/2026-10-05/2026-10-05-lane7-release.md)
+retains verification identities, failures/limits and preservation evidence.
+This publishes the self-hosted project; it does not assert a centralized
+production deployment or a new paid-provider evaluation.
 
 The [visual guide](../diagrams/README.md) describes current system boundaries,
 generation, Knowledge/indexing, source-only Ask, authentication, study, email
@@ -140,8 +153,8 @@ to transient embedding unavailability, not an inference from UI appearance.
 Candidates found through that fallback still use source-ID judgment; Published
 Knowledge browsing/search is a separate local route without an Ask provider call.
 
-No additional accepted implementation plan remains beyond this final release
-item. The retired [product-quality tracker](../archive/PRODUCT-QUALITY-REMEDIATION-PLAN.md)
+No additional accepted implementation plan remains. The retired
+[product-quality tracker](../archive/PRODUCT-QUALITY-REMEDIATION-PLAN.md)
 and [public roadmap](../../ROADMAP.md) retain history and current completion
 status. Future source changes require current-source tests and each
 deployment's own provider, edge, encrypted SMTP and backup/recovery checks.

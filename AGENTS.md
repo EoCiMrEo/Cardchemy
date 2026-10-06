@@ -56,7 +56,7 @@ with separate generation and email workers. Read the canonical docs for detail.
 Current state records Phases 0–11 and Subject Knowledge/RAG Phases 12–21
 complete. Observability/privacy/export/audit are documented
 operator controls; the separate v1.0 operational readiness gate passed.
-Current published version remains 0.1.0; readiness completion did not publish v1.0.
+Current published version is 0.2.0; readiness completion did not publish v1.0.
 Verify their current source and
 limits rather than inferring completion from individual components.
 Follow accepted ADRs; do not invent replacement architecture or expand into

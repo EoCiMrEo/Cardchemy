@@ -52,18 +52,21 @@ application with an online-first study flow.
 Ask AI is configured enabled in the retained local installation (configuration
 rechecked 2026-10-05). Product-quality Lane 6 is **7/7 complete** on
 retained head `20261002_0033`. The operator defined final Lane 7 as repository
-cleanup, current documentation/diagrams and protected 0.2.0 rollout. Cleanup and
-documentation are ready; publication status belongs to [current state](development/CURRENT-STATE.md). See the
+cleanup, current documentation/diagrams and protected 0.2.0 rollout. Lane 7 is
+**3/3 complete**, including [verified public release](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0);
+see [current state](development/CURRENT-STATE.md) and
+[release evidence](../.agent/logs/2026-10-05/2026-10-05-lane7-release.md). See the
 [actual local closure](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md), including independent usefulness,
 source/display, release checks and the limits of controlled browser replay.
 
-The source release candidate is 0.2.0; [current state](development/CURRENT-STATE.md) and dated
+The current published release is 0.2.0; [current state](development/CURRENT-STATE.md) and dated
 [closure evidence](../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md)
 record Phases 0–21 complete, including independently verified public v0.1.0
 publication and Subject Knowledge/RAG closure. The separate v1.0 operational
 readiness gate passed; see
 [gate evidence](../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
-The published version remains 0.1.0; readiness completion did not publish v1.0.
+All approved implementation plans are complete and archived; readiness completion
+did not publish v1.0.
 See [release procedures](ci-cd/RELEASING.md).
 Use the [visual architecture tour](diagrams/README.md) to follow each workflow
 and distinguish Gemini embedding/source judgment from local retrieval/search.

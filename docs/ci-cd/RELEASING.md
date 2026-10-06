@@ -2,10 +2,11 @@
 
 Cardchemy releases use the canonical repository
 [`EoCiMrEo/Cardchemy`](https://github.com/EoCiMrEo/Cardchemy), GitHub Releases
-and GHCR. The first release was **v0.1.0**; the current candidate is **v0.2.0**. This runbook describes the
-procedure; it does not assert that a release has been published. Check the
-[release page](https://github.com/EoCiMrEo/Cardchemy/releases), immutable
-digests and dated release evidence for the actual result.
+and GHCR. The first release was **v0.1.0**; the current verified public release
+is [**v0.2.0**](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0).
+This runbook describes the procedure. Check immutable digests and
+[dated release evidence](../../.agent/logs/2026-10-05/2026-10-05-lane7-release.md)
+for the actual source, signatures, public access and operator waiver.
 
 ## Candidate readiness
 

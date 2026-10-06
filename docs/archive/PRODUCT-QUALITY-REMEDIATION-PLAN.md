@@ -1,6 +1,6 @@
 # Product quality remediation plan
 
-> Historical reference. Retired at the operator's cleanup request on 2026-10-04. On 2026-10-05 the operator defined the final Lane 7 scope as repository cleanup, current documentation/architecture diagrams and protected GitHub rollout with release 0.2.0. The [roadmap](../../ROADMAP.md) and [current state](../development/CURRENT-STATE.md) supersede the older Lane 7 snapshots below. Historical bodies, failures and release limits remain unchanged; consult current release evidence for completion and publication status.
+> Historical reference. Retired at the operator's cleanup request on 2026-10-04. On 2026-10-05 the operator defined and completed final Lane 7: repository cleanup, current documentation/architecture diagrams and protected GitHub rollout with published [release 0.2.0](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0). **Lanes 0–7 are complete; Lane 7 is 3/3, and no active implementation plan remains.** The [Lane 7 release record](../../.agent/logs/2026-10-05/2026-10-05-lane7-release.md), [roadmap](../../ROADMAP.md) and [current state](../development/CURRENT-STATE.md) supersede older incomplete snapshots below. Historical bodies, failures and release limits remain unchanged.
 
 ## Current Lane 6 local closure — 2026-10-04
 
