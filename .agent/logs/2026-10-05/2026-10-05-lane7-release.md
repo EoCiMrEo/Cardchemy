@@ -176,3 +176,27 @@ The post-publication documentation records actual outcomes without replacing the
 immutable signed release source/tag. Future roadmap proposals are not active
 approved implementation plans. No production-server deployment, new paid AI
 evaluation or new measured screen-reader pass is claimed.
+
+## Dependabot advisory boundary discovered during closure
+
+GitHub push reported **three open dependency alerts**. A bounded authenticated
+read confirmed alert 3 for development-only `source-map-js` 1.2.1 in the frontend
+lock, and alerts 1/2 for the same Mako 1.4.1 dependency in the two Python locks.
+Primary advisories were reviewed on 2026-10-05:
+[source-map-js GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
+and [Mako GHSA-5639-2j2p-m4mx](https://github.com/advisories/GHSA-5639-2j2p-m4mx).
+The locked versions fall within their affected ranges. Both advisories were
+updated in the GitHub database on this date; the reason their coverage differs
+from the passing pip/npm/Trivy results was not independently established.
+
+The first concerns processing malicious indexed source maps; this dependency
+is build/development tooling and is absent from the shipped Nginx runtime. The
+second concerns user-controlled template lookup URIs on Windows; released
+images are Linux, and application source has no Mako/template-lookup request
+path. Mako is present through Alembic tooling. These are source-grounded exposure
+observations, not a claim that affected packages are fixed or all future usage
+is safe. The alerts were not dismissed, dependencies were not silently upgraded,
+and no security threshold was weakened. Preserving the approved working runtime
+and immutable release means this closure does not perform a new dependency
+remediation release. All original release gates actually passed; this separate
+known advisory boundary remains explicit.
