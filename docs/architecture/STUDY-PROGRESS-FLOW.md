@@ -88,7 +88,7 @@ See [study progress tests](../../backend/tests/test_study_progress.py),
 [session tests](../../backend/tests/test_study_sessions.py),
 [idempotency tests](../../backend/tests/test_study_idempotency.py),
 [PostgreSQL transaction tests](../../backend/tests/postgres/test_database_integrity.py),
-[testing commands](../TESTING.md) and [backend map](../../backend/MOC.md).
+[testing commands](../development/TESTING.md) and [backend map](../../backend/MOC.md).
 Decisions: [server correctness](../decisions/ADR-002-server-derived-correctness.md),
 [completion/mastery compatibility](../decisions/ADR-003-completion-and-mastery.md),
 [Progress and option order](../decisions/ADR-016-study-progress-and-option-order.md) and

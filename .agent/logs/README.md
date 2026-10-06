@@ -1,5 +1,9 @@
 # Agent Logs
 
+- [2026-10-05 — Lane 7 current architecture, operator waiver and 0.2.0 release](2026-10-05/2026-10-05-lane7-release.md).
+
+- [2026-10-04 — repository cleanup, canonical runtime modules and fresh-clone verification](2026-10-04/2026-10-04-repository-cleanup.md).
+
 - [2026-10-04 — completed self-hosted project GitHub publication and protected checks](2026-10-04/2026-10-04-github-publication.md).
 
 - [2026-10-04 — Lane 6 completed 7/7 and Ask activated locally with retained data](2026-10-03/2026-10-03-lane6-final-closure-and-activation.md).

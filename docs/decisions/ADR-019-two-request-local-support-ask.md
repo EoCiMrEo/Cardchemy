@@ -150,8 +150,8 @@ dependency reproducible and fail closed.
 [ADR-015](ADR-015-ask-pause-and-gemini-catalog.md),
 [ADR-018](ADR-018-gemini-embedding-2-space.md),
 [ADR-022](ADR-022-related-knowledge-primary-ask.md),
-[Ask operations](../ASK_AI_SHUTDOWN.md), [provider guide](../AI_PROVIDERS.md),
-[RAG evaluation](../RAG_EVALUATION.md),
+[Ask operations](../ai/ASK_AI_SHUTDOWN.md), [provider guide](../ai/AI_PROVIDERS.md),
+[RAG evaluation](../ai/RAG_EVALUATION.md),
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md).
 
 Artifact sources:

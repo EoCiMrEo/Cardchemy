@@ -12,7 +12,7 @@ Include the affected release/commit, deployment mode, a synthetic reproduction,
 impact, prerequisite roles and any proposed mitigation. Never submit real
 documents, account information, secrets, cookies, reset/invitation links,
 provider prompts/responses or database backups. Redact logs according to
-[observability guidance](docs/OBSERVABILITY.md).
+[observability guidance](docs/operations/OBSERVABILITY.md).
 
 Maintainers review reports on a best-effort basis, confirm scope, coordinate
 mitigation and agree disclosure timing with the reporter. No guaranteed
@@ -29,18 +29,18 @@ avoid accessing other users' data or disrupting a deployment.
 | Superseded releases | No backport commitment; upgrade |
 | Development `main` | Report reproducible issues; not a stable release guarantee |
 
-[Versioning](docs/VERSIONING.md) and the [changelog](CHANGELOG.md) identify the
+[Versioning](docs/ci-cd/VERSIONING.md) and the [changelog](CHANGELOG.md) identify the
 current version and compatibility policy. Release artifacts are distinct from
 unreleased working-tree changes. A deployment operator must decide whether a
 version and its dependencies are suitable for their audience and data.
 Update this table when the supported release changes; there is no long-term
 support or historical-release backport promise. Verify release checksums and
-keyless signatures using [RELEASING.md](docs/RELEASING.md).
+keyless signatures using [RELEASING.md](docs/ci-cd/RELEASING.md).
 
 ## Deployment responsibilities and boundaries
 
-Follow [deployment](docs/DEPLOYMENT.md), [configuration](docs/CONFIGURATION.md)
-and [privacy](docs/PRIVACY.md). Use HTTPS/secure cookies, private API/database
+Follow [deployment](docs/operations/DEPLOYMENT.md), [configuration](docs/operations/CONFIGURATION.md)
+and [privacy](docs/security/PRIVACY.md). Use HTTPS/secure cookies, private API/database
 ports, encrypted production SMTP, strong independent keys, least-privilege
 process credentials and tested encrypted off-host backups. Preserve worker
 fencing, bounded retries, and conservative ambiguous-email recovery. Keep
@@ -55,6 +55,6 @@ database deletion. Optional aggregate telemetry is disabled by default.
 The audit trail is diagnostic, not tamper-proof. No legal-compliance,
 production-availability or paid-provider guarantee is implied by a passing
 offline test. Manual assistive-technology and deployment release gates remain
-documented in [accessibility](docs/ACCESSIBILITY.md) and the
-[release guide](docs/RELEASING.md); completed evidence is indexed by
+documented in [accessibility](docs/ui/ACCESSIBILITY.md) and the
+[release guide](docs/ci-cd/RELEASING.md); completed evidence is indexed by
 [current state](docs/development/CURRENT-STATE.md).

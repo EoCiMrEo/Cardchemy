@@ -5,7 +5,7 @@ on:
       version:
         description: Reviewed stable version without v
         required: true
-        default: "0.1.0"
+        default: "0.2.0"
         type: string
       source_sha:
         description: Exact reviewed main commit with successful ci-required

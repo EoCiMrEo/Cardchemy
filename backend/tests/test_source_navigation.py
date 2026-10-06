@@ -15,7 +15,7 @@ from app.services.knowledge_retrieval import (
     ExpandedKnowledgeNeighbor, InvalidKnowledgeRetrievalRequest, KnowledgeScopeUnavailable,
     _LEXICAL_ONLY_SQL,
 )
-from tests.test_source_sufficiency import chunk
+from tests.support.rag_sources import chunk
 
 
 def test_navigation_accepts_unclassified_questions_and_resolves_followup_locally():

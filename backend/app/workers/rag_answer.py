@@ -7,7 +7,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, ROUND_CEILING
-import json
 import logging
 import os
 import secrets
@@ -15,7 +14,6 @@ import socket
 from typing import Any, Protocol, Sequence
 from uuid import UUID, uuid4
 
-import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,22 +22,14 @@ from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
 from app.ai.providers import (
     AIProviderError,
     ProviderAttemptScope,
-    _normalize_provider_error,
-    current_attempt_scope,
     provider_attempt_scope,
 )
-from app.ai.rate_limit import ProviderRateGovernor, ProviderRateLimitExceeded
 from app.ai.related_evidence import RelatedExcerptSelection
 from app.ai.related_evidence import _best_window
-from app.ai.source_judgment import (
-    MAX_OUTPUT_TOKENS, SOURCE_ID_PROMPT_VERSION, SourceJudgmentError,
-    build_source_id_request, canonical_bytes, parse_source_id_output,
-)
-from app.ai import source_judgment_visual_v5 as visual_contract
-from app.ai.providers.source_visual_v5 import GeminiVisualSourceJudgeV5
+from app.ai import source_judgment_visual as visual_contract
+from app.ai.providers.source_visual import GeminiVisualSourceJudge, VisualJudgeResponse as _JudgeResponse
 from app.ai.source_navigation import (
-    SOURCE_NAVIGATION_POLICY_ID, navigation_query, navigation_query_v4,
-    navigation_terms, select_navigation_pages,
+    SOURCE_NAVIGATION_POLICY_ID, navigation_terms,
 )
 from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION, Settings, get_settings
 from app.database import async_session_maker
@@ -64,13 +54,13 @@ from app.services.knowledge_retrieval import (
 )
 from app.services.operations import pulse_worker
 from app.services.rag_answers import RagAnswerService
-from app.services.rag_question_context_v2 import (
+from app.services.rag_question_context import (
     HydratedQuestionContext, QuestionContextUnavailable, rehydrate_question_context,
 )
 from app.services.source_visual_preparation import (
     PdfSourceBinding, check_pdf_bindings,
 )
-from app.services.source_visual_preparation_v5 import prepare_visual_sources_v5
+from app.services.source_visual_preparation import prepare_visual_sources
 from app.time_utils import as_utc, utcnow
 from app.workers.shutdown import drain_active_tasks
 
@@ -104,14 +94,9 @@ _SAFE_FAILURE_REASONS = frozenset({
 _LEXICAL_FALLBACK_CATEGORIES = frozenset({
     "embedding_provider_timeout", "embedding_provider_unavailable", "embedding_provider_rate_limited",
 })
-_SOURCE_JUDGE_POLICY = "related_knowledge_navigation_v4"
 _VISUAL_SOURCE_JUDGE_POLICY = "related_knowledge_navigation_v8"
 _SOURCE_JUDGE_ENDPOINT = "https://generativelanguage.googleapis.com"
-_SOURCE_JUDGE_MODEL = "gemini-3.8-flash"
-_SOURCE_JUDGE_MAX_INPUT_TOKENS = 8_192
-_SOURCE_JUDGE_MAX_CANDIDATES = 4
-_SOURCE_JUDGE_INPUT_PRICE = 1_500_000
-_SOURCE_JUDGE_OUTPUT_PRICE = 7_500_000
+_MAX_SOURCE_CANDIDATES = 4
 
 
 def _safe_provider_category(code: str) -> str:
@@ -159,15 +144,6 @@ class _Usage:
 
 
 @dataclass(frozen=True, slots=True)
-class _JudgeResponse:
-    raw_json: str | None
-    finish_reason: str | None
-    input_tokens: int | None
-    candidate_tokens: int | None
-    thinking_tokens: int | None
-
-
-@dataclass(frozen=True, slots=True)
 class _CandidatePool:
     selections: tuple[RelatedExcerptSelection, ...]
     examined_chunks: int
@@ -177,157 +153,6 @@ class _CandidatePool:
 
 class _SourceJudge(Protocol):
     async def judge(self, wire: dict[str, Any]) -> _JudgeResponse: ...
-
-
-def _source_judge_rest_body(wire: dict[str, Any], max_output_tokens: int) -> dict[str, Any]:
-    """The same bounded, current-question-only REST shape as the public pilot."""
-
-    if (type(wire) is not dict or
-        set(wire) != {"system_instruction", "user_payload", "response_schema"} or
-        type(wire["system_instruction"]) is not str or
-        type(wire["user_payload"]) is not dict or
-        set(wire["user_payload"]) != {"question", "candidates"} or
-        type(wire["user_payload"]["question"]) is not str or
-        type(wire["user_payload"]["candidates"]) is not list or
-        not (1 <= max_output_tokens <= MAX_OUTPUT_TOKENS)):
-        raise SourceJudgmentError("wire_input_budget")
-    payload = wire["user_payload"]
-    user_text = "Current question:\n" + payload["question"] + "\nCandidate pages:\n"
-    for candidate in payload["candidates"]:
-        if (type(candidate) is not dict or
-            set(candidate) != {"id", "page", "page_text", "cue"}):
-            raise SourceJudgmentError("wire_input_budget")
-        source_id = candidate["id"]
-        user_text += (f"<{source_id} page={candidate['page']}>\n<page>\n" +
-                      candidate["page_text"] + "\n</page>\n<cue>\n" +
-                      candidate["cue"] + f"\n</cue>\n</{source_id}>\n")
-    body = {
-        "systemInstruction": {"parts": [{"text": wire["system_instruction"]}]},
-        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseJsonSchema": wire["response_schema"],
-            "maxOutputTokens": max_output_tokens,
-            "thinkingConfig": {"thinkingLevel": "low"},
-        },
-        "store": False,
-    }
-    if len(canonical_bytes(body)) > 8_192:
-        raise SourceJudgmentError("wire_input_budget")
-    return body
-
-
-def _source_judge_http_response(response: httpx.Response) -> _JudgeResponse:
-    """Extract only bounded output and usage; never retain an error body."""
-
-    if len(response.content) > 8_192:
-        raise SourceJudgmentError("model_output_invalid")
-    try:
-        payload = response.json()
-    except (TypeError, ValueError, UnicodeError):
-        return _JudgeResponse(None, None, None, None, None)
-    if type(payload) is not dict:
-        return _JudgeResponse(None, None, None, None, None)
-    candidates = payload.get("candidates")
-    candidate = candidates[0] if type(candidates) is list and len(candidates) == 1 else None
-    finish = candidate.get("finishReason") if type(candidate) is dict else None
-    content = candidate.get("content") if type(candidate) is dict else None
-    parts = content.get("parts") if type(content) is dict else None
-    part = parts[0] if type(parts) is list and len(parts) == 1 else None
-    raw = part.get("text") if type(part) is dict else None
-    usage = payload.get("usageMetadata")
-    usage = usage if type(usage) is dict else {}
-    input_tokens = usage.get("promptTokenCount")
-    candidate_tokens = usage.get("candidatesTokenCount")
-    thinking_tokens = usage.get("thoughtsTokenCount", 0)
-    total_tokens = usage.get("totalTokenCount")
-    if (type(input_tokens) is int and input_tokens >= 0 and
-        type(candidate_tokens) is int and candidate_tokens >= 0 and
-        type(thinking_tokens) is int and thinking_tokens >= 0 and
-        type(total_tokens) is int and total_tokens >= input_tokens):
-        thinking_tokens = max(thinking_tokens,
-                              total_tokens - input_tokens - candidate_tokens)
-    return _JudgeResponse(
-        raw if type(raw) is str else None,
-        finish if type(finish) is str else None,
-        input_tokens, candidate_tokens, thinking_tokens,
-    )
-
-
-class _GeminiSourceJudge:
-    """One physical Gemini request; the worker owns the durable attempt fence."""
-
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self._semaphore = asyncio.Semaphore(settings.rag_source_judge_concurrency)
-        self.governor = ProviderRateGovernor(
-            requests_per_minute=settings.rag_source_judge_requests_per_minute,
-            input_tokens_per_minute=settings.rag_source_judge_input_tokens_per_minute,
-            safety_percent=settings.rag_source_judge_rate_limit_safety_percent,
-        )
-
-    def attempt_scope(self):
-        return provider_attempt_scope(self)
-
-    async def judge(self, wire: dict[str, Any]) -> _JudgeResponse:
-        async with self._semaphore:
-            return await self._judge_one(wire)
-
-    async def _judge_one(self, wire: dict[str, Any]) -> _JudgeResponse:
-        key = self.settings.rag_source_judge_api_key_value
-        if not isinstance(key, str) or not key:
-            raise AIProviderError(
-                "ai_provider_not_configured", "The source judge is unavailable.",
-                retryable=False,
-            )
-        body = _source_judge_rest_body(
-            wire, self.settings.rag_source_judge_max_output_tokens,
-        )
-        try:
-            reservation = await self.governor.reserve(
-                self.settings.rag_source_judge_max_input_tokens,
-                operation="source_judgment", attempt=0,
-            )
-        except ProviderRateLimitExceeded as exc:
-            raise AIProviderError(
-                "ai_provider_request_token_limit", "The source judge request exceeds its rate limit.",
-                retryable=False,
-            ) from exc
-        scope = current_attempt_scope(self)
-        if scope is not None:
-            scope.record_request("source_judgment", retry=False,
-                                 waited_seconds=reservation.waited_seconds)
-        try:
-            async with httpx.AsyncClient(
-                timeout=min(30, self.settings.rag_source_judge_provider_timeout_seconds),
-                follow_redirects=False,
-            ) as client:
-                response = await asyncio.wait_for(
-                    client.post(
-                        _SOURCE_JUDGE_ENDPOINT + "/v1beta/models/" +
-                        self.settings.rag_source_judge_model + ":generateContent",
-                        headers={"x-goog-api-key": key,
-                                 "Content-Type": "application/json"},
-                        json=body,
-                    ),
-                    timeout=min(30, self.settings.rag_source_judge_provider_timeout_seconds),
-                )
-                response.raise_for_status()
-        except asyncio.CancelledError:
-            raise
-        except TimeoutError as exc:
-            raise AIProviderError(
-                "ai_provider_timeout", "The source judge timed out.",
-                retryable=False, reason_code="transport_timeout",
-            ) from exc
-        except Exception as exc:
-            # HTTP exception bodies may echo page text; never persist or log them.
-            normalized = _normalize_provider_error(exc)
-            raise AIProviderError(
-                normalized.code, "The source judge is unavailable.",
-                retryable=normalized.retryable, reason_code=normalized.reason_code,
-            ) from exc
-        return _source_judge_http_response(response)
 
 
 def _attempt_usage(
@@ -360,8 +185,8 @@ def _embedding_cost(settings: Settings, input_tokens: int) -> int:
 
 def _judge_cost(
     input_tokens: int, output_tokens: int, *,
-    input_price: int = _SOURCE_JUDGE_INPUT_PRICE,
-    output_price: int = _SOURCE_JUDGE_OUTPUT_PRICE,
+    input_price: int,
+    output_price: int,
 ) -> int:
     value = (
         Decimal(input_tokens) * input_price
@@ -378,16 +203,7 @@ def _strict_tokens(value: object) -> bool:
     return type(value) is int and value >= 0
 
 
-def _candidate_window(page: str, start: int, end: int, *, limit: int) -> str:
-    start_at = max(0, start - min(160, max(0, limit - (end - start))))
-    stop_at = min(len(page), start_at + limit)
-    if stop_at < end:
-        start_at = end - limit
-        stop_at = end
-    return page[start_at:stop_at]
-
-
-async def _v4_candidate_pool(
+async def _source_candidate_pool(
     query: str, chunks: Sequence[RetrievedKnowledgeChunk], retriever: KnowledgeRetriever,
 ) -> _CandidatePool:
     """Bounded current canonical pages, before any local final-page selection."""
@@ -459,33 +275,11 @@ async def _v4_candidate_pool(
         ))
     ranked.sort(key=lambda item: item[:3])
     return _CandidatePool(
-        tuple(item[3] for item in ranked[:_SOURCE_JUDGE_MAX_CANDIDATES]),
+        tuple(item[3] for item in ranked[:_MAX_SOURCE_CANDIDATES]),
         examined_chunks=len(selected),
         examined_pages=len(pages),
         examined_tokens=sum(estimate_tokens(page) for page in pages.values()),
     )
-
-
-def _v4_wire(question: str, selections: Sequence[RelatedExcerptSelection]) -> dict:
-    """Only the current question, issued IDs and exact current page snippets leave."""
-    if not 1 <= len(selections) <= _SOURCE_JUDGE_MAX_CANDIDATES:
-        raise SourceJudgmentError("source_candidate_invalid")
-    for width in (1_000, 700, 480):
-        candidates = [{
-            "id": f"S{index:02d}",
-            "page": selection.source.page_number,
-            "page_text": _candidate_window(
-                selection.page_content or "", selection.start_offset,
-                selection.end_offset, limit=width,
-            ),
-            "cue": selection.quote,
-        } for index, selection in enumerate(selections, 1)]
-        try:
-            return build_source_id_request(question, candidates)
-        except SourceJudgmentError as exc:
-            if str(exc) != "wire_input_budget":
-                raise
-    raise SourceJudgmentError("wire_input_budget")
 
 
 class RagAnswerWorker:
@@ -519,11 +313,7 @@ class RagAnswerWorker:
     @property
     def source_judge(self) -> _SourceJudge:
         if self._source_judge is None:
-            self._source_judge = (
-                GeminiVisualSourceJudgeV5(self.settings)
-                if self.settings.rag_source_judge_contract_version == visual_contract.CONTRACT_VERSION
-                else _GeminiSourceJudge(self.settings)
-            )
+            self._source_judge = GeminiVisualSourceJudge(self.settings)
         return self._source_judge
 
     async def run(self, stop_event: asyncio.Event) -> None:
@@ -630,36 +420,7 @@ class RagAnswerWorker:
                 and job.source_judge_max_output_tokens == self.settings.rag_source_judge_max_output_tokens == visual_contract.MAX_OUTPUT_TOKENS
                 and self.settings.rag_source_judge_provider_max_retries == 0
             )
-        if job.answer_policy_version == _SOURCE_JUDGE_POLICY:
-            return (
-                ASK_REQUIRED_RELEASE_POLICY_VERSION == _SOURCE_JUDGE_POLICY
-                and self.settings.rag_answer_available
-                and getattr(self.settings, "rag_source_judge_provider_enabled", False) is True
-                and job.source_judge_provider == self.settings.rag_source_judge_provider == "gemini"
-                and job.source_judge_base_url == self.settings.rag_source_judge_endpoint_identity == _SOURCE_JUDGE_ENDPOINT
-                and job.source_judge_model == self.settings.rag_source_judge_model == _SOURCE_JUDGE_MODEL
-                and job.source_judge_contract_version == self.settings.rag_source_judge_contract_version == SOURCE_ID_PROMPT_VERSION
-                and job.source_judge_input_price_microusd_per_million == _judge_price_snapshot(
-                    self.settings.rag_source_judge_input_cost_per_million_usd
-                )
-                and job.source_judge_input_price_microusd_per_million >= _SOURCE_JUDGE_INPUT_PRICE
-                and job.source_judge_output_price_microusd_per_million == _judge_price_snapshot(
-                    self.settings.rag_source_judge_output_cost_per_million_usd
-                )
-                and job.source_judge_output_price_microusd_per_million >= _SOURCE_JUDGE_OUTPUT_PRICE
-                and job.source_judge_max_input_tokens == self.settings.rag_source_judge_max_input_tokens
-                and 1 <= job.source_judge_max_input_tokens <= _SOURCE_JUDGE_MAX_INPUT_TOKENS
-                and job.source_judge_max_output_tokens == self.settings.rag_source_judge_max_output_tokens
-                and 1 <= job.source_judge_max_output_tokens <= MAX_OUTPUT_TOKENS
-                and self.settings.rag_source_judge_provider_max_retries == 0
-            )
-        return (
-            job.answer_policy_version == ASK_REQUIRED_RELEASE_POLICY_VERSION
-            and job.source_judge_provider is None
-            and job.source_judge_base_url is None
-            and job.source_judge_model is None
-            and job.source_judge_contract_version is None
-        )
+        return False
 
     async def claim_next(self) -> tuple[UUID, str] | None:
         if not self.settings.rag_answer_available:
@@ -842,29 +603,6 @@ class RagAnswerWorker:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
-    async def _bounded_history(
-        self, db: AsyncSession, job: RagAnswerJob, user: User
-    ) -> tuple[tuple[str, str], ...]:
-        history = await self.history_service.history(
-            db,
-            subject_id=job.subject_id,
-            thread_id=job.thread_id,
-            user=user,
-            limit=min(200, self.settings.rag_answer_max_history_messages + 1),
-        )
-        selected: list[tuple[str, str]] = []
-        used = 0
-        for message in reversed(history.messages):
-            if message.id == job.question_message_id or message.hidden or message.content is None:
-                continue
-            tokens = estimate_tokens(message.content)
-            if used + tokens > self.settings.rag_answer_history_token_limit:
-                continue
-            selected.append((message.role, message.content))
-            used += tokens
-            if len(selected) == self.settings.rag_answer_max_history_messages:
-                break
-        return tuple(reversed(selected))
 
     async def _question_context(
         self, db: AsyncSession, job: RagAnswerJob, *,
@@ -909,17 +647,10 @@ class RagAnswerWorker:
                 raise AnswerCorpusChanged()
             if retriever.scope.embedding_space_hash not in (None, job.embedding_space_hash):
                 raise AnswerCorpusChanged()
-            visual = job.answer_policy_version == _VISUAL_SOURCE_JUDGE_POLICY
-            v4 = job.answer_policy_version in {_SOURCE_JUDGE_POLICY, _VISUAL_SOURCE_JUDGE_POLICY}
-            if visual:
-                context = await self._question_context(db, job)
-                if context.question != question.content:
-                    raise AnswerQuestionContextChanged()
-                local_query = None if context.needs_clarification else context.local_query
-            else:
-                history = await self._bounded_history(db, job, user)
-                local_query = (navigation_query_v4(question.content, history) if v4
-                               else navigation_query(question.content, history))
+            context = await self._question_context(db, job)
+            if context.question != question.content:
+                raise AnswerQuestionContextChanged()
+            local_query = None if context.needs_clarification else context.local_query
 
         # An unresolved referent is not sent to the provider or guessed from
         # unrelated vector matches. It is a terminal, source-free no_match.
@@ -931,7 +662,7 @@ class RagAnswerWorker:
             })
             await self._complete_source(
                 job_id, token, selections=(),
-                clarification_needed=v4 and local_query is None,
+                clarification_needed=local_query is None,
             )
             return
 
@@ -1020,30 +751,13 @@ class RagAnswerWorker:
                     embedding_response.vectors[0], embedding_space_hash=job.embedding_space_hash,
                 ) if embedding_response is not None else await retriever.retrieve_lexical())
                 if not result.insufficient:
-                    if v4:
-                        pool = await _v4_candidate_pool(local_query, result.chunks, retriever)
-                        selections = pool.selections
-                        selection_status = "candidate_pool" if selections else "no_candidate"
-                        selection_examined = pool.examined_chunks
-                        selection_pages = pool.examined_pages
-                        selection_tokens = pool.examined_tokens
-                        neighbor_radius = 2
-                    else:
-                        assessment, neighbor_radius = await select_navigation_pages(
-                            local_query, result.chunks,
-                            lambda anchors, radius, max_chunks, max_pages, max_tokens: retriever.expand_source_neighbors(
-                                anchors, radius=radius, max_chunks=max_chunks,
-                                max_pages=max_pages, max_tokens=max_tokens,
-                            ),
-                            load_pages=lambda chunk_ids, max_pages, max_tokens: retriever.read_current_source_pages(
-                                chunk_ids, max_pages=max_pages, max_tokens=max_tokens,
-                            ),
-                        )
-                        selections = assessment.selections
-                        selection_status = assessment.status
-                        selection_examined = assessment.examined_chunks
-                        selection_pages = assessment.examined_pages
-                        selection_tokens = assessment.examined_tokens
+                    pool = await _source_candidate_pool(local_query, result.chunks, retriever)
+                    selections = pool.selections
+                    selection_status = "candidate_pool" if selections else "no_candidate"
+                    selection_examined = pool.examined_chunks
+                    selection_pages = pool.examined_pages
+                    selection_tokens = pool.examined_tokens
+                    neighbor_radius = 2
         except AnswerAccessRevoked:
             retrieval_error = "rag_access_revoked"
             raise
@@ -1087,19 +801,12 @@ class RagAnswerWorker:
         })
         pdf_bindings: tuple[PdfSourceBinding, ...] = ()
         clarification_needed = False
-        if visual and selections:
+        if selections:
             selections, clarification_needed, pdf_bindings = await self._judge_visual_sources(
                 job_id, token, question.content, selections,
             )
-        elif v4 and selections:
-            selections = await self._judge_sources(
-                job_id, token, question.content, selections,
-            )
-        if visual:
-            await self._complete_source(job_id, token, selections=selections,
-                                        clarification_needed=clarification_needed, pdf_bindings=pdf_bindings)
-        else:
-            await self._complete_source(job_id, token, selections=selections)
+        await self._complete_source(job_id, token, selections=selections,
+                                    clarification_needed=clarification_needed, pdf_bindings=pdf_bindings)
 
     async def _mark_provider_boundary(self, job_id: UUID, token: str) -> None:
         async with self.session_factory() as db:
@@ -1145,8 +852,7 @@ class RagAnswerWorker:
                 job = await self._claimed_job(db, job_id, token, for_update=True)
                 if (not self._profile_matches(job)
                     or stage not in {"query_embedding", "retrieval", "source_judgment"}
-                    or stage == "source_judgment" and job.answer_policy_version not in {
-                        _SOURCE_JUDGE_POLICY, _VISUAL_SOURCE_JUDGE_POLICY}):
+                    or stage == "source_judgment" and job.answer_policy_version != _VISUAL_SOURCE_JUDGE_POLICY):
                     raise AnswerProfileMismatch()
                 if stage == "query_embedding":
                     if job.answer_policy_version == _VISUAL_SOURCE_JUDGE_POLICY:
@@ -1193,7 +899,7 @@ class RagAnswerWorker:
                         RagAnswerStageAttempt.error_category.is_(None),
                     ).limit(1))
                     if (prior is not None or retrieval is None
-                        or not 1 <= len(judge_selections) <= _SOURCE_JUDGE_MAX_CANDIDATES
+                        or not 1 <= len(judge_selections) <= _MAX_SOURCE_CANDIDATES
                         or job.estimated_cost_microusd is None
                         or job.attempt_cost_microusd + _judge_cost(
                             job.source_judge_max_input_tokens,
@@ -1240,7 +946,7 @@ class RagAnswerWorker:
         current = await retriever.read_current_sources(tuple(item.source.chunk_id for item in selections))
         by_id = {source.chunk_id: source for source in current}
         pages = await retriever.read_current_source_pages(
-            tuple(by_id), max_pages=_SOURCE_JUDGE_MAX_CANDIDATES, max_tokens=8_192,
+            tuple(by_id), max_pages=_MAX_SOURCE_CANDIDATES, max_tokens=8_192,
         )
         if len(by_id) != len(selections) or len(pages) != len(selections):
             raise AnswerCorpusChanged()
@@ -1315,7 +1021,7 @@ class RagAnswerWorker:
             context = await self._question_context(db, job)
             if context.question != question or context.needs_clarification:
                 raise AnswerQuestionContextChanged()
-            prepared = await prepare_visual_sources_v5(
+            prepared = await prepare_visual_sources(
                 db, settings=self.settings, retriever=retriever, subject_id=job.subject_id,
                 question=question, selections=candidates,
                 snapshot=context.snapshot, checked_at=utcnow(),
@@ -1337,7 +1043,7 @@ class RagAnswerWorker:
                     )
 
                 call = (self.source_judge.judge(prepared.request, before_dispatch=before_dispatch)
-                        if isinstance(self.source_judge, GeminiVisualSourceJudgeV5)
+                        if isinstance(self.source_judge, GeminiVisualSourceJudge)
                         else self.source_judge.judge(prepared.request))
                 response = await asyncio.wait_for(
                     call,
@@ -1389,92 +1095,6 @@ class RagAnswerWorker:
         return (tuple(by_id[sid] for sid in verdict["selected_ids"]),
                 verdict["question_status"] == "needs_clarification", prepared.bindings)
 
-    async def _judge_sources(
-        self, job_id: UUID, token: str, question: str,
-        candidates: Sequence[RelatedExcerptSelection],
-    ) -> tuple[RelatedExcerptSelection, ...]:
-        wire = _v4_wire(question, candidates)
-        _source_judge_rest_body(wire, self.settings.rag_source_judge_max_output_tokens)
-        if estimate_tokens(wire["system_instruction"] + json.dumps(
-            wire["user_payload"], sort_keys=True, separators=(",", ":"), ensure_ascii=True,
-        )) > self.settings.rag_source_judge_max_input_tokens:
-            raise SourceJudgmentError("wire_input_budget")
-        stage_id = await self._begin_stage(
-            job_id, token, "source_judgment", remote=True,
-            judge_selections=candidates,
-        )
-        response: _JudgeResponse | None = None
-        category: str | None = None
-        reason: str | None = None
-        finish: str | None = None
-        selected: tuple[str, ...] | None = None
-        async with provider_attempt_scope(self.source_judge) as scope:
-            try:
-                response = await asyncio.wait_for(
-                    self.source_judge.judge(wire),
-                    timeout=self.settings.rag_source_judge_provider_timeout_seconds,
-                )
-                finish = response.finish_reason
-                if (not _strict_tokens(response.input_tokens)
-                    or not _strict_tokens(response.candidate_tokens)
-                    or not _strict_tokens(response.thinking_tokens)):
-                    raise SourceJudgmentError("usage_unknown")
-                output_tokens = response.candidate_tokens + response.thinking_tokens
-                if (response.input_tokens > self.settings.rag_source_judge_max_input_tokens
-                    or output_tokens > self.settings.rag_source_judge_max_output_tokens):
-                    raise SourceJudgmentError("usage_over_budget")
-                if finish != "STOP":
-                    raise SourceJudgmentError("output_unfinished")
-                ids = [item["id"] for item in wire["user_payload"]["candidates"]]
-                selected = parse_source_id_output(response.raw_json, ids)
-            except AIProviderError as exc:
-                category = _safe_provider_category(exc.code)
-                reason = _safe_failure_reason(exc.reason_code)
-                raise
-            except TimeoutError:
-                category = "ai_provider_timeout"
-                reason = "transport_timeout"
-                raise
-            except SourceJudgmentError as exc:
-                category = "invalid_ai_output"
-                reason = "output_unfinished" if str(exc) == "output_unfinished" else "schema_invalid"
-                raise
-            except BaseException:
-                category = "ai_provider_unavailable"
-                reason = "sdk_unclassified"
-                raise
-            finally:
-                requests, retries, waited = _attempt_usage(
-                    scope, self.source_judge, "source_judgment",
-                )
-                known_usage = (
-                    response is not None and _strict_tokens(response.input_tokens)
-                    and _strict_tokens(response.candidate_tokens)
-                    and _strict_tokens(response.thinking_tokens)
-                )
-                usage = _Usage(
-                    request_count=requests, retry_count=retries, waited_ms=waited,
-                    estimated=not known_usage, has_usage=known_usage,
-                )
-                if known_usage:
-                    usage.input_tokens = response.input_tokens
-                    usage.output_tokens = response.candidate_tokens + response.thinking_tokens
-                    usage.cost_microusd = _judge_cost(
-                        usage.input_tokens, usage.output_tokens,
-                        input_price=_judge_price_snapshot(
-                            self.settings.rag_source_judge_input_cost_per_million_usd),
-                        output_price=_judge_price_snapshot(
-                            self.settings.rag_source_judge_output_cost_per_million_usd),
-                    )
-                await self._finish_stage(
-                    job_id, token, stage_id, usage, category,
-                    uncertain=category is not None and requests > 0,
-                    failure_reason=reason, finish_reason=finish,
-                )
-        if requests != 1 or retries != 0 or selected is None:
-            raise AnswerProfileMismatch()
-        by_id = {f"S{index:02d}": item for index, item in enumerate(candidates, 1)}
-        return tuple(by_id[item] for item in selected)
 
     async def _finish_stage(
         self,
@@ -1550,8 +1170,7 @@ class RagAnswerWorker:
                 job = await self._claimed_job(db, job_id, token, for_update=True)
                 if not self._profile_matches(job):
                     raise AnswerProfileMismatch()
-                if clarification_needed and job.answer_policy_version not in {
-                    _SOURCE_JUDGE_POLICY, _VISUAL_SOURCE_JUDGE_POLICY}:
+                if clarification_needed and job.answer_policy_version != _VISUAL_SOURCE_JUDGE_POLICY:
                     raise AnswerProfileMismatch()
                 if not await self._session_active(db, job, for_update=True):
                     raise AnswerAccessRevoked()

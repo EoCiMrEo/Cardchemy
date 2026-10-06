@@ -1,77 +1,6 @@
 # System Overview
 
-## Current local Lane 6 closure — 2026-10-04
-
-The local source-only v8/visual-v5/admission-v2 installation on head `0033`
-is enabled after its measured quality, PDF/display and release gates. Fresh
-installations remain default-off. See the
-[closure and activation evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
-checkpoints below remain historical snapshots; the linked closure supersedes
-their off/pending status, while default-off and upgrade safeguards still apply.
-
-## Current dormant v8 — 2026-10-03
-
-Source and retained head are `20261002_0033` after a restore-verified forward
-migration and retained heads/drift checks. The matching new-job pair is
-v8/visual-v5/admission-v2. Ask remains disabled; service verification, private
-original-PDF displayed-source and release gates remain separate. Public heldout
-passed with 94/99 useful displayed cards; it does not authorize private egress.
-
-The path stays source-only: one unchanged current-question embedding, one
-issued-ID judgment, 0–3 unverified exact PDF page references and no generated
-answer, verifier or automatic retry. The clarity repair permits an ordinary
-lexical learning use of `ignore`; it is not semantic instruction classification.
-Conservative cue repair discards a non-useful page instead of promoting it.
-Literal prior-subject eligibility and immutable access/revision checks remain.
-Historical v7 jobs stay readable but cannot execute or retry under v8. See
-[ADR-024](../decisions/ADR-024-gemini-source-id-judge.md) and the
-[independent runtime checks](../../.agent/logs/2026-10-03/2026-10-03-v8-runtime-independent-boundary-review.md).
-The dated sections below preserve earlier snapshots.
-
-## Historical dormant retained v7 — 2026-10-02
-
-Checkout head `0032` adds immutable admission context for `visual_source_id_v3`.
-Only an unresolved follow-up may use a unique literal subject from its strictly
-preceding user message; the query embedding remains the raw current question.
-The source judge receives that bounded literal subject rather than the preceding
-question or full history. Permission, revision, lease and context checks also run
-after quota waits and before atomic reference persistence. One source-ID call,
-zero answer/verifier calls and zero automatic retries remain the contract.
-The retained installation is now v7/0032 after a restore-verified forward
-cutover; matching services are healthy, with Ask and source judging off.
-The effective source-judge deadline is 120 seconds. See
-[current cutover and checks](../../.agent/logs/2026-10-02/2026-10-02-v7-retained-cutover-and-release-recheck.md)
-and [PostgreSQL repair](../../.agent/logs/2026-10-02/2026-10-02-v7-postgresql-uuid-repair.md).
-Earlier dated sections describe historical snapshots.
-
-## Historical dormant visual Ask contract — 2026-10-01
-
-Source and retained schema are `20261001_0031`; matching application services
-are healthy after a restore-verified forward cutover, with data, original PDFs
-and root `.env` preserved. Ask and source judging remain disabled. The
-`related_knowledge_navigation_v6` / `hybrid_source_navigation_v9` path uses
-`visual_source_id_v2`, Gemini 3.5 Flash-Lite HIGH, 32,768 input / 4,096 output
-including thinking and a 60-second provider deadline. It allows at most one
-current-question embedding and one issued-ID/category-only judgment, zero
-answer/verifier calls and zero automatic provider retries. Full-page PNGs are
-bounded to 1 MiB/2 MP/1,600 pixels; definitive oversize alone permits bounded
-1,400/1,200/1,000 scale reduction within one 30-second page deadline.
-
-Complete public calibration passed with 89.32% useful displayed cards.
-Independent different-PDF/private usefulness and release gates remain open:
-the prospective target is 80% displayed usefulness, at least 10/12 ordinary
-no-match controls and the existing hit/availability gates. Fabricated,
-unauthorized, stale or wrong-page references still require zero. Installed
-0030 and historical v5/visual-v1 2,048-token snapshots remain immutable and
-readable; they cannot execute or manually retry as v6.
-
-See the [current verification record](../../.agent/logs/2026-10-01/2026-10-01-visual-v6-matching-contract-and-backup.md).
-Earlier dated v4/v5 details below describe retained history where they differ.
-
-
-Current source layout, updated for the 2026-10-03 dormant v8 visual Ask cutover.
-The new path remains behind its release fence. Read
-[orientation](../00-START-HERE.md) and the [project map](../../PROJECT-MAP.md) first.
+Current source-only Ask uses `related_knowledge_navigation_v8`, `visual_source_id_v5` and `literal_subject_admission_v2` at Alembic head `20261002_0033`. Fresh installations remain default-off. The retained local installation was enabled after its measured release gates on 2026-10-04; see the [closure evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Historical policies and database rows remain immutable and readable; they cannot execute as new jobs.
 
 ## Purpose and scope
 
@@ -131,13 +60,13 @@ answer receipt atomically. Read [study/progress](STUDY-PROGRESS-FLOW.md).
 enqueue in the initiating database transaction. The email worker renders the
 message and performs SMTP outside the request transaction. A post-send crash
 can be ambiguous, so automatic delivery cannot promise exactly once. Read
-[auth](AUTH-FLOW.md) and [email delivery](../EMAIL_DELIVERY.md).
+[auth](AUTH-FLOW.md) and [email delivery](../mail-server/EMAIL_DELIVERY.md).
 
 **Subject Knowledge and Ask AI:** PostgreSQL stores private documents,
 content/pages, index revisions/chunks/vectors, capacity counters and durable
 index/Ask jobs. The index worker continues to embed Knowledge. The new Ask
 path in this checkout is separately default-off: at most one current-question
-query embedding, authorized retrieval, one prospective bounded source-ID
+query embedding, authorized retrieval, at most one bounded source-ID
 judgment and up to three locally derived exact, page-labeled related excerpts.
 The approved ADR-023/024 navigation contracts label all references
 as unverified and open the corresponding original lecture PDF page in a lazy
@@ -148,8 +77,7 @@ It creates no generated or verified answer. Admission needs a matching
 Subject active space, current embedding and source-judge prices, and the
 source-window/access release gate; existing private history remains readable until the approved
 development data reset. Embedding 001 remains default while model 2 is an
-isolated optional staged space. The retained local schema is at `0033` with Ask
-disabled; every installation must verify matching services and its own cutover.
+isolated optional staged space. The retained local schema is at `0033` with Ask enabled; every installation must verify matching services and its own cutover.
 See [ADR-023](../decisions/ADR-023-original-pdf-source-navigation.md)
 and [ADR-024](../decisions/ADR-024-gemini-source-id-judge.md).
 An independent enrolled-student Published Knowledge route lists current
@@ -198,8 +126,8 @@ operator review. These contracts are explained in the deeper flow/operation docs
 
 The API and workers use closed structured logs, server-issued correlation,
 safe centralized errors, PostgreSQL request/worker metrics and transactional
-privileged audits. [Observability](../OBSERVABILITY.md) describes diagnostic
-limits and explicitly triggered optional reporting. [Privacy](../PRIVACY.md)
+privileged audits. [Observability](../operations/OBSERVABILITY.md) describes diagnostic
+limits and explicitly triggered optional reporting. [Privacy](../security/PRIVACY.md)
 owns provider disclosures and operator-mediated export/deletion/metadata
 retention. A live production installation and deployment-specific legal
 compliance remain separate from these implemented controls. See
@@ -228,5 +156,5 @@ compliance remain separate from these implemented controls. See
 The [Knowledge flow](SUBJECT-KNOWLEDGE-FLOW.md) distinguishes the schema
 foundation from later upload, indexing, retrieval and conversation work.
 Continue with [data model](DATA-MODEL.md), [backend MOC](../../backend/MOC.md),
-[frontend MOC](../../frontend/MOC.md), [configuration](../CONFIGURATION.md)
-or [deployment](../DEPLOYMENT.md).
+[frontend MOC](../../frontend/MOC.md), [configuration](../operations/CONFIGURATION.md)
+or [deployment](../operations/DEPLOYMENT.md).

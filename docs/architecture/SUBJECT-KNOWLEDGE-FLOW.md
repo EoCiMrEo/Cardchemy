@@ -1,90 +1,6 @@
 # Subject Knowledge data boundary and lifecycle
 
-## Current local Lane 6 closure — 2026-10-04
-
-The local source-only v8/visual-v5/admission-v2 installation on head `0033`
-is enabled after its measured quality, PDF/display and release gates. Fresh
-installations remain default-off. See the
-[closure and activation evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
-checkpoints below remain historical snapshots; the linked closure supersedes
-their off/pending status, while default-off and upgrade safeguards still apply.
-
-## Current dormant v8 — 2026-10-03
-
-Source and retained schema reached `20261002_0033` after a restore-verified
-forward migration and retained heads/drift checks. The exact new-job pair is
-`related_knowledge_navigation_v8` / `visual_source_id_v5`, with immutable
-`literal_subject_admission_v2` admission. Ask stays off. Public heldout passed
-with 94/99 useful displayed cards; matching-service, private original-PDF
-displayed-source/access and final release gates remain separate.
-
-The current question alone is embedded. One source-ID judgment may receive
-bounded authorized page text/PNGs and, only for an unresolved follow-up, the
-same uniquely bound literal preceding-user subject. No full history, assistant
-text, answer/verifier or automatic retry is added. Current-question clarity
-handles ordinary lexical `ignore` without semantic instruction classification;
-the parser discards weak-page cue conflicts and never promotes those pages.
-Every expensive boundary and completion rechecks admission, authorization and
-revision. Historical v7 contracts remain readable and cannot execute or retry
-under v8. See [ADR-024](../decisions/ADR-024-gemini-source-id-judge.md) and
-[independent boundaries](../../.agent/logs/2026-10-03/2026-10-03-v8-runtime-independent-boundary-review.md).
-The dated sections below preserve earlier snapshots.
-
-## Historical dormant retained v7 — 2026-10-02
-
-Source head `0032` binds each new source-only job to its current question and,
-only for an unresolved follow-up, the strictly preceding user turn. Admission
-stores identities, timestamps, hashes and literal offsets without copying chat
-text. Every expensive boundary and atomic completion rehydrates this binding;
-later queued turns never change its meaning. The raw current question alone is
-embedded. At most one source-ID judgment may receive a bounded exact subject,
-with no full history, generated answer or verifier. Source reads retain all
-Subject/publication/revision/space checks. The retained installation now has
-matching v7/0032 services after a restore-verified forward cutover, with Ask
-and source judging off. See [current cutover and checks](../../.agent/logs/2026-10-02/2026-10-02-v7-retained-cutover-and-release-recheck.md)
-and [PostgreSQL evidence](../../.agent/logs/2026-10-02/2026-10-02-v7-postgresql-uuid-repair.md).
-Earlier dated sections describe historical snapshots.
-
-## Historical dormant visual Ask contract — 2026-10-01
-
-Source and retained schema are `20261001_0031`; matching application services
-are healthy after a restore-verified forward cutover, with data, original PDFs
-and root `.env` preserved. Ask and source judging remain disabled. The
-`related_knowledge_navigation_v6` / `hybrid_source_navigation_v9` path uses
-`visual_source_id_v2`, Gemini 3.5 Flash-Lite HIGH, 32,768 input / 4,096 output
-including thinking and a 60-second provider deadline. It allows at most one
-current-question embedding and one issued-ID/category-only judgment, zero
-answer/verifier calls and zero automatic provider retries. Full-page PNGs are
-bounded to 1 MiB/2 MP/1,600 pixels; definitive oversize alone permits bounded
-1,400/1,200/1,000 scale reduction within one 30-second page deadline.
-
-Complete public calibration passed with 89.32% useful displayed cards.
-Independent different-PDF/private usefulness and release gates remain open:
-the prospective target is 80% displayed usefulness, at least 10/12 ordinary
-no-match controls and the existing hit/availability gates. Fabricated,
-unauthorized, stale or wrong-page references still require zero. Installed
-0030 and historical v5/visual-v1 2,048-token snapshots remain immutable and
-readable; they cannot execute or manually retry as v6.
-
-See the [current verification record](../../.agent/logs/2026-10-01/2026-10-01-visual-v6-matching-contract-and-backup.md).
-Earlier dated v4/v5 details below describe retained history where they differ.
-
-
-This records the implemented Subject-scoped Knowledge architecture through the
-Phase 20/21 technical closure. [ADR-012](../decisions/ADR-012-subject-knowledge-and-rag-boundaries.md)
-owns the core boundaries, [ADR-017](../decisions/ADR-017-repeat-knowledge-upload-choice.md)
-owns exact-byte repeat uploads, and [current state](../development/CURRENT-STATE.md) owns
-shipped status. The [archived implementation plan](<../archive/Cardchemy-Subject-Scoped RAG Implementation Plan.md>)
-retains completed phase tasks. Capture, indexing, internal retrieval,
-private durable Ask APIs/workers, the Knowledge/Ask AI UI and deterministic
-retrieval/evaluation foundations are implemented.
-A table's existence alone grants no student access or provider-call permission.
-Ask is separately default-off from Knowledge. The approved new-job path is
-[source-only original-PDF navigation ADR-023](../decisions/ADR-023-original-pdf-source-navigation.md);
-the [two-request/local-support decision](../decisions/ADR-019-two-request-local-support-ask.md)
-is historical and old snapshots remain terminally fenced. Knowledge capture,
-indexing, review, publication and authorized private
-history/source reads retain their own gates.
+Current source-only Ask uses `related_knowledge_navigation_v8`, `visual_source_id_v5` and `literal_subject_admission_v2` at Alembic head `20261002_0033`. Fresh installations remain default-off. The retained local installation was enabled after its measured release gates on 2026-10-04; see the [closure evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Historical policies and database rows remain immutable and readable; they cannot execute as new jobs.
 
 ## Ownership and state
 
@@ -125,7 +41,7 @@ later asynchronous worker claim.
 
 The generation, indexing and Ask workers use separate
 PostgreSQL queues, leases and credentials. An index worker needs only the
-document-embedding profile; an enabled v4 source-only Ask worker needs the
+document-embedding profile; an enabled v8 source-only Ask worker needs the
 query-embedding and separate Gemini source-judge profiles with worker-only
 credentials. The generation worker needs only its flashcard profile. Historical
 answer-model settings describe fenced old jobs. API, email
@@ -239,9 +155,9 @@ delete and citation-source reads around that boundary.
 Lane 6's historical navigation-v3 jobs snapshot
 `hybrid_source_navigation_v9`. The provider-free `source_navigation_v9`
 selector ranks exact canonical cues using topic overlap, section and search
-ranks, and inspects eligible neighbor pages up to ±2 before local selection.
+ranks, and inspects eligible neighbor pages up to Â±2 before local selection.
 Historical source head `0029` admitted the separate dormant v4/v9 pair. Current
-head `20261002_0033` admits dormant visual v8/v9 while preserving earlier pairs. The same
+head `20261002_0033` admits released visual v8/v9 while preserving earlier pairs. The same
 authorized candidate paths inspect at most 30 chunks, 12 pages and 8,192
 estimated tokens, then a bounded slate of at most four current canonical
 pages may be judged. V8 authenticates each complete current original PDF archive
@@ -253,7 +169,7 @@ presence and either selection method are not proof of useful displayed pages.
 A transient embedding failure may use bounded local lexical SQL with the same
 current-access and revision predicates, without another embedding request.
 Results disclose `hybrid`, `lexical_fallback` or `not_searched`; unknown spend
-stays unknown. Earlier v3–v7 relation-qualification experiments remain
+stays unknown. Earlier v3â€“v7 relation-qualification experiments remain
 historical and are not executable new-job policies. Their measured failures
 motivated [ADR-023](../decisions/ADR-023-original-pdf-source-navigation.md).
 
@@ -266,20 +182,19 @@ owner/enrollment, publication, revision and space filters inside both SQL paths.
 
 ## Subject Ask AI execution and default-off gate
 
-The prospective new Ask path follows
+The released new Ask path follows
 [ADR-023](../decisions/ADR-023-original-pdf-source-navigation.md) and its
 [ADR-024 source-ID amendment](../decisions/ADR-024-gemini-source-id-judge.md).
-`RAG_ASK_ENABLED` remains default off while source-only displayed-window,
-authorization and release checks remain open. A new Subject can still upload
+`RAG_ASK_ENABLED` remains default off for fresh installations. Installation
+enablement requires explicit Ask/judge flags and measured source/access/release gates. A new Subject can still upload
 and index Knowledge before it has an active space. New Ask admission requires
 RAG, configured query embedding and source judge roles with current nonzero
 prices, a matching Subject active space and the
-`related_knowledge_navigation_v8` release policy. The current code's runtime
-release fence blocks that policy, so the following describes dormant behavior,
-not an enabled installation. It does not require an answer-model profile or a
+`related_knowledge_navigation_v8` release policy. The current source fence permits that policy while installation flags and
+profile/space validation remain authoritative. It does not require an answer-model profile or a
 local NLI/QA bundle. Existing
 authorized users may read private history and currently eligible sources and
-cancel work while Ask is disabled. The [maintenance runbook](../ASK_AI_SHUTDOWN.md)
+cancel work while Ask is disabled. The [maintenance runbook](../ai/ASK_AI_SHUTDOWN.md)
 defines old-job resolution, enablement, rollback and monitoring.
 
 The API admits a private, Subject-bound question under the current user session,
@@ -323,133 +238,23 @@ the UI may show extracted text with an explicit unavailable-original label. A
 manual retry separately discloses possible additional embedding and judgment
 cost and unknown prior spend. The source-only schema and code are present in this checkout;
 the v7 sufficiency gate failed and was superseded by ADR-023 navigation.
-Complete public calibration and independent public heldout passed; private
-original-PDF usefulness and release gates remain open. The retained installation
-reached source head `20261002_0033` after restore-verified forward migration,
-but Ask and source judging remain disabled and matching-service verification
-remains required. Its current visual-v5 output cap is 4,096 tokens including
-thinking, with a 120-second provider deadline. Historical v5/v7 and 2,048-token
-job snapshots remain immutable and cannot execute as v8.
-Neither technical slice authorizes paid indexing, private Knowledge transfer
-or Ask activation.
+Complete public and independent private source/display gates passed for the
+retained local activation on 2026-10-04; see the [closure](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md).
+The source judge uses at most 32,768 input / 4,096 thinking-inclusive output
+tokens and a 120-second provider deadline. Historical policy snapshots stay
+readable but cannot execute or retry as v8. New live evaluations require their
+own explicit provider and private-transfer authorization.
 
-### Historical answer execution and fallback
+### Historical answer rows
 
-The paragraphs below describe the old two-request/local-support policy and
-ADR-021 fallback for historical jobs and migration analysis. They do **not**
-define a path to enable new answer-generating Ask work.
-
-An authenticated owner or enrolled student creates a private thread under one
-Subject. Instructors do not inherit student conversation access. Question
-admission holds a PostgreSQL advisory lock, validates a hashed idempotency key
-and payload fingerprint, reserves both question and future-answer storage,
-checks per-user and deployment thread/message storage plus active/queue/daily
-limits, authorizes every selected
-document, and snapshots the current corpus/embedding/provider/session state plus
-catalog, answer-policy and support-policy versions.
-The API never calls a provider and receives no provider credential.
-
-The answer worker claims FIFO jobs with `SKIP LOCKED`, a worker ID, 64-hex claim
-token, heartbeat, lease, manual-attempt number and absolute deadline. Before
-query embedding, before the answer call and inside the final transaction it rechecks the
-session, current owner/enrollment, fully selected document scope, publication,
-corpus revision and embedding space. Pre-provider expired leases alone may be
-requeued within exponential bounds. Provider-started dead leases, handled
-provider errors and whole-job timeouts are terminal until an explicit bounded
-manual retry. A retry refreshes the authenticated session, uses a new
-idempotency identity and quota receipt, and preserves cumulative usage, but
-cannot change the question/corpus/provider snapshot. Its accessible confirmation
-shows additional estimated cost or unavailable cost and identifies an unknown
-prior-attempt cost.
-
-One durable attempt can make at most one physical query-embedding request and
-one physical answer request. The answer worker overrides both application retry
-counts to zero and the Gemini SDK attempts once. A missing or failed embedding
-cannot start the answer call. Each remote stage records physical count, zero
-retry count, timing, safe category, uncertainty and current-attempt cost. The
-database also restricts a new-policy attempt to one of each remote stage. Old
-three-call, retired catalog or mismatched local-support snapshots cannot execute.
-New stage diagnostics distinguish transport/HTTP/SDK failures from incomplete,
-invalid JSON/schema, citation and local-verifier failures with fixed safe codes;
-they capture an allowlisted finish reason and available usage even if strict
-response parsing fails. A provider-started request without a receipt retains
-unknown cost. Retrieval ranks and NLI/QA verdict components are bounded and
-contain no question, claim, source text or private identifier. Owner-facing
-abstention copy distinguishes missing course support from a temporary provider
-failure; only an explicit cost-aware manual Retry can start another attempt.
-
-Only exact-v1 retrieved chunks enter the prompt. The question, bounded visible
-history and evidence are JSON-delimited as untrusted data. Structured output is
-either abstention or one-to-five ordered claims, each with a distinct retrieved
-chunk UUID and byte-for-byte contiguous quote. The answer field must exactly be
-those claims joined in order, so uncited prose is invalid. A local CPU-only NLI
-model requires quote entailment and checks every retrieved sentence for
-contradiction; an independent extractive-QA model must find a question-relevant
-span inside the claim. Both graphs and tokenizers are pinned by revision and
-SHA-256 and load before claims in the dedicated nonroot Debian answer-worker
-image. The host bundle is read-only and inference is offline. Missing/corrupt
-artifacts, truncation risk, invalid output, semantic rejection, unknown,
-duplicate, fabricated, stale or unsupported citations fail closed.
-Insufficient retrieval/support commits the fixed server-issued abstention.
-Titles, page and section metadata come only from current database rows. There
-is no remote support call or three-call fallback.
-
-The final transaction takes the Knowledge writer lock, locks the job/session/
-principal/Subject/enrollment scope, rereads exact current sources, inserts one
-assistant message plus all citation rows, and moves the job to completed. A
-database trigger independently requires current corpus/space, consecutive
-citation order and atomic source count. Stale claim tokens cannot persist usage
-or results. One job commits at most one answer. Unavoidable network ambiguity
-is recorded and never automatically replayed; it requires a separately
-confirmed manual Retry.
-
-#### Related Knowledge excerpts for historical unverified Ask jobs
-
-[ADR-021](../decisions/ADR-021-related-knowledge-excerpts.md) adds a separate
-browsing aid for a terminal Ask job that failed or completed with an abstention.
-After the existing authorized exact-v1 retrieval, the worker may choose up to
-two deterministic, exact source windows of at most 480 characters from the
-ranked top five, on distinct document pages. Question-term overlap chooses a
-window for inspection; it never verifies an answer. The worker stores only
-job-owned current-source identifiers and character offsets, not another copy
-of the text. The new `20260925_0021` schema binds those records to the private
-job and same-Subject chunks with count/offset constraints and an insertion
-guard. Selection adds no provider call and leaves the two-request and local
-answer-support gates intact.
-
-The job API reconstructs `related_excerpts` only for an authorized requester
-and a terminal failed or completed-abstained job. It rereads all source slices
-under current owner/enrollment, publication, active content/index revision,
-corpus and embedding-space checks. If any selected source or offset is stale,
-expired or inaccessible, the entire excerpt bundle is hidden. The response
-contains server-derived title, page, optional section and exact quote; it has
-no claim text and does not enter the verified answer's `sources`. The browser
-shows it under **Related published Knowledge**, alongside explicit text that
-the passages have not been verified as an answer. A successful supported answer,
-manual Retry or cancellation clears old references. Expiry follows the question
-message; its deletion cascades the job and references. Private account export
-includes own reference metadata and offsets, not a duplicate quote.
-
-The retained local database reached `20260925_0021` and the matching API,
-answer worker and frontend images were recreated on 2026-09-26. The related
-excerpt behavior is deployed there; Ask v2 remains fenced. The six
-owner-reviewed positives still fail the local support gate, so related
-excerpts do not establish an answer-quality release.
-
-The owner later approved [ADR-022](../decisions/ADR-022-related-knowledge-primary-ask.md)
-as the only new Ask path. At that 2026-09-26 checkpoint, the retained
-installation was at Alembic head `20260926_0023` and ran the earlier source-only
-image with Ask disabled. The v5 selector was deployed there with Ask off.
-The checkout subsequently implemented v6
-canonical-page source windows under verification: the indexed chunk remains
-the discovery anchor, while an exact current page slice can retain its owning
-heading. Reference kind distinguishes page offsets from historical chunk
-offsets. The final transaction rechecks the anchor and full page under the
-Knowledge lock and commits references with the terminal result. Every reference
-read reauthorizes the current page and hides the whole bundle on drift;
-page-open uses the saved exact page offsets. Inspected pages share the existing
-local token/page budget. Migration `20260927_0024` and the independent
-visible-excerpt quality gate remain Lane 6 verification work.
+The earlier three-call and two-request/local-support answer policies are
+retired from new execution. Their stored messages, policies, usage uncertainty
+and citation identities remain readable under current ownership, publication,
+revision, expiry and source-redaction guards. Never convert them to the
+current source-only policy or replay uncertain provider work. Durable rationale
+is preserved in [ADR-019](../decisions/ADR-019-two-request-local-support-ask.md),
+[ADR-021](../decisions/ADR-021-related-knowledge-excerpts.md) and
+[ADR-022](../decisions/ADR-022-related-knowledge-primary-ask.md).
 
 ## Privacy, capacity and deletion design
 
@@ -457,13 +262,18 @@ Persisted page text, chunks and vectors are private teaching content. Before
 upload routes write them, the operator notice must disclose retention and
 embedding text transfer to the selected endpoint. Before a source-only Ask
 job, the notice discloses that the current question goes to the query-embedding
-endpoint; authorized published excerpts are read locally, with no answer
-endpoint or history/evidence transfer for new Ask work. No content, vector values, prompts or answers enter routine
-logs, telemetry or error messages. Backups, provider copies and exported files
+endpoint. Authorized retrieval runs locally. When candidates exist, at most
+one separate Gemini source-ID judgment receives bounded published page text and
+original-page PNGs. An unresolved follow-up may additionally transfer only its
+immutably admitted unique literal subject from the strictly preceding user
+question, at most 160 characters/twelve words. Full history and assistant
+responses are excluded; no answer-model or local-verifier request is made.
+No content, vector values, prompts or answers enter routine logs, telemetry or
+error messages. Backups, provider copies and exported files
 have separate operator/provider expiry; database deletion cannot erase them.
 The authorized `/subjects/{id}/rag/profile` response exposes only the configured
-query-embedding role, current active embedding provider/model and whether the
-spaces match, as needed for the browser's pre-transfer notice; credentials and
+query-embedding and source-judge roles/models, bounded transfer capabilities
+and whether the active embedding spaces match, as needed for the browser's pre-transfer notice; credentials and
 private endpoint configuration remain worker-only. The browser refreshes this
 profile immediately before enqueue and stops if it changed.
 
@@ -491,7 +301,7 @@ refuses active answer jobs; Subject/thread/account cascades fence stale claims
 through missing job/token state. Operators still stop/drain writers before
 account deletion as documented.
 
-The [authored retrieval corpus](../RAG_EVALUATION.md) fixes exact-search,
+The [authored retrieval corpus](../ai/RAG_EVALUATION.md) fixes exact-search,
 publication, revision, support and abstention criteria before tuning. The
-[privacy guide](../PRIVACY.md) and [database operations](../DATABASE_OPERATIONS.md)
+[privacy guide](../security/PRIVACY.md) and [database operations](../database/DATABASE_OPERATIONS.md)
 own deployed retention and recovery procedures.

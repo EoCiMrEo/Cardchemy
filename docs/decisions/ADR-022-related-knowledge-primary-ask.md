@@ -419,10 +419,10 @@ establish semantic quality, and no answer model is needed for this product aim.
 [ADR-019](ADR-019-two-request-local-support-ask.md),
 [ADR-021](ADR-021-related-knowledge-excerpts.md),
 [ADR-023](ADR-023-original-pdf-source-navigation.md),
-[product-quality plan](../development/PRODUCT-QUALITY-REMEDIATION-PLAN.md),
+[product-quality plan](../archive/PRODUCT-QUALITY-REMEDIATION-PLAN.md),
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md),
-[RAG evaluation](../RAG_EVALUATION.md),
-[privacy guide](../PRIVACY.md),
+[RAG evaluation](../ai/RAG_EVALUATION.md),
+[privacy guide](../security/PRIVACY.md),
 [source-first evidence](../../.agent/logs/2026-09-26/2026-09-26-source-first-architecture-recommendation.md),
 [answer service](../../backend/app/services/rag_answers.py),
 [Ask panel](../../frontend/src/components/rag/AskAiPanel.tsx).

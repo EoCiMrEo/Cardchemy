@@ -96,9 +96,9 @@ passage from acquiring the visual or API meaning of a verified citation.
 ## Related areas
 
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md),
-[privacy guide](../PRIVACY.md),
-[accessibility checks](../ACCESSIBILITY.md),
-[RAG evaluation](../RAG_EVALUATION.md),
+[privacy guide](../security/PRIVACY.md),
+[accessibility checks](../ui/ACCESSIBILITY.md),
+[RAG evaluation](../ai/RAG_EVALUATION.md),
 [answer service](../../backend/app/services/rag_answers.py),
 [source selector](../../backend/app/ai/related_evidence.py),
 [answer worker](../../backend/app/workers/rag_answer.py),

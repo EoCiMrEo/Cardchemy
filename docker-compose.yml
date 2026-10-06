@@ -4,7 +4,7 @@
 #   python scripts/bootstrap_env.py
 #   docker compose up -d --build --wait
 #
-# Development and production overrides are documented in docs/DEPLOYMENT.md.
+# Development and production overrides are documented in docs/operations/DEPLOYMENT.md.
 
 x-backend-build: &backend-build
   context: ./backend
@@ -22,7 +22,7 @@ x-removed-ai-name-guard: &removed-ai-name-guard "1${AI_PROVIDER_ENABLED:+-AI_PRO
 
 x-core-environment: &core-environment
   APP_NAME: ${APP_NAME:-Cardchemy}
-  APP_VERSION: ${APP_VERSION:-0.1.0}
+  APP_VERSION: ${APP_VERSION:-0.2.0}
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:?Run python scripts/bootstrap_env.py}@db:5432/${POSTGRES_DB:-cardchemy}
   SECRET_KEY: ${SECRET_KEY:?Run python scripts/bootstrap_env.py}
   GENERATION_SOURCE_ENCRYPTION_KEY: ${GENERATION_SOURCE_ENCRYPTION_KEY:?Run python scripts/bootstrap_env.py}

@@ -41,5 +41,5 @@ when changed. It does not introduce a new hash algorithm or work-factor policy.
 
 [Password implementation](../../backend/app/services/passwords.py),
 [contract tests](../../backend/tests/test_password_hashes.py),
-[authentication operations](../AUTHENTICATION.md),
+[authentication operations](../security/AUTHENTICATION.md),
 [auth flow](../architecture/AUTH-FLOW.md), [ADR index](ADR-000-INDEX.md).

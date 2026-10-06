@@ -27,7 +27,7 @@ def load_script(name: str):
 
 release = load_script("check_release")
 ci = load_script("check_ci")
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 SHA = "a" * 40
 RUN_ID = 33
 RUN_ATTEMPT = 1
@@ -71,7 +71,7 @@ def test_remote_binds_required_check_to_exact_successful_main_run(hosted):
 
 @pytest.mark.parametrize("key,value", [
     ("GITHUB_REPOSITORY", "other/Cardchemy"), ("GITHUB_EVENT_NAME", "pull_request"),
-    ("GITHUB_REF", "refs/tags/v0.1.0"), ("GITHUB_SHA", "b" * 40),
+    ("GITHUB_REF", "refs/tags/v0.2.0"), ("GITHUB_SHA", "b" * 40),
 ])
 def test_remote_rejects_wrong_repository_event_ref_or_commit(hosted, key, value):
     hosted[0][key] = value
@@ -163,7 +163,7 @@ def image_files(directory: Path, sha: str, *, run_id: int = RUN_ID, run_attempt:
 def package(tmp_path):
     images = image_files(tmp_path, SHA)
     write_archive(tmp_path, SHA)
-    (tmp_path / "release-notes.md").write_text("# Cardchemy 0.1.0\n", encoding="utf-8")
+    (tmp_path / "release-notes.md").write_text("# Cardchemy 0.2.0\n", encoding="utf-8")
     write_json(tmp_path / "source-provenance.json", {"version": VERSION, "tag": f"v{VERSION}",
         "source_sha": SHA, "repository": release.REPOSITORY, "certificate_identity": release.CERTIFICATE_IDENTITY,
         "oidc_issuer": release.OIDC_ISSUER, "ci_run_id": 22, "schema_version": 1, "platform": "linux/amd64",
@@ -257,7 +257,7 @@ def test_prepare_package_archives_exact_git_commit_and_excludes_operator_env(tmp
     (tmp_path / ".gitignore").write_text(".env\nartifacts/\n", encoding="utf-8")
     (tmp_path / ".env").write_text("PRIVATE_OPERATOR_SENTINEL=do-not-package\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("Cardchemy\n", encoding="utf-8")
-    (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\nFuture idea must not release.\n\n## [0.1.0] - 2026-09-17\nPublished behavior.\n", encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\nFuture idea must not release.\n\n## [0.2.0] - 2026-09-17\nPublished behavior.\n", encoding="utf-8")
     git("add", "README.md", ".gitignore", "CHANGELOG.md")
     git("-c", "user.name=Release fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
         "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "Release fixture")

@@ -2,8 +2,8 @@
 
 Current setup, verified against scripts/Compose on 2026-09-16. Begin with
 [orientation](../00-START-HERE.md). Supported versions are owned by
-[RUNTIMES.md](../RUNTIMES.md); settings/ranges and rotation rules are owned by
-[CONFIGURATION.md](../CONFIGURATION.md).
+[RUNTIMES.md](RUNTIMES.md); settings/ranges and rotation rules are owned by
+[CONFIGURATION.md](../operations/CONFIGURATION.md).
 
 ## Built reference stack
 
@@ -20,18 +20,18 @@ docker compose exec backend python -m app.cli create-instructor --email instruct
 If root `.env` already exists, preserve it and skip bootstrap. It creates
 independent secrets once and refuses overwrites. The CLI prompts for a password;
 public signup creates only invited students. Additional instructors need the
-explicit CLI `--allow-additional` option. See [authentication operations](../AUTHENTICATION.md).
+explicit CLI `--allow-additional` option. See [authentication operations](../security/AUTHENTICATION.md).
 
 At template defaults the application is [127.0.0.1:8080](http://127.0.0.1:8080)
 and local email capture is [127.0.0.1:8025](http://127.0.0.1:8025).
 The migrate service runs before API/workers. Generation remains disabled until
 provider settings/credential are configured and `FLASHCARD_AI_PROVIDER_ENABLED=true`.
 Recreate the API/generation worker to apply the switch/settings; enabling can
-spend provider quota. See [AI providers](../AI_PROVIDERS.md).
+spend provider quota. See [AI providers](../ai/AI_PROVIDERS.md).
 
 Stop with `docker compose down`, retaining volumes. This guide never requires
 discarding an existing database. For upgrades/recovery follow
-[database operations](../DATABASE_OPERATIONS.md).
+[database operations](../database/DATABASE_OPERATIONS.md).
 
 ## Editing the frontend with the development stack
 
@@ -103,12 +103,12 @@ python -m app.email_worker
 The shown 8000 must agree with API_PORT. The native generation process requires
 provider credentials when enabled; the email worker requires complete SMTP
 settings. OCR needs the explicit setting and local executables; follow
-[PDF operations](../PDF_GENERATION.md). Compose is the simplest supported full
-stack; [deployment](../DEPLOYMENT.md) owns its exact variants/production setup.
+[PDF operations](../ai/PDF_GENERATION.md). Compose is the simplest supported full
+stack; [deployment](../operations/DEPLOYMENT.md) owns its exact variants/production setup.
 
 ## Verify and find code
 
-[TESTING.md](../TESTING.md) owns suite commands, install requirements and gated
+[TESTING.md](TESTING.md) owns suite commands, install requirements and gated
 cases. `npm run check` is the complete frontend authority; guarded service
 harnesses generate isolated databases/credentials and ignore operator settings.
 `python scripts/check_context.py` from root validates context files and local

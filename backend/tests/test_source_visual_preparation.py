@@ -12,7 +12,7 @@ from app.services import source_visual_preparation as preparation
 from app.services.knowledge_pdf_renderer import RenderedPdfPage
 from app.services.knowledge_retrieval import KnowledgeSourceUnavailable
 from tests.test_source_judgment_visual import png
-from tests.test_source_judgment_worker import _selection, _Retriever
+from tests.test_source_candidate_pool import _selection, _Retriever
 
 
 def fixture():
@@ -44,7 +44,7 @@ async def test_grouped_archive_render_and_opaque_provider_projection(monkeypatch
         return tuple(RenderedPdfPage(page, sha, raw, hashlib.sha256(raw).hexdigest(), 2, 2, "c" * 64) for page in pages)
     monkeypatch.setattr(preparation, "read_complete_pdf_archive", archive)
     monkeypatch.setattr(preparation, "_render", render)
-    prepared = await preparation.prepare_visual_sources(db, settings=object(),
+    prepared = await preparation.prepare_visual_pages(db, settings=object(),
         retriever=_Retriever(tuple(item.source for item in selections)), subject_id=subject,
         question="How does the method update weights?", selections=selections)
     assert len(reads) == 1 and renders == [[1, 2]] and len(prepared.bindings) == 1
@@ -75,7 +75,7 @@ async def test_wrong_stale_or_missing_pdf_never_reaches_archive(monkeypatch, mut
         pytest.fail("source must be current before decrypt/render")
     monkeypatch.setattr(preparation, "read_complete_pdf_archive", forbidden)
     with pytest.raises(KnowledgeSourceUnavailable):
-        await preparation.prepare_visual_sources(db, settings=object(),
+        await preparation.prepare_visual_pages(db, settings=object(),
             retriever=_Retriever(tuple(item.source for item in selections)), subject_id=subject,
             question="How does the method update weights?", selections=selections)
 

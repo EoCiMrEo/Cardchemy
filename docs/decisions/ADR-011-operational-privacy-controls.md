@@ -40,7 +40,7 @@ compliance claim follows from these controls.
 
 ## Related Areas
 
-[Observability](../OBSERVABILITY.md), [privacy](../PRIVACY.md),
+[Observability](../operations/OBSERVABILITY.md), [privacy](../security/PRIVACY.md),
 [settings](../../backend/app/config.py), [operations](../../backend/app/services/operations.py),
 [privacy service](../../backend/app/services/privacy.py),
 [audit service](../../backend/app/services/audit.py), [data model](../architecture/DATA-MODEL.md),

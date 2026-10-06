@@ -44,8 +44,8 @@ consumers, contracts and constraints against actual source.
 - Source navigation: [project map](PROJECT-MAP.md) and module MOCs.
 - Cross-file behavior: [architecture](docs/architecture/SYSTEM-OVERVIEW.md);
   durable rationale: accepted ADRs.
-- Runtime/configuration support: [RUNTIMES](docs/RUNTIMES.md) and
-  [CONFIGURATION](docs/CONFIGURATION.md); operational detail: [guide index](docs/README.md).
+- Runtime/configuration support: [RUNTIMES](docs/development/RUNTIMES.md) and
+  [CONFIGURATION](docs/operations/CONFIGURATION.md); operational detail: [guide index](docs/README.md).
 - Milestone status: current state; proposals: public roadmap; completed phase
   tasks/checklists: archive and dated evidence.
 - Dated `.agent/logs/` and [archive](docs/archive/README.md): historical evidence.
@@ -211,14 +211,14 @@ give each a bounded task and ownership area.
   a complete provider billing ledger and must omit content/prompts/raw responses.
 - Normal tests/CI spend no provider quota. Live evaluation needs explicit user
   authorization plus documented endpoint/model/price/call/token/time/cost guards;
-  a configured key is not authorization. See [AI evaluation](docs/AI_EVALUATION.md).
+  a configured key is not authorization. See [AI evaluation](docs/ai/AI_EVALUATION.md).
 - Email scope is reset, password-change notification and student invitation.
   Keep atomic domain/outbox enqueue, separate SMTP delivery, unique event IDs,
   leases/fencing and send-time token/link rendering instead of stored rendered
   bodies/URLs. Retry only unambiguous transient failures. Disconnects/timeouts
   during delivery or lease loss after send begins are ambiguous and require operator review,
   not automatic duplicate sending. Mailpit is local/test only; production SMTP
-  is encrypted. See [email delivery](docs/EMAIL_DELIVERY.md).
+  is encrypted. See [email delivery](docs/mail-server/EMAIL_DELIVERY.md).
 
 ## Backend and frontend engineering
 
@@ -242,7 +242,7 @@ second locale requires an explicit product decision and complete design.
 
 ## Verification, dependencies, deployment and Git
 
-Use [TESTING.md](docs/TESTING.md) as command authority; run applicable checks:
+Use [TESTING.md](docs/development/TESTING.md) as command authority; run applicable checks:
 
 | Change scope | Required verification |
 | --- | --- |
@@ -258,28 +258,28 @@ Never downgrade real data for verification. Destructive operational rollback
 requires explicit authorization and a verified backup. Paid AI and the separate
 live reset browser test need their opt-ins. Skipped/deselected/fixture tests do
 not establish live/provider/production success. Manual spoken assistive-technology
-release checks remain required by [accessibility guidance](docs/ACCESSIBILITY.md).
+release checks remain required by [accessibility guidance](docs/ui/ACCESSIBILITY.md).
 Do not lower coverage/bundle/accessibility/audit/security thresholds to get a pass;
 budget changes need explicit measured rationale.
 
 Update Python direct `.in` inputs and regenerate hashed locks with
 [lock_dependencies.ps1](backend/scripts/lock_dependencies.ps1); verify supported
 Python versions. Keep frontend package/lock consistent and use `npm ci` for clean
-installs. [Runtime support](docs/RUNTIMES.md) and [dependency policy](docs/DEPENDENCIES.md)
+installs. [Runtime support](docs/development/RUNTIMES.md) and [dependency policy](docs/ci-cd/DEPENDENCIES.md)
 own the details.
 
 Base Compose is a built production-shaped local stack; use exactly the documented
 development or production override. Follow [local setup](docs/development/LOCAL-SETUP.md)
-and [deployment](docs/DEPLOYMENT.md). Keep production DB/API private behind the
+and [deployment](docs/operations/DEPLOYMENT.md). Keep production DB/API private behind the
 frontend/TLS edge. For upgrades, drain writers/workers, verify backups, migrate,
-verify heads and then restore traffic per [database operations](docs/DATABASE_OPERATIONS.md).
+verify heads and then restore traffic per [database operations](docs/database/DATABASE_OPERATIONS.md).
 
 Keep commits/tasks focused, preserve shared history, never add secrets or bypass
 required checks/protection. Force-push/history rewrites require authorization.
 The [protection definition](.github/branch-protection.json) requires PR flow,
 resolved conversations, current-base `ci-required`, administrator enforcement
 and no force push/deletion; verify remote state before operational claims.
-[CI](docs/CI.md) covers offline/service/frontend/journey/audit/secret/container
+[CI](docs/ci-cd/CI.md) covers offline/service/frontend/journey/audit/secret/container
 gates and context validation; release SBOM work also has a separate workflow.
 
 ## Documentation, evidence and definition of done

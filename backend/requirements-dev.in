@@ -9,8 +9,3 @@ pip-tools==7.6.1
 pytest-cov==7.1.0
 pip-audit==2.10.1
 PyYAML==6.0.3
-
-# Keyless historical local-model guard tests; no weights or runtime AI lane.
-numpy==2.4.1
-onnxruntime==1.30.0
-tokenizers==0.22.1

@@ -186,7 +186,7 @@ class Settings(BaseSettings):
         super().__init__(**values)
 
     app_name: str = Field(default="Cardchemy", min_length=1, max_length=128)
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
     api_docs_enabled: bool | None = None
@@ -663,7 +663,7 @@ class Settings(BaseSettings):
 
     @property
     def rag_source_judge_contract_version(self) -> str:
-        from app.ai.source_judgment_visual_v5 import CONTRACT_VERSION
+        from app.ai.source_judgment_visual import CONTRACT_VERSION
         return CONTRACT_VERSION
 
     @property

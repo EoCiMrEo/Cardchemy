@@ -51,5 +51,5 @@ incomplete usage receipts do not establish exact tokenization or billing bounds.
 - [AI generation architecture](../architecture/AI-GENERATION-FLOW.md)
 - [Contracts](../../backend/app/ai/contracts.py), [grounding](../../backend/app/ai/grounding.py),
   [pipeline](../../backend/app/ai/pipeline.py), [persistence](../../backend/app/services/flashcard.py)
-- [AI evaluation](../AI_EVALUATION.md), [ADR index](ADR-000-INDEX.md)
+- [AI evaluation](../ai/AI_EVALUATION.md), [ADR index](ADR-000-INDEX.md)
 - [ADR-020: private validated-card choice](ADR-020-validated-card-choice.md)

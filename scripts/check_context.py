@@ -14,6 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = (
     "README.md", "AGENTS.md", "PROJECT-MAP.md", "backend/MOC.md", "frontend/MOC.md",
     "docs/00-START-HERE.md", "docs/README.md", "docs/archive/README.md",
+    "docs/diagrams/README.md", "docs/diagrams/SYSTEM.md",
+    "docs/diagrams/AUTH-AND-EMAIL.md", "docs/diagrams/FLASHCARD-GENERATION.md",
+    "docs/diagrams/KNOWLEDGE.md", "docs/diagrams/ASK-AI.md",
+    "docs/diagrams/STUDY.md", "docs/diagrams/DATA-AND-OPERATIONS.md",
+    "docs/diagrams/RELEASE.md",
     "docs/development/LOCAL-SETUP.md", "docs/development/CURRENT-STATE.md",
     "docs/architecture/SYSTEM-OVERVIEW.md", "docs/architecture/DATA-MODEL.md",
     "docs/architecture/AUTH-FLOW.md", "docs/architecture/AI-GENERATION-FLOW.md",
@@ -29,9 +34,9 @@ REQUIRED = (
     "docs/decisions/ADR-009-session-and-role-boundaries.md",
     "docs/decisions/ADR-010-transactional-email.md",
     "docs/decisions/ADR-011-operational-privacy-controls.md",
-    "docs/OBSERVABILITY.md", "docs/PRIVACY.md",
+    "docs/operations/OBSERVABILITY.md", "docs/security/PRIVACY.md",
     "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "BRANDING.md", "ROADMAP.md",
-    "docs/RELEASING.md", "docs/NAME-REVIEW.md", "docs/DEMO.md",
+    "docs/ci-cd/RELEASING.md", "docs/development/NAME-REVIEW.md", "docs/development/DEMO.md",
 )
 LINK = re.compile(r"!?\[[^\]\n]*\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)")
 

@@ -118,7 +118,7 @@ storage, index and provider work explicit.
 [deletion ownership](ADR-005-deletion-cascades.md),
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md),
 [data model](../architecture/DATA-MODEL.md),
-[configuration](../CONFIGURATION.md),
-[database operations](../DATABASE_OPERATIONS.md),
+[configuration](../operations/CONFIGURATION.md),
+[database operations](../database/DATABASE_OPERATIONS.md),
 [generation service](../../backend/app/services/generation.py).
 [ADR-020: private validated-card choice](ADR-020-validated-card-choice.md).

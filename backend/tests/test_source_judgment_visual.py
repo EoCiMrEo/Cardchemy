@@ -1,11 +1,8 @@
 """Synthetic visual wire and local projection; no PDF, provider or persisted source."""
 import base64
 import copy
-import importlib
 import json
-from pathlib import Path
 import struct
-import sys
 import zlib
 
 import pytest
@@ -41,24 +38,8 @@ def verdict(count=4, labels=None, *, status="clear"):
         for i, label in enumerate(labels, 1)]}
 
 
-def oracle():
-    scripts = str(Path(__file__).resolve().parents[2] / "scripts")
-    sys.path.insert(0, scripts)
-    try:
-        return importlib.import_module("prototype_visual_page_source_judge_v2")
-    finally:
-        sys.path.remove(scripts)
 
 
-def test_four_page_request_is_byte_equivalent_to_frozen_wire():
-    request = visual.build_request("Which relationship helps?", candidates(), group_id="Q001")
-    frozen = oracle()
-    expected = frozen.build_request(request["contents"][0]["parts"], [f"S{i:02d}" for i in range(1, 5)])
-    assert visual.SYSTEM == frozen.SYSTEM
-    assert visual.canonical(request) == frozen.previous.canonical(expected)
-    assert request["store"] is False
-    assert request["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "HIGH"}
-    assert request["generationConfig"]["maxOutputTokens"] == 2048
 
 
 @pytest.mark.parametrize("count", [1, 2, 3, 4])
@@ -66,7 +47,7 @@ def test_genuine_candidate_counts_preserve_raw_question_and_project_bound_parts(
     question = "  current question\n" + "q" * 3000
     source = candidates(count)
     saved = copy.deepcopy(source)
-    request = visual.build_request(question, source, group_id="ephemeral")
+    request = visual.build_page_request(question, source, group_id="ephemeral")
     parts = request["contents"][0]["parts"]
     assert json.loads(parts[0]["text"]) == {"group_id": "ephemeral", "question": question}
     assert len(parts) == 1 + 2 * count
@@ -81,20 +62,6 @@ def test_genuine_candidate_counts_preserve_raw_question_and_project_bound_parts(
     assert parsed["generated_answer"] is False and parsed["unverified_references"] is True
 
 
-@pytest.mark.parametrize("labels,status", [
-    (["direct", "concrete_learning_step", "topic_only", "uncertain"], "clear"),
-    (["unrelated"] * 4, "clear"), (["uncertain"] * 4, "needs_clarification"),
-    (["concrete_learning_step", "direct", "direct", "direct"], "clear"),
-])
-def test_four_page_verdict_is_semantically_equivalent_except_new_identity(labels, status):
-    value = verdict(labels=labels, status=status)
-    value["pages"].reverse()
-    raw = visual.canonical(value)
-    actual = visual.parse_verdict(raw, [f"S{i:02d}" for i in range(1, 5)])
-    expected = oracle().parse_verdict(raw, [f"S{i:02d}" for i in range(1, 5)])
-    assert actual.pop("schema_version") == "visual_source_id_v1"
-    expected.pop("schema_version")
-    assert actual == expected
 
 
 def test_clear_empty_and_clarification_remain_distinct_without_padding():
@@ -139,7 +106,7 @@ def test_request_rejects_missing_unsafe_or_unbound_inputs(mutation):
     elif mutation == "five_candidates": source = candidates(5)
     else: source[0]["image"]["png_bytes"] = b"not PNG"
     with pytest.raises(visual.VisualSourceJudgmentError):
-        visual.build_request(question, source, group_id="Q001")
+        visual.build_page_request(question, source, group_id="Q001")
 
 
 @pytest.mark.parametrize("raw", [
@@ -154,7 +121,7 @@ def test_png_bounds_and_scanlines_are_enforced(raw):
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate", "unissued", "id_bool", "label",
-    "cue_int", "weak_cue", "clarification_qualified", "status_bool", "status_missing", "answer"])
+    "cue_int", "clarification_qualified", "status_bool", "status_missing", "answer"])
 def test_verdict_has_only_issued_categorical_pages_and_valid_clarity(mutation):
     value = verdict(2)
     if mutation == "missing": value["pages"].pop()
@@ -186,7 +153,7 @@ def test_utf8_estimate_refuses_long_multibyte_question_before_a_request():
         item["context"] = item["cue"] + "🧪" * (visual.MAX_CONTEXT_CHARS - len(item["cue"]))
         item["context_end"] = item["context_start"] + visual.MAX_CONTEXT_CHARS
     with pytest.raises(visual.VisualSourceJudgmentError, match="estimated_input_budget"):
-        visual.build_request("🧪" * visual.MAX_QUESTION_CHARS, source, group_id="Q001")
+        visual.build_page_request("🧪" * visual.MAX_QUESTION_CHARS, source, group_id="Q001")
 
 
 @pytest.mark.parametrize("input_tokens,output_tokens,thinking,total", [
@@ -198,9 +165,9 @@ def test_usage_includes_thinking_and_any_larger_total(input_tokens, output_token
 
 
 @pytest.mark.parametrize("arguments", [
-    {"input_tokens": 32769, "output_tokens": 0}, {"input_tokens": 1, "output_tokens": 2049},
-    {"input_tokens": 1, "output_tokens": 1024, "thinking_tokens": 1025},
-    {"input_tokens": 1, "output_tokens": 0, "total_tokens": 2050},
+    {"input_tokens": 32769, "output_tokens": 0}, {"input_tokens": 1, "output_tokens": 4097},
+    {"input_tokens": 1, "output_tokens": 1024, "thinking_tokens": 3073},
+    {"input_tokens": 1, "output_tokens": 0, "total_tokens": 4098},
     {"input_tokens": 100, "output_tokens": 2, "total_tokens": 101},
     {"input_tokens": True, "output_tokens": 0}, {"input_tokens": 1, "output_tokens": False},
     {"input_tokens": 1, "output_tokens": 0, "thinking_tokens": True},

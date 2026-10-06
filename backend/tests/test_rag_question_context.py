@@ -11,7 +11,7 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, String, delete, selec
 from sqlalchemy.dialects.postgresql import UUID as UUIDColumn
 from sqlalchemy.orm import DeclarativeBase
 
-from app.ai.source_judgment_visual_v3 import ADMISSION_SCHEMA, CONTRACT_VERSION, admission_identity
+from app.ai.source_judgment_visual import ADMISSION_SCHEMA, CONTRACT_VERSION, admission_identity
 from app.ai.source_navigation import navigation_query_v4
 from app.models.rag import RagMessage, RagThread
 from app.models.subject import Subject

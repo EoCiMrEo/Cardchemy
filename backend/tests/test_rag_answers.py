@@ -1,5 +1,4 @@
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -14,11 +13,8 @@ from app.config import ASK_REQUIRED_RELEASE_POLICY_VERSION, Settings
 from app.models.flashcard import Enrollment
 from app.models.knowledge import RagEmbeddingSpace, SubjectDocumentChunk, SubjectDocumentPage, embedding_space_hash
 from app.ai.gemini_catalog import CATALOG_VERSION, SCHEMA_POLICY_VERSION
-from app.ai.local_support import LOCAL_SUPPORT_POLICY_VERSION
-from app.ai.embeddings import EmbeddingResponse
 from app.ai.providers import (
     AIProviderError,
-    ProviderUsage,
 )
 from app.models.rag import (
     RagAnswerJob,
@@ -32,11 +28,11 @@ from app.models.subject import Subject
 from app.models.user import AuthSession, User, UserRole
 from app.schemas.rag import RagQuestionCreate
 from app.schemas.rag import RagSourceResponse
-from app.services.knowledge_retrieval import KnowledgeRetriever, RetrievedKnowledgeChunk
+from app.services.knowledge_retrieval import KnowledgeRetriever
 from app.services.rag_answers import RagAnswerService, _attempt_estimate_microusd
 from app.services.operations import answer_job_diagnostics
 from app.time_utils import utcnow
-from app.workers.rag_answer import RagAnswerWorker, _JudgeResponse
+from app.workers.rag_answer import RagAnswerWorker
 
 
 @pytest.fixture(autouse=True)
@@ -452,7 +448,7 @@ async def test_manual_retry_rejects_changed_source_judge_snapshot(db, monkeypatc
         job.error_retryable = True
     if change == "contract":
         monkeypatch.setattr(
-            "app.ai.source_judgment_visual_v5.CONTRACT_VERSION",
+            "app.ai.source_judgment_visual.CONTRACT_VERSION",
             "visual_source_id_incompatible",
         )
         changed_service = RagAnswerService(settings)
@@ -605,7 +601,7 @@ async def test_retired_answer_snapshots_cannot_claim_or_manual_retry(
             job.ai_catalog_version = CATALOG_VERSION
             job.ai_schema_policy_version = SCHEMA_POLICY_VERSION
             job.answer_policy_version = "two_request_local_support_v1"
-            job.support_policy_version = LOCAL_SUPPORT_POLICY_VERSION
+            job.support_policy_version = "local_nli_qa_v1"
             setattr(job, snapshot_field, retired_value)
             job_id, thread_id = job.id, thread.id
         historical = service.job_response(job)
@@ -649,152 +645,34 @@ async def test_retired_answer_snapshots_cannot_claim_or_manual_retry(
             assert rejected.value.detail["code"] == "rag_answer_not_retryable"
 
 
-@pytest.mark.parametrize(
-    "mode,expected_status,expected_result_kind,expected_stages",
-    [
-        ("related_knowledge", "completed", "related_knowledge", {"query_embedding", "retrieval", "source_judgment"}),
-        ("canonical_page", "completed", "related_knowledge", {"query_embedding", "retrieval", "source_judgment"}),
-        ("canonical_page_changed", "failed", None, {"query_embedding", "retrieval"}),
-        ("canonical_anchor_changed", "failed", None, {"query_embedding", "retrieval"}),
-        ("no_match", "completed", "no_match", {"query_embedding", "retrieval"}),
-        ("embedding_failure", "failed", None, {"query_embedding"}),
-        ("embedding_timeout", "completed", "no_match", {"query_embedding", "retrieval"}),
-        ("retrieval_timeout", "failed", None, {"query_embedding", "retrieval"}),
-    ],
-)
-async def test_historical_v4_source_worker_uses_one_embedding_and_no_answer_provider(
-    session_factory, monkeypatch, mode, expected_status,
-    expected_result_kind, expected_stages,
+async def test_historical_v4_source_job_is_readable_but_cannot_execute_or_retry(
+    session_factory, monkeypatch,
 ):
-    """Retain explicit historical v4 text-selection regression without provider I/O.
-
-    The separate visual worker suite exercises current v5 PDF/image preparation.
-    This fixture deliberately restores the complete historical snapshot and
-    release identity rather than feeding text-only fake output to a v5 job.
-    """
-
-    from tests.test_knowledge_management import _seed_document
-
-    async with session_factory() as db:
-        seeded, owner, subject, document, content, index, _index_job = (
-            await _seed_document(db)
-        )
-        now = utcnow()
-        content.reviewed_by_id = owner.id
-        content.reviewed_at = now
-        content.published_at = now
-        student = User(
-            id=uuid4(), email=f"worker-{uuid4().hex}@example.test",
-            hashed_password="not-real", role=UserRole.STUDENT,
-        )
-        db.add(student)
-        await db.flush()
-        db.add(Enrollment(student_id=student.id, subject_id=subject.id))
-        auth = AuthSession(
-            user_id=student.id, refresh_jti_hash=uuid4().hex * 2,
-            expires_at=now + timedelta(hours=1),
-        )
-        db.add(auth)
-        chunk_row = await db.scalar(select(SubjectDocumentChunk).where(
-            SubjectDocumentChunk.index_revision_id == index.id
-        ))
-        assert chunk_row is not None
-        canonical_mode = mode.startswith("canonical_")
-        canonical_page_text = "Perihelion\n- Is the point of an orbit nearest to the Sun."
-        if canonical_mode:
-            chunk_row.content = "- Is the point of an orbit nearest to the Sun."
-            chunk_row.section = "Perihelion"
-            page_row = await db.scalar(select(SubjectDocumentPage).where(
-                SubjectDocumentPage.content_revision_id == content.id,
-                SubjectDocumentPage.page_number == chunk_row.page_number,
-            ))
-            assert page_row is not None
-            page_row.content = canonical_page_text
-        await db.commit()
-
-    settings = seeded.model_copy(update={
-        "rag_ask_enabled": True,
-        "rag_ai_provider_enabled": False,
-        "rag_ai_api_key": None,
-        "rag_local_support_enabled": False,
-        "rag_source_judge_provider_enabled": True,
-        "rag_source_judge_api_key": "test-source-judge-key",
-        "rag_source_judge_quota_bucket": "test-source-judge",
-    })
-    assert settings.rag_source_only_available
-    source = RetrievedKnowledgeChunk(
-        chunk_id=chunk_row.id, document_id=document.id,
-        document_title=document.title, content_revision_id=content.id,
-        index_revision_id=index.id, page_number=chunk_row.page_number,
-        section=chunk_row.section, content=chunk_row.content,
-        token_count=chunk_row.token_count,
-        embedding_space_hash=index.embedding_space_hash,
-        corpus_revision=subject.corpus_revision,
-        vector_similarity=1.0, lexical_score=1.0,
-        vector_rank=1, lexical_rank=1, fusion_score=1.0,
-    )
-
-    class FakeRetriever:
-        page_reads = 0
-        scope = SimpleNamespace(
-            corpus_revision=subject.corpus_revision,
-            embedding_space_hash=index.embedding_space_hash,
-        )
-
-        async def retrieve(self, _vector, *, embedding_space_hash):
-            assert embedding_space_hash == index.embedding_space_hash
-            if mode == "retrieval_timeout":
-                raise TimeoutError("private retrieval fixture detail")
-            if mode == "no_match":
-                return SimpleNamespace(insufficient=True, chunks=())
-            return SimpleNamespace(insufficient=False, chunks=(source,))
-
-        async def retrieve_lexical(self):
-            assert mode == "embedding_timeout"
-            return SimpleNamespace(insufficient=True, chunks=())
-
-        async def expand_source_neighbors(self, anchors, **kwargs):
-            assert tuple(anchors) == (source,) and kwargs["radius"] == 2
-            return ()
-
-        async def read_current_sources(self, chunk_ids):
-            assert tuple(chunk_ids) == (source.chunk_id,)
-            if mode == "canonical_anchor_changed":
-                return (replace(source, content="- Is a different point."),)
-            return (source,)
-
-        async def read_current_source_pages(self, chunk_ids, *, max_pages=12, max_tokens=8_192):
-            assert tuple(chunk_ids) == (source.chunk_id,)
-            self.page_reads += 1
-            if mode == "canonical_page_changed" and self.page_reads > 1:
-                return {source.chunk_id: "Perihelion\n- Is a different point."}
-            return {source.chunk_id: canonical_page_text if canonical_mode else source.content}
-
-    retriever = FakeRetriever()
-
-    async def authorize(_cls, _db, **_kwargs):
-        return retriever
-
-    monkeypatch.setattr(KnowledgeRetriever, "authorize", classmethod(authorize))
+    """The current worker preserves historical snapshots without executing them."""
+    settings = _settings(rag_ai_provider_enabled=False, rag_ai_api_key=None,
+                         rag_local_support_enabled=False)
     service = RagAnswerService(settings)
+    monkeypatch.setattr(KnowledgeRetriever, "authorize", _authorize(settings))
     async with session_factory() as db:
+        _owner, student, _outsider, subject, auth = await _seed(db)
+        student_id, subject_id, auth_id = student.id, subject.id, auth.id
         async with db.begin():
-            principal = await db.get(User, student.id)
-            setattr(principal, "_auth_session_id", auth.id)
-            thread = await service.create_thread(
-                db, subject_id=subject.id, user=principal
-            )
+            thread = await service.create_thread(db, subject_id=subject_id, user=student)
             job = await service.enqueue(
-                db, subject_id=subject.id, thread_id=thread.id, user=principal,
+                db, subject_id=subject_id, thread_id=thread.id, user=student,
                 data=RagQuestionCreate(question="What is perihelion?"),
-                idempotency_key=f"source-worker-{mode}-0001",
+                idempotency_key="historical-source-worker-0001",
             )
-            job_id = job.id
+            job_id, thread_id = job.id, thread.id
+            # Preserve the historical text-only profile and its absent literal
+            # admission metadata; never mutate the current runtime release fence.
             job.answer_policy_version = "related_knowledge_navigation_v4"
             job.source_context_policy_version = None
             job.source_context_admission_sha256 = None
             with db.no_autoflush:
-                await db.execute(delete(RagAnswerQuestionContext).where(RagAnswerQuestionContext.job_id == job.id))
+                await db.execute(delete(RagAnswerQuestionContext).where(
+                    RagAnswerQuestionContext.job_id == job_id,
+                ))
             job.source_judge_model = "gemini-3.8-flash"
             job.source_judge_contract_version = "source_id_only_public_v1"
             job.source_judge_input_price_microusd_per_million = 1_500_000
@@ -807,122 +685,71 @@ async def test_historical_v4_source_worker_uses_one_embedding_and_no_answer_prov
             job.estimated_output_tokens = 1024
             job.estimated_cost_microusd = 20_276
 
-    for module in ("app.config", "app.services.rag_answers", "app.workers.rag_answer"):
-        monkeypatch.setattr(module + ".ASK_REQUIRED_RELEASE_POLICY_VERSION", "related_knowledge_navigation_v4")
-    monkeypatch.setattr("app.config.ASK_RUNTIME_POLICY_VERSION", "related_knowledge_navigation_v4")
-    monkeypatch.setattr(Settings, "rag_source_judge_contract_version", property(lambda _self: "source_id_only_public_v1"))
-    settings = settings.model_copy(update={
-        "rag_source_judge_model": "gemini-3.8-flash",
-        "rag_source_judge_max_input_tokens": 8192, "rag_source_judge_max_output_tokens": 1024,
-        "rag_source_judge_provider_timeout_seconds": 30,
-        "rag_source_judge_input_cost_per_million_usd": Decimal("1.50"),
-        "rag_source_judge_output_cost_per_million_usd": Decimal("7.50"),
-    })
+    calls = []
 
-    class FakeEmbeddingProvider:
-        def __init__(self):
-            self.questions = []
+    class ForbiddenProviders:
+        async def embed_query(self, _question):
+            calls.append("embedding")
+            pytest.fail("A historical policy cannot issue a query embedding")
 
-        async def embed_query(self, question):
-            self.questions.append(question)
-            if mode == "embedding_timeout":
-                raise TimeoutError("private embedding fixture detail")
-            if mode == "embedding_failure":
-                raise AIProviderError(
-                    "embedding_provider_invalid_request",
-                    "Embedding request failed.", retryable=False,
-                )
-            return EmbeddingResponse(
-                vectors=(tuple([1.0, *([0.0] * 1535)]),),
-                usage=ProviderUsage(3, 0, False),
-            )
+        async def judge(self, _wire):
+            calls.append("judgment")
+            pytest.fail("A historical policy cannot issue source judgment")
 
-    embedding_provider = FakeEmbeddingProvider()
-    class FakeJudge:
-        def __init__(self):
-            self.wires = []
-
-        async def judge(self, wire):
-            self.wires.append(wire)
-            return _JudgeResponse('{"selected_ids":["S01"]}', "STOP", 20, 4, 2)
-
-    judge = FakeJudge()
+    forbidden = ForbiddenProviders()
     worker = RagAnswerWorker(
         settings=settings, session_factory=session_factory,
-        embedding_provider=embedding_provider,
-        source_judge=judge,
-        worker_id="offline-source-worker",
+        embedding_provider=forbidden, source_judge=forbidden,
+        worker_id="historical-source-fence",
     )
     assert not hasattr(worker, "answer_provider")
     assert not hasattr(worker, "local_support_verifier")
-    claim = await worker.claim_next()
-    assert claim and claim[0] == job_id
-    await worker.process_claim(*claim)
+    assert await worker.claim_next() is None
+    assert calls == []
 
     async with session_factory() as db:
-        stored = await db.get(RagAnswerJob, job_id)
-        assert stored.answer_policy_version == "related_knowledge_navigation_v4"
-        assert stored.source_judge_thinking_level is stored.source_judge_timeout_seconds is None
-        assert stored.status == expected_status, (
-            stored.failed_stage, stored.provider_error_category, stored.failure_reason
-        )
-        assert stored.result_kind == expected_result_kind
-        assert stored.answer_message_id is None
-        assert stored.provider_request_count == (2 if "source_judgment" in expected_stages else 1)
-        assert stored.provider_retry_count == 0
-        assert stored.actual_output_tokens in (None, 0, 6)
-        assert embedding_provider.questions == ["What is perihelion?"]
-        messages = (await db.scalars(select(RagMessage).where(
-            RagMessage.thread_id == thread.id
-        ))).all()
-        assert [(message.role, message.content) for message in messages] == [
-            ("user", "What is perihelion?")
-        ]
-        stages = (await db.scalars(select(RagAnswerStageAttempt).where(
-            RagAnswerStageAttempt.job_id == job_id
-        ))).all()
-        assert {stage.stage for stage in stages} == expected_stages
-        assert sum(stage.physical_request_count for stage in stages) == stored.provider_request_count
-        assert all(stage.completed_at is not None for stage in stages)
-        refs = (await db.scalars(select(RagRelatedEvidence).where(
-            RagRelatedEvidence.job_id == job_id
-        ))).all()
-        if mode in {"related_knowledge", "canonical_page"}:
-            assert len(refs) == 1
-            assert refs[0].chunk_id == source.chunk_id
-            if mode == "canonical_page":
-                assert refs[0].source_kind == "canonical_page"
-                assert canonical_page_text[refs[0].start_offset:refs[0].end_offset] == canonical_page_text
-                assert refs[0].end_offset > len(source.content)
-            else:
-                authoritative = source.content
-                assert authoritative[refs[0].start_offset:refs[0].end_offset] == source.content
-            assert stored.actual_input_tokens == 23
-            assert not stored.attempt_cost_unknown
-        else:
-            assert refs == []
-        if mode == "no_match":
-            assert stored.error_code is None
-            assert stored.actual_input_tokens == 3
-        elif mode == "embedding_failure":
-            assert stored.failed_stage == "query_embedding"
-            assert stored.provider_error_category == "embedding_provider_invalid_request"
-            assert stored.attempt_cost_unknown
-        elif mode == "embedding_timeout":
-            assert stored.failed_stage == "query_embedding"
-            assert stored.provider_error_category == "embedding_provider_timeout"
-            assert stored.execution_uncertain and stored.attempt_cost_unknown
-        elif mode == "retrieval_timeout":
-            assert stored.failed_stage == "retrieval"
-            assert stored.provider_error_category == "retrieval_failed"
-            assert stored.failure_reason == "retrieval_timeout"
-        if mode in {"canonical_page_changed", "canonical_anchor_changed"}:
-            assert stored.error_code == "rag_corpus_changed"
-        elif expected_status == "failed":
-            assert stored.error_code == "rag_answer_failed"
-        diagnostics = await answer_job_diagnostics(db, job_id)
-        assert diagnostics is not None
-        assert len(diagnostics["stages"]) == len(expected_stages)
+        async with db.begin():
+            stored = await db.get(RagAnswerJob, job_id)
+            assert stored.answer_policy_version == "related_knowledge_navigation_v4"
+            assert stored.source_judge_contract_version == "source_id_only_public_v1"
+            assert stored.source_judge_thinking_level is stored.source_judge_timeout_seconds is None
+            assert stored.source_context_policy_version is stored.source_context_admission_sha256 is None
+            assert stored.status == "failed" and stored.error_code == "rag_profile_mismatch"
+            assert stored.attempt_count == stored.provider_request_count == stored.provider_retry_count == 0
+            assert stored.result_kind is stored.answer_message_id is None
+            assert stored.claim_token is stored.provider_call_started_at is None
+            assert stored.actual_input_tokens is stored.actual_output_tokens is None
+            assert await db.scalar(select(func.count(RagAnswerStageAttempt.id)).where(
+                RagAnswerStageAttempt.job_id == job_id,
+            )) == 0
+            assert await db.scalar(select(func.count(RagRelatedEvidence.job_id)).where(
+                RagRelatedEvidence.job_id == job_id,
+            )) == 0
+            principal = await db.get(User, student_id)
+            setattr(principal, "_auth_session_id", auth_id)
+            history = await service.history(db, subject_id=subject_id, thread_id=thread_id,
+                                            user=principal, limit=20)
+            assert [(message.role, message.content) for message in history.messages] == [
+                ("user", "What is perihelion?"),
+            ]
+            assert history.messages[0].hidden is False and history.messages[0].sources == []
+            jobs = await service.list_jobs(db, subject_id=subject_id, thread_id=thread_id,
+                                           user=principal, limit=20)
+            assert len(jobs.jobs) == 1 and jobs.jobs[0].id == job_id
+            assert jobs.jobs[0].status == "failed" and jobs.jobs[0].related_excerpts == []
+            diagnostics = await answer_job_diagnostics(db, job_id)
+            assert diagnostics is not None and diagnostics["stages"] == []
+            # Even an old row carrying a retryable error cannot reinterpret its
+            # immutable historical execution contract as the current policy.
+            stored.error_retryable = True
+            with pytest.raises(HTTPException) as rejected:
+                await service.retry(db, subject_id=subject_id, thread_id=thread_id,
+                                    job_id=job_id, user=principal,
+                                    idempotency_key="historical-v4-retry-0001")
+            assert rejected.value.status_code == 409
+            assert rejected.value.detail["code"] == "rag_answer_not_retryable"
+    assert calls == []
+
 async def test_answer_worker_disabled_lifecycle_reports_health_and_drains(
     monkeypatch,
 ):

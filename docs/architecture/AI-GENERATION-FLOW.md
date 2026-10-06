@@ -90,7 +90,7 @@ flowchart LR
    compact parallel options and exact contiguous quote/answer spans. Refill passes
    bounded accepted question/answer exclusions as untrusted context; summaries
    remain navigation aids. Full accepted cards retain deterministic duplicate
-   enforcement. See [evaluation](../AI_EVALUATION.md) for bounds and evidence.
+   enforcement. See [evaluation](../ai/AI_EVALUATION.md) for bounds and evidence.
 9. Normal success requires exactly the requested number of cards. A final transaction
    revalidates the lease, creates the unpublished set and unapproved cards,
    records telemetry, deletes the source, and completes the job. A rollback
@@ -131,8 +131,8 @@ flowchart LR
 - Upload, page, text, queue, active-job, daily quota, retained-source, time,
   token, cost, concurrency, automatic-attempt, and manual-retry bounds are
   operator configuration. PostgreSQL advisory locking serializes admission and
-  quota charges. Use [PDF operations](../PDF_GENERATION.md) and
-  [configuration](../CONFIGURATION.md) for settings; do not duplicate defaults
+  quota charges. Use [PDF operations](../ai/PDF_GENERATION.md) and
+  [configuration](../operations/CONFIGURATION.md) for settings; do not duplicate defaults
   across the context system.
 - The source key is independent of the authentication secret. The pending
   candidate payload uses that key with separate authenticated associated data,
@@ -224,7 +224,7 @@ grounding or strict complete-result threshold changed.
   [provider tests](../../backend/tests/test_ai_providers.py),
   [governor tests](../../backend/tests/test_ai_rate_limit.py),
   [PostgreSQL persistence tests](../../backend/tests/postgres/test_generation_job_persistence.py).
-  [Evaluation](../AI_EVALUATION.md) and [testing](../TESTING.md) distinguish
+  [Evaluation](../ai/AI_EVALUATION.md) and [testing](../development/TESTING.md) distinguish
   deterministic offline coverage from opt-in live provider checks.
 
 ## Related ADRs and next reading
@@ -232,5 +232,5 @@ grounding or strict complete-result threshold changed.
 - [ADR-006: Grounded generation validation](../decisions/ADR-006-grounded-generation-validation.md)
 - [ADR-008: PostgreSQL durable jobs](../decisions/ADR-008-postgresql-durable-jobs.md)
 - [ADR index](../decisions/ADR-000-INDEX.md)
-- [AI provider operations](../AI_PROVIDERS.md), [system overview](SYSTEM-OVERVIEW.md),
+- [AI provider operations](../ai/AI_PROVIDERS.md), [system overview](SYSTEM-OVERVIEW.md),
   [backend map](../../backend/MOC.md), [frontend map](../../frontend/MOC.md)
