@@ -52,7 +52,7 @@ from app.services.subject import SubjectService
 from app.services.knowledge_lock import acquire_knowledge_write_lock
 from app.observability import current_request_id
 from app.ai.source_navigation import navigation_query_v4
-from app.services.rag_question_context_v2 import (
+from app.services.rag_question_context import (
     QuestionContextUnavailable, capture_question_context,
     persist_question_context, rehydrate_question_context,
 )

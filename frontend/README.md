@@ -13,8 +13,8 @@ ownership, API traces, and common change paths.
 ## Run locally
 
 Use the supported Node.js and npm versions in
-[docs/RUNTIMES.md](../docs/RUNTIMES.md). Configure the application from the one
-repository-root `.env` using [docs/CONFIGURATION.md](../docs/CONFIGURATION.md). The
+[docs/development/RUNTIMES.md](../docs/development/RUNTIMES.md). Configure the application from the one
+repository-root `.env` using [docs/operations/CONFIGURATION.md](../docs/operations/CONFIGURATION.md). The
 public `VITE_API_URL` setting controls the browser API base. `/api` is the
 same-origin path used by the Compose frontend; the local development route is
 configured in `vite.config.ts`.
@@ -44,11 +44,11 @@ Install the pinned Chromium
 runtime with `npx playwright install chromium` if needed. Browser tests start
 their own local Vite server on port 4175 and use controlled API fixtures; the
 live Mailpit password-reset test is gated separately by disposable credentials.
-See [docs/ACCESSIBILITY.md](../docs/ACCESSIBILITY.md) for manual accessibility
-checks and [docs/AI_EVALUATION.md](../docs/AI_EVALUATION.md) for AI quality gates.
+See [docs/ui/ACCESSIBILITY.md](../docs/ui/ACCESSIBILITY.md) for manual accessibility
+checks and [docs/ai/AI_EVALUATION.md](../docs/ai/AI_EVALUATION.md) for AI quality gates.
 The ordinary browser suite uses controlled API fixtures; run the separate real
 application journey with `python scripts/test_journey.py` from the repository
-root. Maintained commands and gates are in [docs/TESTING.md](../docs/TESTING.md).
+root. Maintained commands and gates are in [docs/development/TESTING.md](../docs/development/TESTING.md).
 
 ## Copy, artwork and releases
 
@@ -67,6 +67,6 @@ Use `CAPTURE_PRODUCT_SCREENSHOTS=1` only when intentionally regenerating the
 authored screenshots under `docs/images/` during the branding browser test.
 Review generated screenshots before publishing them.
 
-The private npm package is `cardchemy-web`, currently version 0.1.0; it is not
-published to npm. [Versioning](../docs/VERSIONING.md) and
-[release verification](../docs/RELEASING.md) own version/artifact policy.
+The private npm package is `cardchemy-web`, currently version 0.2.0; it is not
+published to npm. [Versioning](../docs/ci-cd/VERSIONING.md) and
+[release verification](../docs/ci-cd/RELEASING.md) own version/artifact policy.

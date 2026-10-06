@@ -4,7 +4,10 @@ All messages below are invented test content. No provider, retained database,
 operator configuration, private lecture, or actual source judgment is used.
 """
 from datetime import timedelta
+from functools import partial
 import hashlib
+import json
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -13,11 +16,8 @@ from sqlalchemy import delete, insert, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.source_judgment_visual_v3 import (
-    AdmissionUserMessage, SubjectAdmissionSnapshot, admission_identity,
-)
-from app.ai import source_judgment_visual_v3 as v7_contract
-from app.ai.source_navigation_context_v1 import resolve_subject_context
+from app.ai import source_judgment_visual as current_contract
+from app.ai.source_navigation_context import resolve_subject_context
 from app.database import Base
 from app.models.rag import RagAnswerJob, RagAnswerStageAttempt, RagMessage, RagThread
 from app.models.subject import Subject
@@ -28,6 +28,46 @@ from app.time_utils import utcnow
 pytestmark = pytest.mark.postgres
 CONTEXT_TABLE = "rag_answer_question_context"
 V7 = "related_knowledge_navigation_v7"
+
+
+def historical_admission_identity(snapshot, *, checked_at):
+    """Construct an old row's immutable identity without old execution code.
+
+    This independent fixture serializer mirrors the stored SQL hash contract;
+    the current worker correctly refuses to execute this historical policy.
+    """
+    def message(value):
+        return {
+            "message_id": str(value.message_id), "user_id": str(value.user_id),
+            "thread_id": str(value.thread_id), "subject_id": str(value.subject_id),
+            "content_sha256": value.content_sha256, "role": value.role,
+            "created_at": value.created_at.isoformat(),
+            "expires_at": value.expires_at.isoformat(),
+        }
+
+    assert snapshot.schema_version == "literal_subject_admission_v1"
+    assert snapshot.captured_at <= checked_at < snapshot.current.expires_at
+    payload = {
+        "schema_version": snapshot.schema_version, "current": message(snapshot.current),
+        "preceding": message(snapshot.preceding) if snapshot.preceding else None,
+        "corpus_revision": snapshot.corpus_revision,
+        "embedding_space_hash": snapshot.embedding_space_hash,
+        "captured_at": snapshot.captured_at.isoformat(),
+        "raw_question_clear": snapshot.raw_question_clear,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+v7_contract = SimpleNamespace(
+    AdmissionUserMessage=current_contract.AdmissionUserMessage,
+    SubjectAdmissionSnapshot=partial(current_contract.SubjectAdmissionSnapshot,
+                                     schema_version="literal_subject_admission_v1"),
+    admission_identity=historical_admission_identity,
+    CONTRACT_VERSION="visual_source_id_v3",
+    ADMISSION_SCHEMA="literal_subject_admission_v1",
+)
 
 
 def digest(value):

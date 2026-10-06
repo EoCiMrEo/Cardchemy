@@ -78,7 +78,7 @@ def validate_local(version: str, *, root: Path = ROOT) -> dict:
     require(re.search(r"(?m)^APP_NAME=Cardchemy$", template) is not None, "Root template name is stale")
     require(re.search(rf"(?m)^APP_VERSION={re.escape(version)}$", template) is not None, "Root template version disagrees")
     require(not (root / "backend/.env.example").exists() and not (root / "frontend/.env.example").exists(), "Only root configuration template is supported")
-    required = ("LICENSE", "NOTICE", "BRANDING.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "ROADMAP.md", "README.md", "docs/RELEASING.md")
+    required = ("LICENSE", "NOTICE", "BRANDING.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "ROADMAP.md", "README.md", "docs/ci-cd/RELEASING.md")
     for filename in required:
         path = root / filename
         require(path.is_file() and path.stat().st_size > 0, f"Required release document missing: {filename}")
@@ -307,7 +307,7 @@ def prepare_package(directory: Path, version: str, source_sha: str, preflight: d
     require(bool(notes), "Release notes cannot be empty")
     (directory / "release-notes.md").write_text(
         f"# Cardchemy {version}\n\nSource commit: `{source_sha}`. Platform: Linux/amd64.\n\n"
-        "Verify the Sigstore checksum bundle and image digests using docs/RELEASING.md before deployment. "
+        "Verify the Sigstore checksum bundle and image digests using docs/ci-cd/RELEASING.md before deployment. "
         "This pre-1.0 release does not establish a production deployment, paid-provider evaluation, "
         "or completion of the separate v1.0 gate. Provider calls can incur charges; demo/tests need no paid quota.\n\n"
         + notes + "\n", encoding="utf-8",

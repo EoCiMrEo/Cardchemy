@@ -89,8 +89,8 @@ portable exact-search baseline.
 [ADR-015](ADR-015-ask-pause-and-gemini-catalog.md),
 [ADR-018](ADR-018-gemini-embedding-2-space.md),
 [ADR-019](ADR-019-two-request-local-support-ask.md),
-[configuration](../CONFIGURATION.md), [AI providers](../AI_PROVIDERS.md),
-[RAG evaluation](../RAG_EVALUATION.md),
+[configuration](../operations/CONFIGURATION.md), [AI providers](../ai/AI_PROVIDERS.md),
+[RAG evaluation](../ai/RAG_EVALUATION.md),
 [Subject Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md).
 
 Primary provider references:

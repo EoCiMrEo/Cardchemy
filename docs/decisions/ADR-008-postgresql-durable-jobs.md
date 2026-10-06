@@ -49,7 +49,7 @@ admission changes require a new decision and measured operational need.
 ## Related areas
 
 - [AI generation architecture](../architecture/AI-GENERATION-FLOW.md),
-  [PDF operations](../PDF_GENERATION.md), [provider operations](../AI_PROVIDERS.md)
+  [PDF operations](../ai/PDF_GENERATION.md), [provider operations](../ai/AI_PROVIDERS.md)
 - [Job service](../../backend/app/services/generation.py),
   [worker](../../backend/app/workers/generation.py),
   [models](../../backend/app/models/generation.py),

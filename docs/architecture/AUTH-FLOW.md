@@ -84,8 +84,8 @@ This is a known answer-disclosure limitation, not an exam-security guarantee.
 
 ## Sources, verification and related decisions
 
-Read [auth operations](../AUTHENTICATION.md),
-[email delivery](../EMAIL_DELIVERY.md),
+Read [auth operations](../security/AUTHENTICATION.md),
+[email delivery](../mail-server/EMAIL_DELIVERY.md),
 [auth session tests](../../backend/tests/test_auth_sessions.py),
 [authorization tests](../../backend/tests/test_authorization.py),
 [invitation tests](../../backend/tests/test_invitations.py) and

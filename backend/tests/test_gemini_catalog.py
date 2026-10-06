@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.ai.answering import GroundedAnswerOutput
 from app.ai.contracts import CandidateBatch, SummaryOutput
 from app.ai.gemini_catalog import CATALOG, CATALOG_VERSION, SCHEMA_POLICY_VERSION
 from app.ai.providers import AIProviderError, GeminiProvider
@@ -44,8 +43,7 @@ class RejectingModels:
 @pytest.mark.parametrize("model_id", sorted(CATALOG))
 @pytest.mark.parametrize(
     "role,response_model",
-    [("flashcard", SummaryOutput), ("flashcard", CandidateBatch),
-     ("rag_answer", GroundedAnswerOutput)],
+    [("flashcard", SummaryOutput), ("flashcard", CandidateBatch)],
 )
 async def test_role_by_model_payload_and_unsupported_parameter_400(
     model_id, role, response_model

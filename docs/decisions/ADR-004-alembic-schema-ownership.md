@@ -36,4 +36,4 @@ foundation downgrade; disposable reversal tests remove application dependents.
 
 [Database lifecycle](../../backend/app/database.py),
 [Alembic](../../backend/alembic/), [Compose](../../docker-compose.yml),
-[database operations](../DATABASE_OPERATIONS.md), [ADR index](ADR-000-INDEX.md).
+[database operations](../database/DATABASE_OPERATIONS.md), [ADR index](ADR-000-INDEX.md).

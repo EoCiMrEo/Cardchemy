@@ -144,9 +144,9 @@ async def _seed(db, *, current_text="What does it stand for?", prior_text="What 
         document_ids=[], corpus_revision=7, retrieval_policy="hybrid_source_navigation_v9",
         embedding_space_hash="c" * 64, embedding_provider="gemini",
         embedding_base_url="https://generativelanguage.googleapis.com", embedding_model="gemini-embedding-001",
-        answer_policy_version="related_knowledge_navigation_v7",
+        answer_policy_version="related_knowledge_navigation_v8",
         source_judge_provider="gemini", source_judge_base_url="https://generativelanguage.googleapis.com",
-        source_judge_model="gemini-3.5-flash-lite", source_judge_contract_version="visual_source_id_v3",
+        source_judge_model="gemini-3.5-flash-lite", source_judge_contract_version="visual_source_id_v5",
         source_judge_input_price_microusd_per_million=300000,
         source_judge_output_price_microusd_per_million=2500000,
         source_judge_max_input_tokens=32768, source_judge_max_output_tokens=4096,
@@ -200,7 +200,7 @@ async def test_prior_retention_delete_removes_binding_and_preserves_newer_job(ac
 
 
 @pytest.mark.parametrize("invalid", [None, "x" * 64, "A" * 64, "a" * 63, "a" * 65])
-async def test_v7_job_context_hash_portable_orm_constraint_rejects_invalid_hash(actual_context_db, invalid):
+async def test_current_job_context_hash_portable_orm_constraint_rejects_invalid_hash(actual_context_db, invalid):
     db = actual_context_db
     _now, _prior, _current, job, _binding = await _seed(db)
     job.source_context_admission_sha256 = invalid
@@ -222,7 +222,7 @@ async def test_context_subject_hash_portable_orm_constraint_rejects_invalid_hash
     ("source_judge_contract_version", "visual_source_id_v2"),
     ("source_context_policy_version", "wrong-context-policy"),
 ])
-async def test_v7_production_job_rejects_budget_or_contract_reinterpretation(actual_context_db, change, value):
+async def test_current_production_job_rejects_budget_or_contract_reinterpretation(actual_context_db, change, value):
     db = actual_context_db
     _now, _prior, _current, job, _binding = await _seed(db)
     setattr(job, change, value)
@@ -235,7 +235,7 @@ async def test_v7_production_job_rejects_budget_or_contract_reinterpretation(act
     ("subject_start_byte_offset", -1), ("preceding_question_sha256", None),
     ("raw_question_clear", True), ("context_version", "wrong-context-policy"),
 ])
-async def test_v7_production_binding_rejects_partial_or_invalid_context_shape(actual_context_db, change, value):
+async def test_current_production_binding_rejects_partial_or_invalid_context_shape(actual_context_db, change, value):
     db = actual_context_db
     _now, _prior, _current, _job, binding = await _seed(db)
     setattr(binding, change, value)

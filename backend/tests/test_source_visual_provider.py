@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from app.ai import source_judgment_visual_v2 as contract
+from app.ai import source_judgment_visual as contract
 from app.ai.providers import AIProviderError, provider_attempt_scope
 from app.ai.providers.source_visual import GeminiVisualSourceJudge, parse_http_response
 from tests.test_source_judgment_visual import candidates, verdict
@@ -64,7 +64,7 @@ async def test_exactly_one_physical_request_and_no_retry(status):
         calls.append(request)
         return httpx.Response(status, json=response() if status == 200 else {"private": "never retain"})
     judge = GeminiVisualSourceJudge(settings(), transport=httpx.MockTransport(transport))
-    wire = contract.build_request("Which topic helps?", candidates(), group_id="G01")
+    wire = contract.build_page_request("Which topic helps?", candidates(), group_id="G01")
     async with provider_attempt_scope(judge) as scope:
         if status == 200:
             parsed = await judge.judge(wire)
@@ -89,7 +89,7 @@ async def test_timeout_reports_uncertain_single_attempt_without_retry():
     judge = GeminiVisualSourceJudge(settings(), transport=httpx.MockTransport(transport))
     async with provider_attempt_scope(judge) as scope:
         with pytest.raises(AIProviderError, match="timed out") as failure:
-            await judge.judge(contract.build_request("Which topic helps?", candidates(), group_id="G01"))
+            await judge.judge(contract.build_page_request("Which topic helps?", candidates(), group_id="G01"))
         assert failure.value.code == "ai_provider_timeout"
         assert not failure.value.retryable and scope.snapshot().request_count == 1
     assert len(calls) == 1
@@ -105,4 +105,4 @@ async def test_streamed_http_envelope_is_bounded():
         return httpx.Response(200, stream=Huge())
     judge = GeminiVisualSourceJudge(settings(), transport=httpx.MockTransport(transport))
     with pytest.raises(contract.VisualSourceJudgmentError, match="oversize"):
-        await judge.judge(contract.build_request("Which topic helps?", candidates(), group_id="G01"))
+        await judge.judge(contract.build_page_request("Which topic helps?", candidates(), group_id="G01"))

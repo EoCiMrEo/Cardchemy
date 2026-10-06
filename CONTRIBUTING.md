@@ -10,7 +10,7 @@ implemented work from proposals.
 ## Setup and safe development
 
 Follow [local setup](docs/development/LOCAL-SETUP.md) and
-[runtime support](docs/RUNTIMES.md). Configure only repository-root `.env`
+[runtime support](docs/development/RUNTIMES.md). Configure only repository-root `.env`
 from [.env.example](.env.example). Bootstrap refuses overwrites; preserve an
 existing file, secrets, data and volumes. Never commit credentials, private
 documents, invitation/reset links, database dumps or real user information.
@@ -24,7 +24,7 @@ new locale without an accepted product/architecture decision.
 
 ## Verification
 
-[TESTING.md](docs/TESTING.md) owns installation, commands and gated suites.
+[TESTING.md](docs/development/TESTING.md) owns installation, commands and gated suites.
 Run checks appropriate to the change:
 
 | Scope | Verification |
@@ -39,7 +39,7 @@ Run checks appropriate to the change:
 | Release metadata | `python scripts/check_release.py --version 0.1.0` from root; use the candidate's aligned version for later releases |
 
 Install hashed Python locks and use `npm ci` for clean frontend installs.
-Dependency changes follow [dependency policy](docs/DEPENDENCIES.md). Never
+Dependency changes follow [dependency policy](docs/ci-cd/DEPENDENCIES.md). Never
 lower security, coverage, accessibility or bundle budgets merely to pass.
 Paid AI and the separate live password-reset browser case require their
 documented opt-ins; configured credentials are not spending authorization.
@@ -52,7 +52,7 @@ gates from passed checks. For substantial work, add concise evidence under
 `.agent/logs/` following [its governance](.agent/README.md). Keep each PR
 reviewable, preserve unrelated work, and resolve review conversations.
 The required `ci-required` check and current-base branch protection apply to
-maintainers too. Publication follows [the release procedure](docs/RELEASING.md)
+maintainers too. Publication follows [the release procedure](docs/ci-cd/RELEASING.md)
 after the applicable manual and automated readiness gates pass.
 
 Use bug/feature templates for nonsensitive reports. Report vulnerabilities

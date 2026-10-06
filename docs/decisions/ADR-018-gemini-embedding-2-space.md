@@ -92,12 +92,11 @@ unmeasured fleet-wide model change.
 
 [ADR-012](ADR-012-subject-knowledge-and-rag-boundaries.md),
 [ADR-014](ADR-014-native-gemini-rag-profiles.md),
-[configuration](../CONFIGURATION.md), [profile migration](../AI_PROFILE_MIGRATION.md),
-[RAG evaluation](../RAG_EVALUATION.md),
+[configuration](../operations/CONFIGURATION.md), [profile migration](../ai/AI_PROFILE_MIGRATION.md),
+[RAG evaluation](../ai/RAG_EVALUATION.md),
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md).
 
 Primary provider references:
 [Gemini embeddings](https://ai.google.dev/gemini-api/docs/embeddings),
 [Gemini models](https://ai.google.dev/gemini-api/docs/models), and
 [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing).
-

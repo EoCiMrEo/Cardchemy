@@ -46,7 +46,7 @@ marketing mail are outside the accepted product workflow.
 ## Related areas
 
 - [System overview](../architecture/SYSTEM-OVERVIEW.md),
-  [authentication flow](../architecture/AUTH-FLOW.md), [email operations](../EMAIL_DELIVERY.md)
+  [authentication flow](../architecture/AUTH-FLOW.md), [email operations](../mail-server/EMAIL_DELIVERY.md)
 - [Email service/templates/transport](../../backend/app/services/email.py),
   [email worker](../../backend/app/workers/email.py),
   [outbox models](../../backend/app/models/email.py),

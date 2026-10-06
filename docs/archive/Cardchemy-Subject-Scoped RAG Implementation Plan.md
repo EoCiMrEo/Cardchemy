@@ -776,14 +776,14 @@ ships, so filtered ANN recall remains explicitly not applicable; exact search
 is the comparison baseline. The evidence retained top-5/RRF/similarity/context/
 shared chunking and did not justify a reranker. The bounded three-call live
 harness is implemented and guard-tested, but no paid live run was authorized.
-See [evaluation evidence](../RAG_EVALUATION.md) and the
+See [evaluation evidence](../ai/RAG_EVALUATION.md) and the
 [dated closure log](../../.agent/logs/2026-09-19/2026-09-19-rag-frontend-and-evaluation.md).
 
 ---
 
 ## Phase 20 — Integrated regression, security and CI gate
 
-Every preceding phase runs applicable checks from [TESTING.md](../TESTING.md).
+Every preceding phase runs applicable checks from [TESTING.md](../development/TESTING.md).
 This phase is final integration verification, not the first time tests are added.
 
 ### Existing gates
@@ -994,10 +994,10 @@ implementation authority until explicitly revised:
 [AI flow](../architecture/AI-GENERATION-FLOW.md),
 [data model](../architecture/DATA-MODEL.md),
 [ADR index](../decisions/ADR-000-INDEX.md),
-[configuration](../CONFIGURATION.md), [AI evaluation](../AI_EVALUATION.md),
-[privacy](../PRIVACY.md), [observability](../OBSERVABILITY.md),
-[database operations](../DATABASE_OPERATIONS.md),
-[runtimes](../RUNTIMES.md) and [testing](../TESTING.md).
+[configuration](../operations/CONFIGURATION.md), [AI evaluation](../ai/AI_EVALUATION.md),
+[privacy](../security/PRIVACY.md), [observability](../operations/OBSERVABILITY.md),
+[database operations](../database/DATABASE_OPERATIONS.md),
+[runtimes](../development/RUNTIMES.md) and [testing](../development/TESTING.md).
 Implementation-time vector/FTS choices must be checked against primary
 [pgvector](https://github.com/pgvector/pgvector),
 [pgvector Python](https://github.com/pgvector/pgvector-python) and

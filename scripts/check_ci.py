@@ -168,7 +168,7 @@ def main() -> None:
     require(any(step.get("run") == "python scripts/check_context.py"
                 for step in jobs["backend-offline"]["steps"]),
             "Backend CI must validate required repository context and local documentation links")
-    require(any(step.get("run") == "python scripts/check_release.py --version 0.1.0"
+    require(any(step.get("run") == "python scripts/check_release.py --version 0.2.0"
                 for step in jobs["backend-offline"]["steps"]),
             "Backend CI must validate local release/governance metadata")
     require(any(step.get("run") == "python scripts/prepare_release_notices.py --check"

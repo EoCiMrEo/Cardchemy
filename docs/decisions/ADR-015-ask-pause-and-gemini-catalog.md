@@ -74,8 +74,8 @@ supports restore and source/history ownership without allowing mixed spaces.
 [ADR-012](ADR-012-subject-knowledge-and-rag-boundaries.md),
 [ADR-014](ADR-014-native-gemini-rag-profiles.md),
 [ADR-019](ADR-019-two-request-local-support-ask.md),
-[Ask shutdown operations](../ASK_AI_SHUTDOWN.md),
-[provider guide](../AI_PROVIDERS.md),
-[profile migration](../AI_PROFILE_MIGRATION.md),
+[Ask shutdown operations](../ai/ASK_AI_SHUTDOWN.md),
+[provider guide](../ai/AI_PROVIDERS.md),
+[profile migration](../ai/AI_PROFILE_MIGRATION.md),
 [Knowledge flow](../architecture/SUBJECT-KNOWLEDGE-FLOW.md),
-[active remediation plan](../development/PRODUCT-QUALITY-REMEDIATION-PLAN.md).
+[active remediation plan](../archive/PRODUCT-QUALITY-REMEDIATION-PLAN.md).

@@ -8,11 +8,17 @@ Cardchemy helps instructors turn lecture PDFs into source-grounded,
 multiple-choice flashcards. Instructors own subjects, review and approve cards,
 publish sets and invite students. Enrolled students study approved cards with
 server-recorded answers and spaced repetition, and track completion, accuracy
-and mastery. Cardchemy is a standalone project.
+and mastery. Published lecture PDFs are also available for related reading
+through source-only Ask AI. Cardchemy is a standalone self-hosted project.
+
+The **0.2.0** release candidate brings together the completed product-quality
+work, repository cleanup and current architecture documentation. Publication
+status and verified artifacts belong to the [release page](https://github.com/EoCiMrEo/Cardchemy/releases)
+and [current state](docs/development/CURRENT-STATE.md).
 
 [Start Here](docs/00-START-HERE.md) explains the product;
 [the public roadmap](ROADMAP.md) separates implemented features from proposals.
-[Versioning](docs/VERSIONING.md), [the changelog](CHANGELOG.md) and
+[Versioning](docs/ci-cd/VERSIONING.md), [the changelog](CHANGELOG.md) and
 [releases](https://github.com/EoCiMrEo/Cardchemy/releases) identify versions and
 artifacts. Local Docker Compose is the reference environment; production-shaped
 configuration does not establish a live production service.
@@ -31,20 +37,39 @@ These views use authored demonstration data.
 flowchart LR
   Browser[React browser] --> Edge[Nginx frontend / TLS edge]
   Edge --> API[FastAPI API]
-  API --> DB[(PostgreSQL)]
+  API --> DB[(PostgreSQL 16 + pgvector)]
   Generation[Generation worker] --> DB
-  Generation --> Provider[Gemini / OpenAI-compatible provider]
+  Generation --> Text[Native Gemini flashcard generation]
+  Index[Knowledge index worker] --> DB
+  Index --> Embedding[Gemini embeddings]
+  Ask[Ask source worker] --> DB
+  Ask --> Embedding
+  Ask --> Judge[Gemini source-ID judgment]
   Email[Email worker] --> DB
   Email --> SMTP[Mailpit locally / encrypted production SMTP]
 ```
 
 FastAPI/Pydantic and async SQLAlchemy own authorization and transactions.
-PostgreSQL 16 stores content, progress, sessions and durable generation/email
+PostgreSQL 16 stores content, progress, sessions and durable generation/index/Ask/email
 queues; Alembic alone evolves the schema. React, TypeScript and Vite power the
 browser, which keeps access tokens in memory and waits for durable answer saves.
-PDF extraction, validated AI and SMTP run in separate workers.
+PDF extraction, validated AI and SMTP run in separate workers. Start with the
+[visual architecture guide](docs/diagrams/README.md) for the system, generation,
+Knowledge/indexing, Ask, authentication, study, email and release diagrams.
 See the [system overview](docs/architecture/SYSTEM-OVERVIEW.md),
 [project map](PROJECT-MAP.md) and [accepted decisions](docs/decisions/ADR-000-INDEX.md).
+
+Flashcard generation uses native Gemini, with `gemini-3.8-flash` as the
+template default. Knowledge indexing and Ask query embeddings default to
+`gemini-embedding-001`; Embedding 2 requires an explicit separate-space cutover.
+Ask combines authorized local PostgreSQL vector/full-text retrieval with at
+most one current-question embedding and one bounded Gemini source-ID judgment
+(template judge: `gemini-3.5-flash-lite`). It returns up to three unverified
+original-PDF references, without generating or verifying an answer. Transient
+embedding unavailability may use bounded local lexical retrieval; a displayed
+reference alone does not prove that a request used that fallback. Eligible
+candidates still pass the Gemini source-ID judgment. Browsing/searching
+Published Knowledge is a separate local workflow and makes no Ask provider call.
 
 ## Prerequisites
 
@@ -55,7 +80,7 @@ unless your deployment explicitly selects verified published artifacts.
 
 Native development/tests also use Node.js 24.x, npm 11.x, the hashed Python
 development lock, Playwright Chromium and PostgreSQL 16.
-[RUNTIMES.md](docs/RUNTIMES.md) owns precise support and
+[RUNTIMES.md](docs/development/RUNTIMES.md) owns precise support and
 [local setup](docs/development/LOCAL-SETUP.md) covers installation modes.
 
 ## Quick local setup
@@ -73,7 +98,7 @@ The instructor command prompts for a password. Open
 [the application](http://127.0.0.1:8080) and
 [local Mailpit](http://127.0.0.1:8025); these ports are template defaults.
 Students register through instructor invitations. Additional instructors need
-the explicit CLI flag in [authentication guidance](docs/AUTHENTICATION.md).
+the explicit CLI flag in [authentication guidance](docs/security/AUTHENTICATION.md).
 
 Root `.env` is the sole user-managed configuration file and
 [.env.example](.env.example) is its only template. Bootstrap generates three
@@ -82,17 +107,21 @@ skip bootstrap. No backend/frontend `.env` is needed. Nonempty process settings
 override root values, then validated defaults apply. Only public `VITE_*`
 values reach the browser.
 
-Generation starts disabled. Configure the generation worker's credential/model
-and set `FLASHCARD_AI_PROVIDER_ENABLED=true` before uploading for AI generation. Calls can
-spend provider quota. Compose isolates AI credentials to that worker and SMTP
-credentials to the email worker. [Configuration](docs/CONFIGURATION.md) defines
+Generation and Ask start disabled on a fresh installation. Configure the
+generation worker's credential/model and set `FLASHCARD_AI_PROVIDER_ENABLED=true`
+before uploading for AI generation. Ask needs its separate enablement/judge
+flags, compatible active Knowledge space and current provider prices; see
+[Ask configuration](docs/ai/AI_PROVIDERS.md). Calls can spend provider quota.
+Compose isolates text-generation, embedding and source-judge credentials to
+their respective workers and SMTP credentials to the email worker.
+[Configuration](docs/operations/CONFIGURATION.md) defines
 ranges, consumers and applying changes. Stop with `docker compose down`,
 retaining data volumes; choose exactly one documented development/production
 override. [Local setup](docs/development/LOCAL-SETUP.md) covers native editing.
 
 ## Try without provider quota
 
-After installing the [test dependencies and Chromium](docs/TESTING.md), run
+After installing the [test dependencies and Chromium](docs/development/TESTING.md), run
 this automated demonstration from root:
 
 ```text
@@ -110,12 +139,12 @@ still need normal network access.
 
 For a bounded interactive installation, use
 `python scripts/test_journey.py --demo --demo-minutes 30`.
-The [demo guide](docs/DEMO.md) explains private generated sign-in details,
+The [demo guide](docs/development/DEMO.md) explains private generated sign-in details,
 packaged Nginx candidates and automatic cleanup.
 
 ## Secure, operate, back up and upgrade
 
-Before accepting real users, follow [deployment](docs/DEPLOYMENT.md): put TLS
+Before accepting real users, follow [deployment](docs/operations/DEPLOYMENT.md): put TLS
 at the edge, keep API/database ports private, use secure cookies and encrypted
 production SMTP, and configure trusted origins and process credentials.
 Mailpit is local/test capture, not a production relay.
@@ -124,13 +153,13 @@ Create encrypted off-host PostgreSQL backups and rehearse restoration into a
 separate database. Protect signing and source-encryption keys separately.
 For upgrades, stop admission and drain writers/workers, verify a usable backup,
 retain existing Compose/database identities and authentication settings as
-explained in [the configuration upgrade note](docs/CONFIGURATION.md#existing-installations-and-cardchemy-defaults),
+explained in [the configuration upgrade note](docs/operations/CONFIGURATION.md#existing-installations-and-cardchemy-defaults),
 select the intended release, migrate with Alembic, verify all heads and restore
 traffic after readiness/application checks. Preserve populated volumes and
 installation secrets; never stamp past a failed migration. Commands and
-rollback limits belong to [database operations](docs/DATABASE_OPERATIONS.md).
+rollback limits belong to [database operations](docs/database/DATABASE_OPERATIONS.md).
 
-[Safe diagnostics](docs/OBSERVABILITY.md) expose request/job IDs, latency,
+[Safe diagnostics](docs/operations/OBSERVABILITY.md) expose request/job IDs, latency,
 queue/worker state, model usage/cost and privileged audits. Export, explicit
 account deletion and retention are guarded operator commands. Protect their
 output and configure proxy/collector log rotation. External aggregate telemetry
@@ -142,7 +171,7 @@ Extracted text, evidence and prompts leave the deployment when a remote AI
 provider is selected. Provider/SMTP contracts, user disclosures, backup expiry
 and legal suitability belong to the operator. Temporary PDFs are encrypted
 and cleaned up; generated quotations remain in cards until content deletion.
-[Privacy controls](docs/PRIVACY.md) define retention/export/deletion and
+[Privacy controls](docs/security/PRIVACY.md) define retention/export/deletion and
 independent provider, backup and mail copies.
 
 - Instructors are provisioned by CLI; public registration creates invited
@@ -160,8 +189,8 @@ independent provider, backup and mail copies.
   have separate gates. Offline tests do not establish those results.
 
 See [study behavior](docs/architecture/STUDY-PROGRESS-FLOW.md),
-[AI providers](docs/AI_PROVIDERS.md), [PDF generation](docs/PDF_GENERATION.md)
-and [accessibility](docs/ACCESSIBILITY.md) for precise boundaries.
+[AI providers](docs/ai/AI_PROVIDERS.md), [PDF generation](docs/ai/PDF_GENERATION.md)
+and [accessibility](docs/ui/ACCESSIBILITY.md) for precise boundaries.
 
 ## Troubleshooting
 
@@ -190,12 +219,12 @@ prompts/responses or reset/invitation links.
 | Root | `python scripts/test_services.py mailpit` | Disposable transactional email integration |
 | Root | `python scripts/test_journey.py` | Real application journey without provider quota |
 
-[TESTING.md](docs/TESTING.md) is command authority. Follow
+[TESTING.md](docs/development/TESTING.md) is command authority. Follow
 [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md),
 and use issue/PR templates for focused nonsensitive changes. Vulnerabilities
 use the GitHub private form in [SECURITY.md](SECURITY.md). See
-[VERSIONING.md](docs/VERSIONING.md) for version policy,
-[RELEASING.md](docs/RELEASING.md) for signature/artifact verification, and the
+[VERSIONING.md](docs/ci-cd/VERSIONING.md) for version policy,
+[RELEASING.md](docs/ci-cd/RELEASING.md) for signature/artifact verification, and the
 changelog and release page for publishing status.
 
 Code and documentation are copyright 2026 EoCiMrEo and licensed under

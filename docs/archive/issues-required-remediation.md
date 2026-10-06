@@ -674,7 +674,7 @@ breaks the full build, security boundaries, migrations, or critical user journey
 and metrics without seeing secrets or unnecessary user content.
 
 **Completed 2026-09-17:** [closure evidence](../../.agent/logs/2026-09-17/2026-09-17-phase-10-remediation.md),
-[safe diagnostics](../OBSERVABILITY.md), [privacy/lifecycle controls](../PRIVACY.md)
+[safe diagnostics](../operations/OBSERVABILITY.md), [privacy/lifecycle controls](../security/PRIVACY.md)
 and [ADR-011](../decisions/ADR-011-operational-privacy-controls.md).
 Alembic revision `20260917_0008` adds operational/audit records. Exports/deletion
 and bounded retention are guarded operator commands; telemetry is disabled by

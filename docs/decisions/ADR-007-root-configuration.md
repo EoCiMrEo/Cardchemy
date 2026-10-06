@@ -37,5 +37,5 @@ reading the shared root file do not gain Compose's credential isolation.
 
 [Settings](../../backend/app/config.py), [public loader](../../frontend/config/environment.mjs),
 [Vite](../../frontend/vite.config.ts), [Compose](../../docker-compose.yml),
-[bootstrap](../../scripts/bootstrap_env.py), [configuration guide](../CONFIGURATION.md),
+[bootstrap](../../scripts/bootstrap_env.py), [configuration guide](../operations/CONFIGURATION.md),
 [system overview](../architecture/SYSTEM-OVERVIEW.md).

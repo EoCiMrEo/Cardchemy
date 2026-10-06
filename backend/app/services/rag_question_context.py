@@ -1,4 +1,4 @@
-"""Admission-bound local context for the prospective v7 source-only policy.
+"""Admission-bound local context for the versioned v8 source-only policy.
 
 The enqueue caller already owns Subject/access/corpus authorization and holds
 the thread admission lock. Capture occurs before adding the current question;
@@ -19,7 +19,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.source_judgment_visual_v3 import (
+from app.ai.source_judgment_visual import (
     ADMISSION_SCHEMA,
     CONTRACT_VERSION,
     AdmissionUserMessage,
@@ -29,17 +29,17 @@ from app.ai.source_judgment_visual_v3 import (
     bind_question_context,
 )
 from app.ai.source_navigation import navigation_query_v4
-from app.ai.source_navigation_context_v1 import (
+from app.ai.source_navigation_context import (
     LiteralSubjectAnchor,
     MAX_CURRENT_CHARS,
     POLICY_ID,
-    resolve_subject_context,
 )
+from app.ai.source_navigation_context import resolve_subject_context
 from app.models.rag import RagAnswerJob, RagMessage, RagThread
 from app.time_utils import as_utc
 
 
-ANSWER_POLICY = "related_knowledge_navigation_v7"
+ANSWER_POLICY = "related_knowledge_navigation_v8"
 _SPAN_FIELDS = (
     "subject_start_offset", "subject_end_offset", "subject_start_byte_offset",
     "subject_end_byte_offset", "subject_sha256",
@@ -69,7 +69,7 @@ class CapturedQuestionContext:
 
 @dataclass(frozen=True, slots=True)
 class HydratedQuestionContext:
-    """Only the v3 builder may project its literal anchor into a provider wire."""
+    """Only the admission-bound source-ID builder may project the literal anchor."""
 
     snapshot: SubjectAdmissionSnapshot
     binding: QuestionContextBinding = field(repr=False)
@@ -215,7 +215,7 @@ async def capture_question_context(
 def _binding_model(binding_model: Any = None) -> Any:
     if binding_model is not None:
         return binding_model
-    # Lazy only while the new model/migration is being prepared concurrently.
+    # Import lazily to keep the pure context helpers independent of model loading.
     from app.models.rag import RagAnswerQuestionContext
     return RagAnswerQuestionContext
 

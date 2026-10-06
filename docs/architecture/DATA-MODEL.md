@@ -1,64 +1,13 @@
 # Data Model
 
-## Current local Lane 6 closure — 2026-10-04
-
-The local source-only v8/visual-v5/admission-v2 installation on head `0033`
-is enabled after its measured quality, PDF/display and release gates. Fresh
-installations remain default-off. See the
-[closure and activation evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
-checkpoints below remain historical snapshots; the linked closure supersedes
-their off/pending status, while default-off and upgrade safeguards still apply.
-
-## Current checkout head 0032 — 2026-10-02
-
-The additive [literal-context migration](../../backend/alembic/versions/20261002_0032_literal_subject_context.py)
-introduces admission metadata and immutable/deferred job-context guards for v7.
-It preserves historical policies and rows. Context contains identities,
-timestamps, hashes and exact literal offsets, with no copied message text;
-scoped deletion clears context while preserving independent job history.
-Trusted asyncpg UUID subtypes are normalized at the service boundary without
-changing canonical admission hashes or weakening the pure contract. Full
-disposable PostgreSQL head/drift and downgrade/re-upgrade passed; see
-[evidence](../../.agent/logs/2026-10-02/2026-10-02-v7-postgresql-uuid-repair.md).
-The retained database also reached `20261002_0032` after a restore-verified
-forward cutover; retained heads/drift and preserved aggregate counts passed.
-Matching services are healthy with Ask off; see
-[cutover evidence](../../.agent/logs/2026-10-02/2026-10-02-v7-retained-cutover-and-release-recheck.md).
-Earlier dated sections are history.
-
-## Historical dormant visual Ask contract — 2026-10-01
-
-Source and retained schema are `20261001_0031`; matching application services
-are healthy after a restore-verified forward cutover, with data, original PDFs
-and root `.env` preserved. Ask and source judging remain disabled. The
-`related_knowledge_navigation_v6` / `hybrid_source_navigation_v9` path uses
-`visual_source_id_v2`, Gemini 3.5 Flash-Lite HIGH, 32,768 input / 4,096 output
-including thinking and a 60-second provider deadline. It allows at most one
-current-question embedding and one issued-ID/category-only judgment, zero
-answer/verifier calls and zero automatic provider retries. Full-page PNGs are
-bounded to 1 MiB/2 MP/1,600 pixels; definitive oversize alone permits bounded
-1,400/1,200/1,000 scale reduction within one 30-second page deadline.
-
-Complete public calibration passed with 89.32% useful displayed cards.
-Independent different-PDF/private usefulness and release gates remain open:
-the prospective target is 80% displayed usefulness, at least 10/12 ordinary
-no-match controls and the existing hit/availability gates. Fabricated,
-unauthorized, stale or wrong-page references still require zero. Installed
-0030 and historical v5/visual-v1 2,048-token snapshots remain immutable and
-readable; they cannot execute or manually retry as v6.
-
-See the [current verification record](../../.agent/logs/2026-10-01/2026-10-01-visual-v6-matching-contract-and-backup.md).
-Earlier dated v4/v5 details below describe retained history where they differ.
-
-
-Current truth verified against code: 2026-09-26.
+Current source-only Ask uses `related_knowledge_navigation_v8`, `visual_source_id_v5` and `literal_subject_admission_v2` at Alembic head `20261002_0033`. Fresh installations remain default-off. The retained local installation was enabled after its measured release gates on 2026-10-04; see the [closure evidence](../../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Historical policies and database rows remain immutable and readable; they cannot execute as new jobs.
 
 ## Purpose and scope
 
 Explain persisted ownership and integrity across content, study, authentication
 and background work. PostgreSQL is the deployed database; Alembic owns schema
 evolution. Account deletion/export are operator CLI controls described in
-[privacy](../PRIVACY.md); there is no public account-deletion API.
+[privacy](../security/PRIVACY.md); there is no public account-deletion API.
 
 ## Key components
 
@@ -145,13 +94,14 @@ still survives job deletion, independently of the reused document.
   their answer provider/model/support snapshots. Jobs use separate admission and
   quota rows, bounded manual retry, claim tokens, leases, deadlines and current-
   access/corpus checks before the provider stage and final commit. A new
-  `related_knowledge_navigation_v3` completion atomically binds `related_knowledge` and
+  `related_knowledge_navigation_v8` completion atomically binds `related_knowledge` and
   up to three exact ordered source references, or `no_match` and zero refs;
   neither kind has an assistant answer message. Historical answer/abstention
   completion still binds its message and citation rules.
-- Under retained `related_knowledge_v1`/navigation-v2 or current navigation-v3, one manual attempt can have only one
-  query-embedding stage with at most one physical request and zero retries;
-  it makes zero answer-model/verifier calls. Historical two-request stages remain
+- Under current navigation-v8/visual-v5/admission-v2, one manual attempt can have
+  only one query-embedding stage and at most one source-ID judgment stage, each
+  with at most one physical request and zero retries; it makes zero answer-model/
+  verifier calls. Historical two-request stages remain
   stored for audit but cannot execute as new work. The `0023` stage trigger binds
   source-only stage policy and current manual/worker attempt numbers to the
   locked parent job, preventing null or different policy snapshots from bypassing
@@ -219,7 +169,7 @@ identity to the parent job. Source-only activation needs its separate quality
 and rollout gate.
 [database startup](../../backend/app/database.py) verifies the
 database matches all configured heads. Never infer the live database revision
-from this code snapshot. See [database operations](../DATABASE_OPERATIONS.md),
+from this code snapshot. See [database operations](../database/DATABASE_OPERATIONS.md),
 [PostgreSQL integrity tests](../../backend/tests/postgres/test_database_integrity.py),
 [duplicate-choice PostgreSQL tests](../../backend/tests/postgres/test_postgres_knowledge_duplicate_choice.py),
 [idempotency tests](../../backend/tests/test_study_idempotency.py) and

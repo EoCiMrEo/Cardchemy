@@ -16,10 +16,10 @@ from app.ai.providers import AIProviderError, current_attempt_scope, provider_at
 from app.ai.providers.source_visual import VisualJudgeResponse
 from app.ai.source_judgment_visual import VisualSourceJudgmentError
 from app.services.source_visual_preparation import PdfSourceBinding, PreparedVisualSources
-from app.services.rag_question_context_v2 import HydratedQuestionContext
+from app.services.rag_question_context import HydratedQuestionContext
 from app.workers import rag_answer as module
-from tests.test_source_judgment_worker import _selection
-from tests.test_source_visual_preparation_v5 import fixture
+from tests.test_source_candidate_pool import _selection
+from tests.test_source_visual_context import fixture
 
 
 QUESTION = "How does the method update weights?"
@@ -64,7 +64,7 @@ def setup(monkeypatch, *, response=None, error=None, physical_calls=1):
         calls.append(("prepare", kwargs))
         return PreparedVisualSources({"synthetic": True}, (binding,))
     monkeypatch.setattr(module.KnowledgeRetriever, "authorize", classmethod(authorize))
-    monkeypatch.setattr(module, "prepare_visual_sources_v5", prepare)
+    monkeypatch.setattr(module, "prepare_visual_sources", prepare)
     async def rehydrate(_db, **kwargs):
         assert kwargs["job"] is job
         return context

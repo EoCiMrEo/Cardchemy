@@ -130,8 +130,8 @@ server-owned evidence boundary.
 
 [Generation flow](../architecture/AI-GENERATION-FLOW.md),
 [data model](../architecture/DATA-MODEL.md),
-[AI evaluation](../AI_EVALUATION.md),
-[database operations](../DATABASE_OPERATIONS.md),
+[AI evaluation](../ai/AI_EVALUATION.md),
+[database operations](../database/DATABASE_OPERATIONS.md),
 [generation service](../../backend/app/services/generation.py),
 [generation worker](../../backend/app/workers/generation.py),
 [generation UI](../../frontend/src/components/generation/GenerationJobCard.tsx),

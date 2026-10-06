@@ -11,7 +11,7 @@ from app.models.rag import RagAnswerQuestionContext, RagAnswerQuotaEvent, RagMes
 from app.schemas.rag import RagQuestionCreate
 from app.services.knowledge_retrieval import KnowledgeRetriever
 from app.services.rag_answers import RagAnswerService
-from app.services.rag_question_context_v2 import rehydrate_question_context
+from app.services.rag_question_context import rehydrate_question_context
 from app.time_utils import utcnow
 from tests.test_rag_answers import _authorize, _seed, _settings
 

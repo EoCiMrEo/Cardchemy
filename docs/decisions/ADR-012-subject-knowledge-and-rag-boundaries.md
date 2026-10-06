@@ -58,7 +58,7 @@ target and rebuilt indexes, preserving the original volume until recovery is
 verified. The named data-directory path remains unchanged; that does not
 authorize an in-place distribution switch. Native operators retain their
 platform's compatible locale or rehearse a separate logical target under the
-[database operations](../DATABASE_OPERATIONS.md) contract.
+[database operations](../database/DATABASE_OPERATIONS.md) contract.
 Alembic checks exact extension version/schema and installation permissions;
 downgrading the foundation leaves the possibly shared extension installed.
 This extends [ADR-004](ADR-004-alembic-schema-ownership.md), retaining one
@@ -221,7 +221,7 @@ covered by capture/cancellation fencing tests.
 [two-request Ask](ADR-019-two-request-local-support-ask.md),
 [data model](../architecture/DATA-MODEL.md),
 [AI flow](../architecture/AI-GENERATION-FLOW.md),
-[runtime support](../RUNTIMES.md), [evaluation](../AI_EVALUATION.md).
+[runtime support](../development/RUNTIMES.md), [evaluation](../ai/AI_EVALUATION.md).
 
 Primary selection sources: [OpenAI embeddings](https://developers.openai.com/api/docs/guides/embeddings),
 [embedding model/pricing](https://developers.openai.com/api/docs/models/text-embedding-3-small),

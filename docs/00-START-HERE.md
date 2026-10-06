@@ -49,19 +49,24 @@ application with an online-first study flow.
 
 ## Current development state
 
-Ask AI is enabled in the retained local installation (verified 2026-10-04). Product-quality Lane 6 is **7/7 complete** on
-retained head `20261002_0033`; Lane 7's three tasks remain unchecked. See the
+Ask AI is configured enabled in the retained local installation (configuration
+rechecked 2026-10-05). Product-quality Lane 6 is **7/7 complete** on
+retained head `20261002_0033`. The operator defined final Lane 7 as repository
+cleanup, current documentation/diagrams and protected 0.2.0 rollout. Cleanup and
+documentation are ready; publication status belongs to [current state](development/CURRENT-STATE.md). See the
 [actual local closure](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md), including independent usefulness,
 source/display, release checks and the limits of controlled browser replay.
 
-Version 0.1.0; [current state](development/CURRENT-STATE.md) and dated
+The source release candidate is 0.2.0; [current state](development/CURRENT-STATE.md) and dated
 [closure evidence](../.agent/logs/2026-09-21/2026-09-21-rag-release-closure.md)
 record Phases 0–21 complete, including independently verified public v0.1.0
 publication and Subject Knowledge/RAG closure. The separate v1.0 operational
 readiness gate passed; see
 [gate evidence](../.agent/logs/2026-09-17/2026-09-17-v1-release-gate.md).
 The published version remains 0.1.0; readiness completion did not publish v1.0.
-See [release procedures](RELEASING.md).
+See [release procedures](ci-cd/RELEASING.md).
+Use the [visual architecture tour](diagrams/README.md) to follow each workflow
+and distinguish Gemini embedding/source judgment from local retrieval/search.
 Local development is the reference environment;
 production-shaped Compose and production operating guides do not establish a
 live production deployment. Read [current state](development/CURRENT-STATE.md).
@@ -78,7 +83,7 @@ PDF extraction uses pypdf, with optional Poppler/Tesseract OCR. React 19,
 TypeScript, Vite, React Router, Axios, Redux Toolkit, Tailwind, Radix and Framer
 Motion make up the client. Docker Compose runs separate generation, index,
 answer and email workers plus a built Nginx frontend; local SMTP is Mailpit. See
-[runtime support](RUNTIMES.md) and [dependency policy](DEPENDENCIES.md).
+[runtime support](development/RUNTIMES.md) and [dependency policy](ci-cd/DEPENDENCIES.md).
 
 ## Important product / technical invariants
 
@@ -107,7 +112,7 @@ answer and email workers plus a built Nginx frontend; local SMTP is Mailpit. See
 - Completion requires durable answer persistence. There is no offline answer
   queue or service worker. English is the supported UI language.
 - Diagnostics use safe codes and opaque correlation IDs. Operator-only
-  [metrics/audits](OBSERVABILITY.md) and [privacy controls](PRIVACY.md) exclude
+  [metrics/audits](operations/OBSERVABILITY.md) and [privacy controls](security/PRIVACY.md) exclude
   document content from logs; external aggregate reporting is off by default.
 
 Rationale lives in the [accepted ADRs](decisions/ADR-000-INDEX.md).

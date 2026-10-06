@@ -43,7 +43,7 @@ jobs:
       - name: Validate repository context files and local documentation links
         run: python scripts/check_context.py
       - name: Validate local release identity and governance
-        run: python scripts/check_release.py --version 0.1.0
+        run: python scripts/check_release.py --version 0.2.0
       - name: Validate redistributed code and brand notices
         run: python scripts/prepare_release_notices.py --check
       - name: Offline contracts and branch coverage

@@ -1,13 +1,12 @@
 # Frontend map of content
 
-## Current local Lane 6 closure — 2026-10-04
+## Current local Lane 6 closure â€” 2026-10-04
 
 The local source-only v8/visual-v5/admission-v2 installation on head `0033`
 is enabled after its measured quality, PDF/display and release gates. Fresh
 installations remain default-off. See the
-[closure and activation evidence](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). Earlier installation
-checkpoints below remain historical snapshots; the linked closure supersedes
-their off/pending status, while default-off and upgrade safeguards still apply.
+[closure and activation evidence](../.agent/logs/2026-10-03/2026-10-03-lane6-final-closure-and-activation.md). This is dated activation evidence; fresh-install default-off and upgrade
+safeguards still apply. It does not assert current container health.
 
 The current source-only panel fences new admission/retry to v8/visual-v5,
 while retaining earlier published-reference history including v7. Its transfer
@@ -31,12 +30,12 @@ and form checks improve interaction but do not replace server enforcement.
 
 The built Nginx edge emits only numeric status/duration access events and
 suppresses request-bearing error text. It never logs URL paths, queries, IPs,
-headers or bodies. See [observability](../docs/OBSERVABILITY.md); the operator's
+headers or bodies. See [observability](../docs/operations/OBSERVABILITY.md); the operator's
 TLS proxy and collector need the same redaction and their own expiry policy.
 
 The stack is React 19, TypeScript, React Router 7, Redux Toolkit, Axios, Tailwind
 CSS 4, Radix primitives, and Framer Motion, built by Vite 8. Supported Node/npm
-versions are maintained in [Runtimes](../docs/RUNTIMES.md); exact dependencies
+versions are maintained in [Runtimes](../docs/development/RUNTIMES.md); exact dependencies
 are in [package.json](package.json) and [package-lock.json](package-lock.json).
 
 ## Entry points and main areas
@@ -54,7 +53,7 @@ are in [package.json](package.json) and [package-lock.json](package-lock.json).
 | Brand | [BrandWordmark.tsx](src/components/BrandWordmark.tsx), [public/brand/](public/brand/), [index.html](index.html) | Shared accessible wordmark and supplied ICO; originals preserved under [separate terms](../BRANDING.md). |
 | Job polling | [src/hooks/useGenerationJobs.ts](src/hooks/useGenerationJobs.ts) | Owner-scoped jobs/limits, active and both pending-choice statuses, cancellation/cost-aware retry, idempotent Knowledge and card-count choice, and completion refresh. |
 | Subject Knowledge | [KnowledgeArea.tsx](src/components/knowledge/KnowledgeArea.tsx), [knowledge.ts](src/services/knowledge.ts) | Instructor-only Knowledge upload/revision, capture/index/review/publication state, persisted-page retry, unpublish and removal. |
-| Subject Ask AI | [AskAiPanel.tsx](src/components/rag/AskAiPanel.tsx), [rag.ts](src/services/rag.ts) | Principal-private threads/history, durable job recovery, dormant v7 visual source-judge and bounded literal-subject disclosure, distinct related/no-match/clarification/provider-failure states, unverified source-labeled cues, authenticated lazy original-PDF viewer and stable logical retry identity. Ask admission remains closed pending the separate release gates. |
+| Subject Ask AI | [AskAiPanel.tsx](src/components/rag/AskAiPanel.tsx), [rag.ts](src/services/rag.ts) | Principal-private threads/history, durable job recovery, released v8 visual source-judge and bounded literal-subject disclosure, distinct related/no-match/clarification/provider-failure states, unverified source-labeled cues, authenticated lazy original-PDF viewer and stable logical retry identity. Fresh installations remain default-off; the retained local installation passed its release gates. |
 | Student published lectures | [PublishedKnowledgeBrowser.tsx](src/components/knowledge/PublishedKnowledgeBrowser.tsx), [publishedKnowledge.ts](src/services/publishedKnowledge.ts), [OriginalPdfPage.tsx](src/components/rag/OriginalPdfPage.tsx) | Independent enrolled-student catalog and page search, current-access PDF page view and extracted-text fallback while Ask is paused or finds no match. |
 | Study session state | [src/store/](src/store/), [studySlice.ts](src/store/slices/studySlice.ts) | Current cards/index, server-confirmed answer results, and session completion; no durable browser outbox. |
 | Copy/style | [src/i18n/en.ts](src/i18n/en.ts), [src/index.css](src/index.css), [src/components/ui/](src/components/ui/) | English v1 catalog, Tailwind theme, focus/reduced-motion rules, and shared accessible controls. |
@@ -64,7 +63,7 @@ are in [package.json](package.json) and [package-lock.json](package-lock.json).
 | Browser route | Page/control boundary |
 | --- | --- |
 | `/login`, `/register`, `/forgot-password`, `/reset-password` | Public account pages; registration requires an invitation. |
-| `/join?token=…` | JoinCourse preserves the invitation through sign-in/registration and accepts it for a student. |
+| `/join?token=â€¦` | JoinCourse preserves the invitation through sign-in/registration and accepts it for a student. |
 | `/dashboard` | Protected Dashboard renders InstructorDashboard or StudentDashboard. |
 | `/subjects/:id` | Protected subject route renders SubjectDetails for instructors or StudentSubjectDetails for students. |
 | `/sets/:id` | Instructor-only SetView. |
@@ -125,7 +124,7 @@ subjectService. Student access remains server-filtered. Follow the backend
 an optional recipient queues server email. JoinCourse and StudentDashboard
 use the shared abortable join request for `POST /subjects/invitations/accept`.
 The backend owns idempotent enrollment. See [Auth flow](../docs/architecture/AUTH-FLOW.md)
-and [email delivery](../docs/EMAIL_DELIVERY.md).
+and [email delivery](../docs/mail-server/EMAIL_DELIVERY.md).
 
 **Subject Knowledge and Ask AI:** Instructor SubjectDetails keeps normal
 flashcard generation separate from Knowledge upload/revision and explicit
@@ -135,11 +134,11 @@ private Ask AI panel. It reloads server-owned threads/history/jobs, polls one
  only for one logical failed submission. The source-only result shows up to
  three currently authorized exact related passages with page labels, clearly
  states they are not verified answers, and opens the original lecture PDF page
- in an accessible dialog. The dormant v7 disclosure names the query embedding
+ in an accessible dialog. The released v8 disclosure names the query embedding
  and source judge, including bounded published page text and rendered full-page
  PNG transfer, before Ask can enqueue. Only an unresolved follow-up may add
  a unique literal subject of at most 160 characters/twelve words from the
- strictly preceding user question, under the explicit visual-v3 capability.
+ strictly preceding user question, under the immutable visual-v5/admission-v2 capability.
  Original PDF bytes, the full prior question/history and assistant text are
  excluded. Clarification, no match, provider
  failure and withdrawn references
@@ -182,7 +181,7 @@ Progress, Accuracy, Attempted and Mastery use separate server fields; Review Aga
 | Card review/publication | Instructor SetView, EditSetDialog/PreviewDialog, subject/flashcard services and types, backend card/set contracts; editing component and browser specs. |
 | Study correctness/retry/progress | StudyMode, StudentSubjectDetails, studySlice, `src/services/study.ts`/`types.ts`, backend study router/schemas and progress persistence; study component, reliability/recovery/progress browser specs. |
 | Invitations | JoinCourse, StudentDashboard, InviteStudentDialog, `src/services/subjects.ts`, auth/subject types and backend invitation/email contracts; join/auth-recovery/invitation browser specs. |
-| Shared UX or wording | `src/components/ui/`, `src/index.css`, `src/i18n/en.ts`, affected pages, accessibility/responsive browser specs; [accessibility](../docs/ACCESSIBILITY.md) and [localization](../docs/LOCALIZATION.md). |
+| Shared UX or wording | `src/components/ui/`, `src/index.css`, `src/i18n/en.ts`, affected pages, accessibility/responsive browser specs; [accessibility](../docs/ui/ACCESSIBILITY.md) and [localization](../docs/ui/LOCALIZATION.md). |
 
 Use the architecture documents and [ADR index](../docs/decisions/ADR-000-INDEX.md)
 before changing a recorded contract. Persistent model or API changes also need
@@ -200,7 +199,7 @@ strips that prefix and rewrites the refresh-cookie path to `/api/auth`.
 [nginx.conf](nginx.conf) supplies SPA fallback, fingerprinted asset caching,
 same-origin `/api` proxying, cookie-path rewriting, and edge health checks.
 Changing the built public URL requires rebuilding the frontend. See
-[Configuration](../docs/CONFIGURATION.md) and [Deployment](../docs/DEPLOYMENT.md).
+[Configuration](../docs/operations/CONFIGURATION.md) and [Deployment](../docs/operations/DEPLOYMENT.md).
 
 ## Validation and product boundaries
 
@@ -217,10 +216,10 @@ browser regressions use controlled API fixtures; they do not prove a live
 backend or paid AI provider. The separate real API/worker/database journey runs
 from the root with `python scripts/test_journey.py` and a deterministic test
 provider. The live Mailpit password-reset case has dedicated disposable
-environment gating. Read [Testing](../docs/TESTING.md) and [CI](../docs/CI.md).
+environment gating. Read [Testing](../docs/development/TESTING.md) and [CI](../docs/ci-cd/CI.md).
 
 The client is responsive and online-first. Answers require durable server
 acknowledgement before advancing; there is no service worker or IndexedDB
 outbox. Preserve keyboard/focus behavior, text feedback, reduced motion, touch
 targets, and overflow protection. Manual spoken assistive-technology checks
-remain release evidence under [Accessibility](../docs/ACCESSIBILITY.md).
+remain release evidence under [Accessibility](../docs/ui/ACCESSIBILITY.md).

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import json
 
 import httpx
 
-from app.ai import source_judgment_visual_v2 as contract
+from app.ai import source_judgment_visual as contract
 from app.ai.providers import (
     AIProviderError, _normalize_provider_error, current_attempt_scope,
     provider_attempt_scope,
@@ -80,9 +81,14 @@ class GeminiVisualSourceJudge:
     def attempt_scope(self):
         return provider_attempt_scope(self)
 
-    async def judge(self, request: dict) -> VisualJudgeResponse:
-        if (type(request) is not dict or set(request) != {"model", "store", "systemInstruction", "contents", "generationConfig"}
-            or request["model"] != contract.MODEL or request["store"] is not False
+    async def judge(
+        self, request: dict, *, before_dispatch: Callable[[], Awaitable[None]] | None = None,
+    ) -> VisualJudgeResponse:
+        if (
+            type(request) is not dict
+            or set(request) != {"model", "store", "systemInstruction", "contents", "generationConfig"}
+            or request["model"] != contract.MODEL
+            or request["store"] is not False
             or type(request["generationConfig"]) is not dict
             or request["generationConfig"].get("thinkingConfig") != {"thinkingLevel": "HIGH"}
             or request["generationConfig"].get("maxOutputTokens") != contract.MAX_OUTPUT_TOKENS
@@ -90,11 +96,12 @@ class GeminiVisualSourceJudge:
             or self.settings.rag_source_judge_contract_version != contract.CONTRACT_VERSION
             or self.settings.rag_source_judge_thinking_level != "high"
             or self.settings.rag_source_judge_provider_max_retries != 0
-            or not 0 < self.settings.rag_source_judge_provider_timeout_seconds <= 60):
+            or not 0 < self.settings.rag_source_judge_provider_timeout_seconds <= contract.PROVIDER_TIMEOUT_SECONDS
+        ):
             raise contract.VisualSourceJudgmentError("source_profile_invalid")
-        body = contract.canonical({k: v for k, v in request.items() if k != "model"})
+        body = contract.canonical({key: value for key, value in request.items() if key != "model"})
         if (len(body) > contract.MAX_REQUEST_BYTES or
-            contract.estimate_input_tokens(request) > self.settings.rag_source_judge_max_input_tokens):
+                contract.estimate_input_tokens(request) > self.settings.rag_source_judge_max_input_tokens):
             raise contract.VisualSourceJudgmentError("request_input_budget")
         key = self.settings.rag_source_judge_api_key_value
         if not isinstance(key, str) or not key:
@@ -102,9 +109,17 @@ class GeminiVisualSourceJudge:
         async with self._semaphore:
             try:
                 reservation = await self.governor.reserve(
-                    self.settings.rag_source_judge_max_input_tokens, operation="source_judgment", attempt=0)
+                    self.settings.rag_source_judge_max_input_tokens, operation="source_judgment", attempt=0,
+                )
             except ProviderRateLimitExceeded:
-                raise AIProviderError("ai_provider_request_token_limit", "The source judge request exceeds its rate limit.", retryable=False) from None
+                raise AIProviderError("ai_provider_request_token_limit", "The source judge request exceeds its rate limit.",
+                                      retryable=False) from None
+            # Quota waits may outlive the local admission/source snapshot. The
+            # worker rechecks its grants, context and lease after that wait,
+            # before physical accounting or any HTTP request. Keep this guard
+            # per invocation; a shared mutable callback would cross jobs.
+            if before_dispatch is not None:
+                await before_dispatch()
             scope = current_attempt_scope(self)
             if scope is not None:
                 scope.record_request("source_judgment", retry=False, waited_seconds=reservation.waited_seconds)
