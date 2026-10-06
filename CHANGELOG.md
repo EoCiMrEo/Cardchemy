@@ -6,6 +6,12 @@ is retained in the [agent log index](.agent/logs/README.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- Frontend build/development lock resolves `source-map-js` 1.2.2 after a new
+  full-scope npm advisory blocked post-publication CI. Application code and
+  signed 0.2.0 release artifacts remain unchanged.
+
 ## [0.2.0] - 2026-10-05
 
 ### Added

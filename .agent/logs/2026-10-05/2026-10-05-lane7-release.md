@@ -185,7 +185,7 @@ lock, and alerts 1/2 for the same Mako 1.4.1 dependency in the two Python locks.
 Primary advisories were reviewed on 2026-10-05:
 [source-map-js GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
 and [Mako GHSA-5639-2j2p-m4mx](https://github.com/advisories/GHSA-5639-2j2p-m4mx).
-The locked versions fall within their affected ranges. Both advisories were
+The locked versions in the signed 0.2.0 source fall within their affected ranges. Both advisories were
 updated in the GitHub database on this date; the reason their coverage differs
 from the passing pip/npm/Trivy results was not independently established.
 
@@ -200,3 +200,29 @@ and no security threshold was weakened. Preserving the approved working runtime
 and immutable release means this closure does not perform a new dependency
 remediation release. All original release gates actually passed; this separate
 known advisory boundary remains explicit.
+
+## Post-publication mandatory CI repair
+
+[PR 45](https://github.com/EoCiMrEo/Cardchemy/pull/45) passed its exact-head CI
+and merged normally as `06e1d21eae3fc893e911c67b2e3eef1d7ce84453`.
+Its [push CI](https://github.com/EoCiMrEo/Cardchemy/actions/runs/37398267802)
+then failed specifically at **Mandatory dependency review fallback for every
+npm scope**, after complete Python and shipped-npm audits passed. The newly
+recognized source-map-js advisory therefore became an actual mandatory gate
+failure, rather than only a dashboard alert. This failed run remains preserved;
+no gate or severity threshold was lowered.
+
+The focused repair resolves only the frontend's development/build lock entry
+from source-map-js **1.2.1 to 1.2.2**, using supported pinned npm **11.19.1**.
+The failed run's actual audit artifact **11383608057** confirms exactly that
+single high advisory. Regeneration changed only `version`, `resolved` and
+`integrity` in the one dev entry; all other package entries, package.json and
+production dependencies were verified identical. A fresh full-scope npm audit
+then passed with **zero vulnerabilities across 419 dependencies**.
+Application source, API/frontend behavior, AI provider/model/retry policy,
+production dependencies, root environment, existing data and immutable signed
+0.2.0 tag/artifacts stay unchanged. This necessary CI repair is recorded under
+Unreleased; it does not pretend to replace the already signed source package.
+The Windows-specific Mako boundary remains documented without a runtime upgrade.
+The exact repaired-head/full-frontend and final-main results are recorded by
+the protected checks and content-free receipts.
