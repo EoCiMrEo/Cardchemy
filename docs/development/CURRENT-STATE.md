@@ -1,10 +1,12 @@
 # Current development state
 
 The [release evidence](../../.agent/logs/2026-10-05/2026-10-05-lane7-release.md)
-also records three open Dependabot alerts: one development-only source-map-js
-alert and two lockfile entries for the same Windows-specific Mako advisory.
-Passing release audits do not mean those affected dependency versions are fixed;
-the bounded exposure review and preserved-runtime decision are recorded there.
+records three Dependabot alerts observed during publication. A subsequent
+mandatory CI failure required the development-only source-map-js lock entry to
+resolve to patched 1.2.2; this changes build tooling, not application/AI code or
+the immutable 0.2.0 artifacts. The same Windows-specific Mako advisory remains
+in two Python locks. Passing audits do not establish that Mako is fixed;
+the bounded exposure review is recorded there.
 
 Updated 2026-10-05. [**0.2.0 is published**](https://github.com/EoCiMrEo/Cardchemy/releases/tag/v0.2.0).
 Phases 0–21 and product-quality Lanes 0–7 are complete in their recorded scope.
