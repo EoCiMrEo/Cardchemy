@@ -2,9 +2,9 @@
 
 aiosqlite==0.22.1
 httpx==0.28.1
-pytest==9.1.1
-pytest-asyncio==1.4.0
-pip-tools==7.6.1
+pytest==9.2.0
+pytest-asyncio==1.4.1
+pip-tools==7.6.2
 
 pytest-cov==7.1.0
 pip-audit==2.10.1
